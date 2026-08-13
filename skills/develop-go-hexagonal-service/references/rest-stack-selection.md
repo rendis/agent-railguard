@@ -4,9 +4,9 @@ Read this reference before selecting, adding, replacing, or upgrading an inbound
 
 ## Preserve an adopted stack
 
-Inspect `go.mod`, imports, composition, adapters, tests, middleware, operational configuration, and current consumers. Reuse a coherent maintained server or client already adopted by the repository and its pinned compatible version unless the request explicitly includes replacement or upgrade. Apply the boundary, lifecycle, error, and verification rules below without reopening a settled choice.
+Inspect `go.mod`, imports, composition, adapters, tests, middleware, operational configuration, and current consumers. A stack is adopted only when repository evidence shows it is part of the current implementation or an explicit project decision; a library previously recommended by this skill is not adopted merely because it appears in this guide. Reuse a coherent maintained adopted server or client and its pinned compatible version unless the request explicitly includes selection, replacement, or upgrade. Apply the boundary, lifecycle, error, and verification rules below without reopening an unrelated settled choice.
 
-When no stack exists, stop before changing dependencies, configuration, or production wiring and complete both decision gates in order. Skip a gate only when the user's request already provides that exact choice.
+When no adopted stack exists, or the user explicitly asks to select or reconsider one, stop before changing dependencies, configuration, or production wiring and complete both decision gates in order. Skip a gate only when the user's request already provides that exact choice.
 
 ## Gate 1: choose the implementation
 

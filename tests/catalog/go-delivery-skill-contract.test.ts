@@ -9,7 +9,10 @@ describe("develop-go-hexagonal-service contract", () => {
     const selection = await readFile(`${skillRoot}/references/rest-stack-selection.md`, "utf8");
 
     expect(skill).toContain("[REST stack selection](references/rest-stack-selection.md)");
-    expect(selection).toContain("When no stack exists, stop before changing dependencies");
+    expect(selection).toContain("A stack is adopted only when repository evidence shows");
+    expect(selection).toContain("When no adopted stack exists");
+    expect(selection).toContain("a library previously recommended by this skill is not adopted");
+    expect(selection).toContain("explicitly asks to select or reconsider one");
     expect(selection).toContain("## Gate 1: choose the implementation");
     expect(selection).toContain("## Gate 2: choose the version");
 

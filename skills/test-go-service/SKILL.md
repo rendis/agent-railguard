@@ -1,6 +1,6 @@
 ---
 name: test-go-service
-description: Design, implement, diagnose, and verify Go-specific test evidence. Use for test-focused work and hardening with unit, component, integration, contract, fuzz, race, benchmark, mutation, flakiness, lint interpretation, or test-code quality. When develop-go-hexagonal-service is already active, it remains the edit owner; generic behavioral proof belongs to design-tests, configuration to configure-go-quality, and full-system acceptance to build-e2e-test-suite.
+description: Design, implement, diagnose, or verify Go-specific test evidence. Use for standalone test work or selected hardening with unit, component, integration, contract, fuzz, race, benchmark, mutation, flakiness, lint interpretation, or test-code quality.
 ---
 
 # Test Go Service

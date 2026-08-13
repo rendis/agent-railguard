@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-driven development for behavioral changes and behavior-preserving refactors. Use when a feature or bug must be implemented test-first, a task calls for red-green-refactor, or a development workflow needs an observable test-first loop or a green safety net.
+description: Implement behavioral changes through red, green, refactor, and broader verification. Use for features, bug fixes, or behavior-preserving refactors that require an observable test-first loop or a verified green safety net.
 ---
 
 # Test-driven development

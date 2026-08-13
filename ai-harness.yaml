@@ -14,7 +14,7 @@ catalog:
 
     configure-go-quality:
       version: 0.1.0
-      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair `make check` and `make verify` before hooks or agents rely on them.
+      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair the managed `make check` and `make verify` baseline; preserve stronger adopted profiles and require an explicit provider for additional signals.
       source: skills/configure-go-quality
       applies:
         languages: [go]
@@ -30,7 +30,7 @@ catalog:
 
     develop-go-hexagonal-service:
       version: 0.1.0
-      details: Use for end-to-end delivery of a Go service feature, fix or refactor. Coordinate design, implementation, tests, quality configuration and review while keeping domain boundaries explicit.
+      details: Use when a Go change crosses production behavior or architectural/runtime boundaries, or when complete delivery is requested. Coordinate design, implementation, tests, acceptance, quality configuration and review. Standalone test-only, E2E-only, configuration-only, and read-only review work use their focused skills.
       source: skills/develop-go-hexagonal-service
       applies:
         languages: [go]

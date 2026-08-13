@@ -33,6 +33,8 @@ import {
 } from "../domain/shared/types.js";
 import { parseSafeYaml } from "../shared/safe-yaml.js";
 
+const maximumSkillDescriptionLength = 320;
+
 interface RelationDefinition {
   readonly kind: Exclude<CatalogRelationKind, "includes">;
   readonly target: string;
@@ -381,7 +383,7 @@ export class FilesystemCatalog implements Catalog {
       skillMetadata.name !== id ||
       !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skillMetadata.name) ||
       skillMetadata.description.length === 0 ||
-      skillMetadata.description.length > 1024
+      skillMetadata.description.length > maximumSkillDescriptionLength
     ) {
       diagnostics.push(
         diagnostic({
@@ -392,7 +394,12 @@ export class FilesystemCatalog implements Catalog {
           evidence:
             skillMetadata.kind === "invalid"
               ? skillMetadata.errors
-              : [`catalog-id:${id}`, `name:${skillMetadata.name}`],
+              : [
+                  `catalog-id:${id}`,
+                  `name:${skillMetadata.name}`,
+                  `description-length:${skillMetadata.description.length}`,
+                  `description-limit:${maximumSkillDescriptionLength}`,
+                ],
         }),
       );
       return { loaded: null, diagnostics };
@@ -400,6 +407,25 @@ export class FilesystemCatalog implements Catalog {
 
     const payloadFiles = files;
     const payloadPaths = new Set(payloadFiles.map((file) => file.path));
+    const directSkillTargets = new Set<RelativePosixPath>();
+    for (const target of localMarkdownTargets(entry.bytes.toString())) {
+      const resolvedTarget = resolvePayloadLink(entry.path, target);
+      if (resolvedTarget !== null) directSkillTargets.add(resolvedTarget);
+    }
+    for (const reference of payloadFiles.filter(
+      (file) => file.path.startsWith("references/") && file.path.endsWith(".md"),
+    )) {
+      if (directSkillTargets.has(reference.path)) continue;
+      diagnostics.push(
+        diagnostic({
+          code: "catalog.skill.reference-unreachable",
+          phase: "skill",
+          message: "Every skill reference must be linked directly from SKILL.md.",
+          path: relativePosixPath(`${sourceDirectory}/${reference.path}`),
+          evidence: [reference.path],
+        }),
+      );
+    }
     const collision = findCaseInsensitiveCollision(payloadFiles.map((file) => file.path));
     if (collision !== null) {
       diagnostics.push(

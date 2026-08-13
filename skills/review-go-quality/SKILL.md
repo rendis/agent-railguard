@@ -1,6 +1,6 @@
 ---
 name: review-go-quality
-description: Review Go changes or repository baselines read-only from a fixed snapshot. Use for diff audits, architecture or quality investigations, and adversarial pre-delivery review covering request alignment, correctness, simplicity, semantic reuse, effects, patterns, compatibility, debt, security, concurrency, maintainability, naming, documentation, and test sensitivity. Never edit the reviewed snapshot; develop-go-hexagonal-service owns remediation and creates a new candidate when it is active.
+description: Review a fixed Go snapshot without editing it. Use for diff audits, baseline investigations, or adversarial pre-delivery review of correctness, architecture, verification evidence, security, concurrency, maintainability, naming, documentation, and test sensitivity.
 ---
 
 # Review Go Quality

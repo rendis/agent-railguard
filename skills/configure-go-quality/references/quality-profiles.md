@@ -1,44 +1,41 @@
 # Go Quality Profiles
 
-## Use a stable core and evidence-based overlays
+## Start from an owned baseline
 
-Profiles describe responsibilities, not universal command names or directories. Preserve a repository's equivalent stronger contract and adapt modules, workspaces, generated code, tags, platforms, and CI constraints.
+The generic AI Harness baseline is the managed `make check` and `make verify` contract in [default-go-service-profile.md](default-go-service-profile.md). Preserve any stronger valid repository profile and its existing task owner. A profile describes a reproducible decision surface, not a universal list of tools.
 
-### Core profile
+Every additional signal requires:
 
-- formatting over declared project Go sources;
-- module integrity;
-- normal deterministic tests;
-- `go vet`;
-- one pinned `golangci-lint` configuration with tests enabled, explicit analyzers, and cognitive complexity for production code;
-- one repository-native standard command that composes the adopted core targets.
+- a named defect class and governed source scope;
+- a repository-owned pin or standard Go command;
+- native configuration and a non-zero decision rule;
+- a local or CI consumer and proportional execution cost;
+- an owner that can materialize and repair its files and commands.
+
+If one item is absent, report the capability as not adopted or `MISSING`; do not infer it from a generic quality request.
+
+## Add extensions by evidence
+
+### Lint, security, and documentation
+
+Use one pinned `golangci-lint` configuration for compatible analyzers over production and tests. Run `govulncheck` separately for reachable dependency vulnerabilities. Mechanical exported-contract rules may use a maintained GoDoc linter; semantic naming and documentation remain review decisions.
 
 ### Coverage assurance
 
-Declare production and critical package scopes. The approved maintained-service baseline is exact 100% critical/core statement coverage and strictly more than 85% overall production statement coverage. Generate fresh profiles and compare integer statement counts. Coverage is reachability, not a semantic score.
+Adopt coverage thresholds only from explicit repository policy or an approved advanced baseline. Declare production and critical scopes, generate fresh profiles, compare integer statement counts, and keep reachability distinct from oracle quality.
 
-### Test-code overlay
+### Concurrency, fuzz, and mutation
 
-Keep tests inside lint scope. Enable `thelper` and `usetesting` when applicable; enable framework-specific analyzers only when that framework is present. Test names and native structure should make context, action, and outcome discoverable. Literal comment markers or GoDoc on every test are project options, not universal gates. Sensitivity remains with `design-tests`, `test-go-service`, mutation, and review.
+Run race only over suites that exercise concurrency. Fuzz selected invariants with seeds and a bounded budget. Adopt mutation only after a stable normal suite and explicit owned scopes; require a non-empty campaign and fail every unresolved native status.
 
-### Security and documentation overlays
+### E2E and full-stack execution
 
-Consume `gosec` and Staticcheck through the aggregator and `govulncheck` separately. Use a maintained GoDoc linter for mechanical exported-contract rules. Semantic usefulness, private-seam value, naming, and over-documentation remain contextual; never make product tests inspect comments.
+Reuse the E2E owner's public journey, harness, readiness, cleanup, and command. Select a full-stack profile only for an explicit request, adopted acceptance policy, or distinct topology risk. E2E `BLOCKED_SETUP` remains an acceptance state, not configuration readiness.
 
-### Concurrency, fuzz, and mutation overlays
+### Specialized extensions
 
-Run race only over suites that exercise concurrency. Fuzz selected parsers or validators with seeds, invariants, and a bounded budget, then promote failures to regression corpus. Adopt mutation only after a stable normal suite and explicit owned scopes; require non-empty campaigns, all compatible operator families, and no unresolved status.
-
-### E2E and optional full-stack
-
-Reuse the E2E owner's public journey, harness, readiness, cleanup, and command. A full-stack profile is required only by request, acceptance, existing policy, or a distinct topology/wiring risk. `BLOCKED_SETUP` is not pass or product failure.
-
-### Specialized overlays
-
-Benchmarks, database checks, licenses, architecture rules, and other analyzers require an observed defect class or policy consumer. Every overlay must add distinct evidence at proportional cost.
+Benchmarks, database checks, licenses, architecture rules, and other analyzers require an observed defect class or policy consumer. Each extension must add evidence unavailable from the baseline at proportional cost.
 
 ## Keep profiles honest
 
-A standard command may compose direct targets with the repository's task runner. It need not emit a proprietary aggregate report. Native diagnostics, exit codes, and ignored tool artifacts are sufficient mechanical evidence; an optional skill collector may summarize them without becoming policy authority.
-
-No profile can decide whether an abstraction is needed, a design pattern reduces current cost, names are unambiguous, documentation is useful, or a test oracle is independent. Those remain contextual review decisions.
+Use repository-native tasks and native exit codes. Store volatile evidence under ignored paths. No profile can decide whether an abstraction is necessary, a name is unambiguous, documentation is useful, or a test oracle is independent; those remain contextual review decisions.

@@ -1,6 +1,6 @@
 ---
 name: build-e2e-test-suite
-description: Exercise public behavior end to end across API, event, UI, CLI, job, runtime, or system boundaries. Use for E2E-focused requests and the acceptance stage of a delivery. Own journey, scenario, project-derived harness, readiness, cleanup, canonical execution contract, optional full-stack fidelity, evidence, and failure classification. When develop-go-hexagonal-service is already active in a Go repository, it remains the owner of E2E edits.
+description: Build or repair executable end-to-end acceptance for public API, event, UI, CLI, job, runtime, or system journeys. Use when a task needs proof across real system boundaries, including harness, readiness, cleanup, execution, evidence, and failure classification.
 ---
 
 # Build E2E Test Suite

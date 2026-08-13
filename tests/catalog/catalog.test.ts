@@ -556,6 +556,23 @@ describe("FilesystemCatalog", () => {
       },
       code: "catalog.payload.invalid",
     },
+    {
+      name: "oversized skill description",
+      files: {
+        "ai-harness.yaml": authoring(skillDefinition("verbose")),
+        "skills/verbose/SKILL.md": skill("verbose", "x".repeat(321)),
+      },
+      code: "catalog.skill.standard-invalid",
+    },
+    {
+      name: "unreferenced skill reference",
+      files: {
+        "ai-harness.yaml": authoring(skillDefinition("orphaned")),
+        "skills/orphaned/SKILL.md": skill("orphaned"),
+        "skills/orphaned/references/orphan.md": "# Orphan\n",
+      },
+      code: "catalog.skill.reference-unreachable",
+    },
   ])("fails closed for $name", async ({ files, code }) => {
     const root = await createTempRepository(files);
     try {
@@ -656,11 +673,11 @@ function skillDefinition(id: string, extra: readonly string[] = []): readonly st
   ];
 }
 
-function skill(name: string): string {
+function skill(name: string, description = `Use ${name} when its workflow is required.`): string {
   return [
     "---",
     `name: ${name}`,
-    `description: Use ${name} when its workflow is required.`,
+    `description: ${description}`,
     "---",
     "",
     `# ${name}`,

@@ -1,6 +1,6 @@
 ---
 name: design-tests
-description: Design durable behavioral tests independently of programming language or framework. Use when a task must create or materially redesign unit, component, integration, contract, property, fuzz, or end-to-end scenarios and needs a stable seam, independent oracle, semantic structure, deterministic data, doubles, or a sensitivity check. Do not use merely to rerun an adequate existing suite.
+description: Design durable behavioral tests independent of language or framework. Use when a task creates or materially redesigns unit, component, integration, contract, property, fuzz, or end-to-end proofs and must choose a stable seam, independent oracle, deterministic data, doubles, or sensitivity evidence.
 ---
 
 # Design Tests
