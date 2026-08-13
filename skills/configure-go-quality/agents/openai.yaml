@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configure Go Quality"
+  short_description: "Configure reproducible Go quality gates"
+  default_prompt: "Use $configure-go-quality to assess or configure reproducible Go quality gates."

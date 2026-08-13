@@ -1,0 +1,446 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:ai-harness:schema:command-result:v1",
+  "title": "AI Harness command result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "type",
+    "command",
+    "operation_id",
+    "verdict",
+    "exit_code",
+    "repository",
+    "direct_selections",
+    "components",
+    "plan",
+    "receipt",
+    "data",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema": { "const": "ai-harness/command-result/v1" },
+    "type": { "const": "result" },
+    "command": {
+      "enum": [
+        "scan",
+        "status",
+        "init",
+        "plan",
+        "apply",
+        "remove",
+        "sync",
+        "repair",
+        "catalog-list",
+        "catalog-show",
+        "doctor",
+        "mcp-status",
+        "mcp-login",
+        "mcp-logout",
+        "update"
+      ]
+    },
+    "operation_id": { "$ref": "#/$defs/uuid" },
+    "verdict": {
+      "enum": [
+        "READY",
+        "PLAN_READY",
+        "SUCCEEDED",
+        "NO_CHANGES",
+        "ALREADY_INITIALIZED",
+        "INVALID_INPUT",
+        "INVALID_SCOPE",
+        "READINESS_BLOCKED",
+        "BLOCKED",
+        "REJECTED",
+        "CHANGES_AVAILABLE",
+        "ROLLED_BACK",
+        "RECOVERY_REQUIRED",
+        "FAILED",
+        "VERIFICATION_FAILED",
+        "CANCELLED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "exit_code": {
+      "enum": [0, 2, 3, 4, 5, 6, 7, 8, 70, 130]
+    },
+    "repository": {
+      "oneOf": [
+        { "$ref": "#/$defs/repository" },
+        { "type": "null" }
+      ]
+    },
+    "direct_selections": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/componentRef" }
+    },
+    "components": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/component" }
+    },
+    "plan": {
+      "oneOf": [
+        { "$ref": "urn:example:ai-harness:schema:public-plan:v1" },
+        { "type": "null" }
+      ]
+    },
+    "receipt": {
+      "oneOf": [
+        { "$ref": "#/$defs/receipt" },
+        { "type": "null" }
+      ]
+    },
+    "data": {
+      "oneOf": [
+        { "$ref": "#/$defs/catalogListData" },
+        { "$ref": "#/$defs/catalogShowData" },
+        { "$ref": "#/$defs/doctorData" },
+        { "$ref": "#/$defs/updateData" },
+        { "$ref": "#/$defs/mcpSessionData" },
+        { "type": "null" }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "componentRef": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.:_-][a-z0-9]+)*$"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root",
+        "fingerprint",
+        "languages",
+        "management",
+        "integrity",
+        "readiness",
+        "updates",
+        "installed_direct_selections",
+        "installed_components",
+        "installed_targets",
+        "harnesses"
+      ],
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "fingerprint": { "$ref": "#/$defs/sha256" },
+        "languages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stableId" }
+        },
+        "management": { "enum": ["uninitialized", "managed", "partial"] },
+        "integrity": { "enum": ["clean", "drifted", "unknown"] },
+        "readiness": { "enum": ["ready", "blocked", "unknown"] },
+        "updates": { "enum": ["none", "available", "unknown"] },
+        "installed_direct_selections": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/componentRef" }
+        },
+        "installed_components": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/componentRef" }
+        },
+        "installed_targets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stableId" }
+        },
+        "harnesses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/harness" }
+        }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "detected", "version", "ready"],
+      "properties": {
+        "id": { "$ref": "#/$defs/stableId" },
+        "detected": { "type": "boolean" },
+        "version": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "ready": { "type": "boolean" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "version", "origin", "causes", "applicability"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/componentRef" },
+        "version": { "type": "string", "minLength": 1 },
+        "origin": { "enum": ["direct", "required"] },
+        "causes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "applicability": { "enum": ["portable", "matched", "unverified"] }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "plan_id",
+        "result",
+        "materialization",
+        "certification",
+        "changed_paths",
+        "diagnostics"
+      ],
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/uuid" },
+        "plan_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "result": {
+          "enum": [
+            "succeeded",
+            "no-changes",
+            "rejected",
+            "cancelled",
+            "rolled-back",
+            "verification-failed",
+            "recovery-required",
+            "failed"
+          ]
+        },
+        "materialization": { "enum": ["unchanged", "committed", "rolled-back", "unknown"] },
+        "certification": { "enum": ["verified", "failed", "unknown", "not-run"] },
+        "changed_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "impact", "action"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warning", "blocked", "failed"] },
+        "message": { "type": "string", "minLength": 1 },
+        "impact": { "type": "string", "minLength": 1 },
+        "action": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "catalogComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "kind",
+        "version",
+        "description",
+        "details",
+        "trust",
+        "applies_languages",
+        "relations"
+      ],
+      "properties": {
+        "ref": { "$ref": "#/$defs/componentRef" },
+        "kind": {
+          "enum": [
+            "skill",
+            "mcp-integration",
+            "verification-profile",
+            "git-gate",
+            "instruction-fragment",
+            "pack",
+            "agent"
+          ]
+        },
+        "version": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "details": { "type": "string", "minLength": 1 },
+        "trust": {
+          "enum": [
+            "passive",
+            "project-write",
+            "local-git-execution",
+            "third-party-network",
+            "agent-instruction"
+          ]
+        },
+        "applies_languages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stableId" }
+        },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/catalogRelation" }
+        }
+      }
+    },
+    "catalogRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target", "reason"],
+      "properties": {
+        "kind": { "enum": ["includes", "requires", "recommends", "composes", "conflicts"] },
+        "target": { "$ref": "#/$defs/componentRef" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "catalogListData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "components"],
+      "properties": {
+        "kind": { "const": "catalog-list" },
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/catalogComponent" }
+        }
+      }
+    },
+    "catalogShowData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "component"],
+      "properties": {
+        "kind": { "const": "catalog-show" },
+        "component": { "$ref": "#/$defs/catalogComponent" }
+      }
+    },
+    "doctorData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "checks"],
+      "properties": {
+        "kind": { "const": "doctor" },
+        "checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/doctorCheck" }
+        }
+      }
+    },
+    "doctorCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "message"],
+      "properties": {
+        "id": { "enum": ["catalog", "recovery", "repository", "materialization"] },
+        "status": { "enum": ["passed", "warning", "failed"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "updateData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "current_version", "latest_version", "status"],
+      "properties": {
+        "kind": { "const": "update" },
+        "current_version": { "type": "string", "minLength": 1 },
+        "latest_version": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "status": { "enum": ["current", "available", "unknown"] }
+      }
+    },
+    "mcpSessionData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "component", "operation", "results"],
+      "properties": {
+        "kind": { "const": "mcp-session" },
+        "component": { "$ref": "#/$defs/componentRef" },
+        "operation": { "enum": ["inspect", "login", "logout"] },
+        "results": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mcpSessionResult" }
+        }
+      }
+    },
+    "mcpSessionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "state", "action", "message"],
+      "properties": {
+        "target": { "$ref": "#/$defs/stableId" },
+        "state": {
+          "enum": [
+            "authenticated",
+            "authentication-required",
+            "authentication-unknown",
+            "unsupported",
+            "not-configured"
+          ]
+        },
+        "action": {
+          "oneOf": [
+            { "$ref": "#/$defs/mcpSessionAction" },
+            { "type": "null" }
+          ]
+        },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "mcpSessionAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "command"],
+      "properties": {
+        "kind": { "enum": ["command", "guided"] },
+        "description": { "type": "string", "minLength": 1 },
+        "command": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string" }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:ai-harness:schema:public-plan:v1",
+  "title": "AI Harness reviewed public plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "plan_id",
+    "mode",
+    "basis",
+    "desired_after",
+    "review"
+  ],
+  "properties": {
+    "schema": { "const": "ai-harness/plan/v1" },
+    "plan_id": { "$ref": "#/$defs/sha256" },
+    "mode": { "$ref": "#/$defs/mode" },
+    "basis": { "$ref": "#/$defs/basis" },
+    "desired_after": {
+      "oneOf": [
+        { "$ref": "#/$defs/desiredState" },
+        { "type": "null" }
+      ]
+    },
+    "review": { "$ref": "#/$defs/review" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "nullableDigest": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha256" },
+        { "type": "null" }
+      ]
+    },
+    "componentRef": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.:_-][a-z0-9]+)*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "mode": {
+      "enum": ["reconcile", "repair", "remove"]
+    },
+    "basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_fingerprint",
+        "catalog_digest",
+        "desired_before_digest",
+        "desired_after_digest",
+        "lock_before_digest",
+        "lock_after_digest"
+      ],
+      "properties": {
+        "repository_fingerprint": { "$ref": "#/$defs/sha256" },
+        "catalog_digest": { "$ref": "#/$defs/sha256" },
+        "desired_before_digest": { "$ref": "#/$defs/nullableDigest" },
+        "desired_after_digest": { "$ref": "#/$defs/nullableDigest" },
+        "lock_before_digest": { "$ref": "#/$defs/nullableDigest" },
+        "lock_after_digest": { "$ref": "#/$defs/nullableDigest" }
+      }
+    },
+    "desiredState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "targets", "selections"],
+      "properties": {
+        "schema": { "const": "ai-harness/project/v1" },
+        "targets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/stableId" }
+        },
+        "selections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/selection" }
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "inputs"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/componentRef" },
+        "inputs": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "from", "reason"],
+      "properties": {
+        "kind": { "enum": ["includes", "requires"] },
+        "from": { "$ref": "#/$defs/componentRef" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "reviewComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "version", "applicability", "trust", "causes"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/componentRef" },
+        "version": { "$ref": "#/$defs/semver" },
+        "applicability": { "enum": ["portable", "matched", "unverified"] },
+        "trust": {
+          "enum": [
+            "passive",
+            "project-write",
+            "local-git-execution",
+            "third-party-network",
+            "agent-instruction"
+          ]
+        },
+        "causes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/cause" }
+        }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "kind", "path", "section", "owner"],
+      "properties": {
+        "action": { "enum": ["create", "replace", "remove"] },
+        "kind": { "enum": ["directory", "file", "symlink", "managed-section", "git-config"] },
+        "path": { "type": "string", "minLength": 1 },
+        "section": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "owner": { "type": "string", "minLength": 1 }
+      }
+    },
+    "gitConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "action", "value"],
+      "properties": {
+        "key": { "const": "core.hooksPath" },
+        "action": { "enum": ["set", "unset"] },
+        "value": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "event", "command"],
+      "properties": {
+        "component": { "$ref": "#/$defs/componentRef" },
+        "event": { "enum": ["pre-commit", "pre-push"] },
+        "command": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component", "connection", "timing", "network", "auth"],
+      "properties": {
+        "component": { "$ref": "#/$defs/componentRef" },
+        "connection": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "command"],
+              "properties": {
+                "type": { "const": "stdio" },
+                "command": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string" }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "url"],
+              "properties": {
+                "type": { "const": "remote-http" },
+                "url": { "type": "string", "pattern": "^https://[^\\s]+$" }
+              }
+            }
+          ]
+        },
+        "timing": { "const": "harness-runtime" },
+        "network": { "const": "runtime-required" },
+        "auth": { "enum": ["none", "oauth"] }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_id",
+        "mode",
+        "direct",
+        "required",
+        "changes",
+        "git_config",
+        "hooks",
+        "runtimes",
+        "prerequisites",
+        "apply_executes"
+      ],
+      "properties": {
+        "plan_id": { "$ref": "#/$defs/sha256" },
+        "mode": { "$ref": "#/$defs/mode" },
+        "direct": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewComponent" }
+        },
+        "required": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewComponent" }
+        },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/change" }
+        },
+        "git_config": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gitConfig" }
+        },
+        "hooks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hook" }
+        },
+        "runtimes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/runtime" }
+        },
+        "prerequisites": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "apply_executes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

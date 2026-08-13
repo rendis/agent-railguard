@@ -1,0 +1,34 @@
+unleash:
+  output-statuses: lct
+  workers: 1
+  test-cpu: 1
+  timeout-coefficient: 50
+  # The native task asset applies the exact non-empty/KILLED-only verdict with
+  # pinned gojq because Gremlins v0.6 cannot express that complete policy.
+  threshold:
+    efficacy: 0
+    mutant-coverage: 0
+
+mutants:
+  arithmetic-base:
+    enabled: true
+  conditionals-boundary:
+    enabled: true
+  conditionals-negation:
+    enabled: true
+  increment-decrement:
+    enabled: true
+  invert-assignments:
+    enabled: true
+  invert-bitwise:
+    enabled: true
+  invert-bwassign:
+    enabled: true
+  invert-logical:
+    enabled: true
+  invert-loopctrl:
+    enabled: true
+  invert-negatives:
+    enabled: true
+  remove-self-assignments:
+    enabled: true

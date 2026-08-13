@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:example:ai-harness:schema:interaction-event:v1",
+  "title": "AI Harness interaction event v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "state" },
+        "phase": { "$ref": "#/$defs/phase" },
+        "cancellation_requested": { "type": "boolean" }
+      },
+      "required": ["type", "phase"],
+      "unevaluatedProperties": false
+    },
+    {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "task" },
+        "task": { "$ref": "#/$defs/task" }
+      },
+      "required": ["type", "task"],
+      "unevaluatedProperties": false
+    },
+    {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "scan-result" },
+        "repository": {
+          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/repository"
+        },
+        "catalog": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/catalogItem" }
+        },
+        "recommendations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/recommendation" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/diagnostic"
+          }
+        }
+      },
+      "required": ["type", "repository", "catalog", "recommendations", "diagnostics"],
+      "unevaluatedProperties": false
+    },
+    {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "draft-resolved" },
+        "draft": { "$ref": "#/$defs/draft" },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/diagnostic"
+          }
+        }
+      },
+      "required": ["type", "draft", "diagnostics"],
+      "unevaluatedProperties": false
+    },
+    {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "plan-ready" },
+        "plan": {
+          "oneOf": [
+            { "$ref": "urn:example:ai-harness:schema:public-plan:v1" },
+            { "type": "null" }
+          ]
+        },
+        "blocked": { "type": "boolean" },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/diagnostic"
+          }
+        }
+      },
+      "required": ["type", "plan", "blocked", "diagnostics"],
+      "unevaluatedProperties": false
+    },
+    {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "receipt" },
+        "receipt": {
+          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/receipt"
+        }
+      },
+      "required": ["type", "receipt"],
+      "unevaluatedProperties": false
+    },
+    {
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/base" }],
+      "properties": {
+        "type": { "const": "mcp-session-result" },
+        "result": { "$ref": "#/$defs/mcpSessionAggregate" }
+      },
+      "required": ["type", "result"],
+      "unevaluatedProperties": false
+    }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["schema", "operation_id", "sequence", "type"],
+      "properties": {
+        "schema": { "const": "ai-harness/interaction-event/v1" },
+        "operation_id": {
+          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/uuid"
+        },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "type": {
+          "enum": [
+            "state",
+            "task",
+            "scan-result",
+            "draft-resolved",
+            "plan-ready",
+            "receipt",
+            "mcp-session-result"
+          ]
+        }
+      }
+    },
+    "phase": {
+      "enum": [
+        "idle",
+        "scanning",
+        "browsing",
+        "drafting",
+        "planning",
+        "reviewing",
+        "applying",
+        "verifying",
+        "authenticating",
+        "receipted",
+        "blocked",
+        "cancelled"
+      ]
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "detail", "state"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "detail": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "state": {
+          "enum": ["waiting", "running", "done", "warning", "failed", "skipped"]
+        },
+        "current": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "version", "reasons"],
+      "properties": {
+        "ref": {
+          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+        },
+        "version": { "type": "string", "minLength": 1 },
+        "reasons": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "catalogItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "kind", "version", "description", "details", "impact", "trust", "recommended"],
+      "properties": {
+        "ref": {
+          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+        },
+        "kind": {
+          "enum": [
+            "skill",
+            "mcp-integration",
+            "verification-profile",
+            "git-gate",
+            "instruction-fragment",
+            "pack",
+            "agent"
+          ]
+        },
+        "version": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "details": { "type": "string", "minLength": 1 },
+        "impact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["changes", "workflow"],
+          "properties": {
+            "changes": { "type": "string", "minLength": 1 },
+            "workflow": { "type": "string", "minLength": 1 }
+          }
+        },
+        "trust": {
+          "enum": [
+            "passive",
+            "project-write",
+            "local-git-execution",
+            "third-party-network",
+            "agent-instruction"
+          ]
+        },
+        "recommended": { "type": "boolean" },
+        "mcpAuth": { "enum": ["none", "oauth"] },
+        "gitGate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["event", "operation", "provider"],
+          "properties": {
+            "event": { "enum": ["pre-commit", "pre-push"] },
+            "operation": { "type": "string", "minLength": 1 },
+            "provider": {
+              "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+            }
+          }
+        }
+      }
+    },
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direct_selections", "targets", "components", "blocked"],
+      "properties": {
+        "direct_selections": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/stableId"
+          }
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/component"
+          }
+        },
+        "blocked": { "type": "boolean" }
+      }
+    },
+    "mcpSessionAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "component", "results"],
+      "properties": {
+        "operation": { "enum": ["inspect", "login", "logout"] },
+        "component": {
+          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/mcpSessionResult"
+          }
+        }
+      }
+    }
+  }
+}

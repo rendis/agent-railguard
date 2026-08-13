@@ -1,0 +1,325 @@
+schema: ai-harness/v1
+version: 0.1.0
+
+catalog:
+  skills:
+    build-e2e-test-suite:
+      version: 0.1.0
+      details: Use when a change needs executable proof across real system boundaries. Build end-to-end acceptance coverage for its public user journeys.
+      source: skills/build-e2e-test-suite
+      relations:
+        - kind: requires
+          target: skill:design-tests
+          reason: Creating or changing an acceptance scenario requires an explicit behavioral proof contract.
+
+    configure-go-quality:
+      version: 0.1.0
+      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair `make check` and `make verify` before hooks or agents rely on them.
+      source: skills/configure-go-quality
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The skill configures and operates the canonical Go verification contract.
+
+    design-tests:
+      version: 0.1.0
+      details: Use when tests must be created or materially redesigned. Turn expected behavior and risks into observable test contracts before implementation.
+      source: skills/design-tests
+
+    develop-go-hexagonal-service:
+      version: 0.1.0
+      details: Use for end-to-end delivery of a Go service feature, fix or refactor. Coordinate design, implementation, tests, quality configuration and review while keeping domain boundaries explicit.
+      source: skills/develop-go-hexagonal-service
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: skill:build-e2e-test-suite
+          reason: The delivery workflow promises applicable public-journey acceptance.
+        - kind: requires
+          target: skill:configure-go-quality
+          reason: The delivery workflow promises quality readiness setup and repair.
+        - kind: requires
+          target: skill:design-tests
+          reason: The delivery workflow can create or materially redesign behavioral proofs.
+        - kind: requires
+          target: skill:review-go-quality
+          reason: The delivery workflow requires a read-only challenge of each fixed candidate.
+        - kind: requires
+          target: skill:tdd
+          reason: Features, fixes, and behavior-preserving refactors require the test-first workflow.
+        - kind: requires
+          target: skill:test-go-service
+          reason: Test-only work and selected hardening require Go-specific test evidence.
+
+    review-go-quality:
+      version: 0.1.0
+      details: Use after a Go change is implemented and its quality commands are known. Challenge correctness, architecture, verification evidence and operational risk without editing the candidate.
+      source: skills/review-go-quality
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: skill:configure-go-quality
+          reason: Configuration candidates and readiness claims require the configuration assessment semantics.
+
+    tdd:
+      version: 0.1.0
+      details: Use for features, bug fixes and behavior-preserving refactors. Implement the change through a red, green and refactor cycle with observable evidence.
+      source: skills/tdd
+      relations:
+        - kind: requires
+          target: skill:design-tests
+          reason: Creating or materially redesigning a test requires an explicit behavioral proof contract.
+
+    test-go-service:
+      version: 0.1.0
+      details: Use for focused Go test work that does not require the full service delivery workflow. Choose the correct boundary, doubles and deterministic evidence.
+      source: skills/test-go-service
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: skill:design-tests
+          reason: Creating or materially redesigning a Go test requires an explicit behavioral proof contract.
+
+  mcps:
+    context7:
+      version: 0.1.0
+      description: Use Context7 when current third-party library behavior cannot be established from repository code, types or pinned documentation.
+      details: Install Context7 as a project-scoped MCP integration using its pinned npx command without login or an API key. Agents can resolve library identities and query current upstream documentation when repository evidence is insufficient.
+      trust: third-party-network
+      connection:
+        type: stdio
+        command: npx
+        args: ["-y", "@upstash/context7-mcp@4.0.0"]
+      tools: [query-docs, resolve-library-id]
+      network: runtime-required
+      auth:
+        type: none
+    atlassian-rovo:
+      version: 0.1.0
+      description: Use only when Jira or Confluence context or actions are required for the task.
+      details: Configure the official cloud-hosted Atlassian Rovo MCP endpoint in each selected project harness. The harness owns OAuth consent and credentials. The server can search and read Jira and Confluence and can expose write operations when the authenticated user and organization permit them; native approvals remain in force.
+      trust: third-party-network
+      connection:
+        type: remote-http
+        url: https://mcp.atlassian.com/v1/mcp/authv2
+      tools:
+        - createConfluencePage
+        - createJiraIssue
+        - editJiraIssue
+        - getConfluencePage
+        - getJiraIssue
+        - searchConfluenceUsingCql
+        - searchJiraIssuesUsingJql
+        - updateConfluencePage
+      network: runtime-required
+      auth:
+        type: oauth
+        activation: harness-native
+  verification-profiles:
+    go-quality:
+      version: 0.1.0
+      description: "Use `make check` during development and `make verify` before delivery for Go changes. Use `SCOPE=<project-unit>` only to limit a check to one detected Go unit."
+      details: Create or update only AI Harness-managed Makefile sections. make check verifies gofmt, runs go test and go vet; make verify also runs race-enabled tests. In a monorepo the root targets aggregate every detected Go module, while SCOPE can select one module. Developers, skills and optional Git gates call the same commands; this component does not enable a Git hook by itself.
+      applies:
+        languages: [go]
+      executables: [find, go, gofmt, make]
+      inputs:
+        module_roots:
+          type: string-list
+          default: ["."]
+          item_pattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+          make_variable: GO_MODULE_ROOTS
+          source: project-units
+        test_packages:
+          type: string-list
+          default: ["./..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+          make_variable: GO_TEST_PACKAGES
+      make:
+        targets: [ai-harness-go-check, ai-harness-go-verify]
+        operations:
+          check: ai-harness-go-check
+          verify: ai-harness-go-verify
+        body: |
+          GO_SELECTED_MODULE_ROOTS = $(if $(strip $(SCOPE)),$(filter $(SCOPE),$(GO_MODULE_ROOTS)),$(GO_MODULE_ROOTS))
+
+          .PHONY: ai-harness-go-check ai-harness-go-verify
+
+          ai-harness-go-check:
+          	@if test -n "$(strip $(SCOPE))" && test -z "$(GO_SELECTED_MODULE_ROOTS)"; then echo "Unknown Go quality scope: $(SCOPE)" >&2; exit 2; fi
+          	@set -eu; for module in $(GO_SELECTED_MODULE_ROOTS); do \
+          	  unformatted="$$(find "$$module" -type f -name '*.go' -not -path '*/vendor/*' -exec gofmt -l {} +)"; \
+          	  if test -n "$$unformatted"; then echo "Go files require gofmt in $$module:" >&2; echo "$$unformatted" >&2; exit 1; fi; \
+          	  (cd "$$module" && go test $(GO_TEST_PACKAGES)); \
+          	  (cd "$$module" && go vet $(GO_TEST_PACKAGES)); \
+          	done
+
+          ai-harness-go-verify: ai-harness-go-check
+          	@set -eu; for module in $(GO_SELECTED_MODULE_ROOTS); do \
+          	  (cd "$$module" && go test -race $(GO_TEST_PACKAGES)); \
+          	done
+
+  git-gates:
+    pre-commit-check:
+      version: 0.1.0
+      description: Run Go Quality fast checks before a local commit.
+      details: Add the make check operation to the managed pre-commit hook. By default it checks every detected Go project unit; an explicit scopes input limits it to named roots while retaining the same root Make contract.
+      event: pre-commit
+      operation: check
+      inputs:
+        scopes:
+          type: string-list
+          default: ["*"]
+          item_pattern: "^(?:\\*|\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality check provider.
+
+    pre-commit-verify:
+      version: 0.1.0
+      description: Run Go Quality full verification before a local commit.
+      details: Add the make verify operation to the managed pre-commit hook for teams that require race-enabled verification before every commit. Scopes default to every detected Go project unit.
+      event: pre-commit
+      operation: verify
+      inputs:
+        scopes:
+          type: string-list
+          default: ["*"]
+          item_pattern: "^(?:\\*|\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality verify provider.
+
+    pre-push-check:
+      version: 0.1.0
+      description: Run Go Quality fast checks before a local push.
+      details: Add the make check operation to the managed pre-push hook. It provides a faster push gate than full verification and can target all detected Go units or explicit scopes.
+      event: pre-push
+      operation: check
+      inputs:
+        scopes:
+          type: string-list
+          default: ["*"]
+          item_pattern: "^(?:\\*|\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality check provider.
+
+    pre-push-verify:
+      version: 0.1.0
+      description: Run Go Quality full verification before a local push.
+      details: Add the make verify operation to the managed pre-push hook. By default it verifies every detected Go project unit and can be limited to explicit project scopes.
+      event: pre-push
+      operation: verify
+      inputs:
+        scopes:
+          type: string-list
+          default: ["*"]
+          item_pattern: "^(?:\\*|\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality verify provider.
+  instruction-fragments:
+    agents-mapping:
+      version: 0.1.0
+      description: Route bounded review work to a matching specialist agent.
+      details: Generate a concise delegation index with an observable criterion and required workflow for each available specialist.
+      section: agents.mapping
+      content:
+        kind: catalog-index
+        group: agents
+
+    automation-mapping:
+      version: 0.1.0
+      description: Explain when automatic project gates run and how to respond to failures.
+      details: Generate a concise automation index with each gate's trigger and canonical reproduction command.
+      section: automation.mapping
+      content:
+        kind: catalog-index
+        group: automation
+
+    mcps-mapping:
+      version: 0.1.0
+      description: Route external-context work to the relevant project integration.
+      details: Generate a concise external-tool index with observable use criteria and material network or authorization boundaries.
+      section: mcps.mapping
+      content:
+        kind: catalog-index
+        group: mcps
+
+    quality-mapping:
+      version: 0.1.0
+      description: Route project verification through its canonical deterministic commands.
+      details: Generate a concise verification index with the command, timing and meaningful scope controls for each profile.
+      section: quality.mapping
+      content:
+        kind: catalog-index
+        group: quality
+
+    skills-mapping:
+      version: 0.1.0
+      description: Route applicable work to the relevant skill workflow.
+      details: Generate a concise skill index with an observable use criterion and one canonical SKILL.md pointer per workflow.
+      section: skills.mapping
+      content:
+        kind: catalog-index
+        group: skills
+
+  packs:
+    go-service-foundation:
+      version: 0.1.0
+      description: Install the complete project-scoped foundation for developing and reviewing a Go service.
+      details: Select the curated Go service setup as one direct choice while transparently including its skills, Context7 integration, quality profile, Git gates and reviewer agent. The review step still lists every dependency and file effect before installation.
+      applies:
+        languages: [go]
+      relations:
+        - kind: includes
+          target: agent:go-reviewer
+          reason: The foundation includes a focused Go review workflow.
+        - kind: includes
+          target: git-gate:pre-commit-check
+          reason: The foundation checks fast verification before commits.
+        - kind: includes
+          target: git-gate:pre-push-verify
+          reason: The foundation runs complete verification before pushes.
+        - kind: includes
+          target: mcp:context7
+          reason: Go services commonly depend on external libraries whose current APIs require documentation.
+        - kind: includes
+          target: skill:develop-go-hexagonal-service
+          reason: The foundation includes the complete Go delivery workflow.
+
+    testing-foundation:
+      version: 0.1.0
+      description: Install the portable test design, TDD and end-to-end workflow skills.
+      details: Select a language-portable testing foundation that combines behavioral test design, test-driven development and public-journey end-to-end coverage. It installs only project instructions and skills required by that workflow.
+      relations:
+        - kind: includes
+          target: skill:build-e2e-test-suite
+          reason: The foundation covers public-journey acceptance scenarios.
+        - kind: includes
+          target: skill:tdd
+          reason: The foundation covers behavior changes through a test-first workflow.
+
+  agents:
+    go-reviewer:
+      version: 0.1.0
+      description: Review a Go change for correctness, architecture, verification evidence and operational risk.
+      details: Install a specialized read-only Go reviewer for supported harnesses. It inspects repository rules, the exact change and verification evidence, then reports only actionable findings with precise locations and severity.
+      applies:
+        languages: [go]
+      prompt: |
+        Review the current Go change without editing it. Inspect the repository contract, the exact diff and available verification evidence. Report only actionable findings ordered by severity, cite precise paths, and state plainly when no finding remains.
+      relations:
+        - kind: requires
+          target: skill:review-go-quality
+          reason: The specialized agent follows the canonical Go quality review procedure.

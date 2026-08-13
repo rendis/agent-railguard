@@ -1,0 +1,50 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - contextcheck
+    - errcheck
+    - errorlint
+    - gocognit
+    - gocritic
+    - godoclint
+    - gosec
+    - govet
+    - ineffassign
+    - noctx
+    - staticcheck
+    - thelper
+    - unused
+    - usetesting
+  settings:
+    gocognit:
+      min-complexity: 15
+    godoclint:
+      default: basic
+      enable:
+        - require-doc
+      options:
+        require-doc:
+          ignore-exported: false
+          ignore-unexported: true
+          include-tests: false
+        start-with-name:
+          include-unexported: false
+          include-tests: false
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gocognit
+          - godoclint
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

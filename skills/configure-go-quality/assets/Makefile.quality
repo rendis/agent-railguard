@@ -1,0 +1,150 @@
+# Native target baseline. For an AI Harness-managed verification block, submit
+# these targets and scopes as desired configuration and let the CLI regenerate it.
+# Otherwise merge into the existing Make owner. Adapt only evidence-backed scopes.
+
+.PHONY: fmt-check mod-verify quality-readiness quality-negative-probe test test-core coverage coverage-core coverage-overall vet lint check vuln test-race test-fuzz mutation mutation-baseline mutation-run mutation-verdict test-e2e verify-hardening
+
+QUALITY_DIR ?= tmp/quality
+MUTATION_DIR ?= tmp/mutation
+GO_SOURCE_DIRS ?= cmd internal tests
+GO_TEST_PACKAGES ?= ./...
+GO_CORE_PACKAGES ?= ./internal/core/...
+OVERALL_COVERPKG ?= ./cmd/...,./internal/...
+CORE_COVERPKG ?= ./internal/core/...
+MUTATION_SCOPE ?= ./internal/core
+MUTATION_BASELINE_PACKAGES ?= ./internal/core/...
+MUTATION_REPORT ?= $(MUTATION_DIR)/governed.json
+E2E_PACKAGES ?= ./tests/e2e/...
+VULN_DB ?= https://vuln.go.dev
+FUZZ_PACKAGE ?=
+FUZZ_TARGET ?=
+FUZZ_TIME ?= 5s
+HARDENING_EXTRA_TARGETS ?=
+
+fmt-check:
+	@unformatted="$$(find $(GO_SOURCE_DIRS) -type f -name '*.go' -exec gofmt -l {} +)"; \
+	if test -n "$$unformatted"; then \
+		echo "Go files require gofmt:" >&2; \
+		echo "$$unformatted" >&2; \
+		exit 1; \
+	fi
+
+mod-verify:
+	go mod verify
+
+quality-readiness: mod-verify quality-negative-probe
+	@module_root="$$(cd "$$(dirname "$$(go env GOMOD)")" && pwd -P)"; \
+	repository_root="$$(pwd -P)"; \
+	test "$$module_root/go.mod" = "$$repository_root/go.mod" || { echo "unexpected Go module: $$(go env GOMOD)" >&2; exit 1; }
+	go tool golangci-lint version
+	go tool golangci-lint config verify --config .golangci.yml
+	go tool govulncheck -version
+	go tool gremlins --version
+	go tool gojq --version
+	@probe_db='https://example.invalid/vulndb'; \
+	probe_output="$$(VULN_DB="$$probe_db" $(MAKE) -n --no-print-directory vuln)"; \
+	printf '%s\n' "$$probe_output" | grep -Fq "go tool govulncheck -db $$probe_db " || { echo "vulnerability target does not consume VULN_DB from the environment" >&2; exit 1; }
+	@grep -Eq 'go tool golangci-lint run --config \.golangci\.yml' Makefile || { echo "lint must use the repository config explicitly" >&2; exit 1; }
+	@if grep -En '(\.[q]uality|\.[a]gents|\.[c]odex|\$$[H]OME|~[/]|/[U]sers/)' Makefile; then echo "canonical commands reference a forbidden local path" >&2; exit 1; fi
+	@git check-ignore -q $(QUALITY_DIR)/probe.coverage || { echo "generated quality evidence is not ignored" >&2; exit 1; }
+	@git check-ignore -q $(MUTATION_DIR)/probe.json || { echo "generated mutation evidence is not ignored" >&2; exit 1; }
+	@$(MAKE) -n --no-print-directory check test-race test-fuzz >/dev/null
+	@hardening_dry_run="$$( $(MAKE) -n --no-print-directory verify-hardening )"; \
+	printf '%s\n' "$$hardening_dry_run" | grep -Eq 'go test .* -race|go test -race' || { echo "verify-hardening does not include the race target" >&2; exit 1; }; \
+	printf '%s\n' "$$hardening_dry_run" | grep -Fq -- '-fuzz' || { echo "verify-hardening does not include the fuzz target" >&2; exit 1; }
+	@test -s .gremlins.yaml || { echo "Gremlins configuration is missing" >&2; exit 1; }
+	@grep -Eq 'go tool gremlins --config \.gremlins\.yaml unleash' Makefile || { echo "mutation must use the repository config explicitly" >&2; exit 1; }
+
+quality-negative-probe:
+	@mkdir -p $(QUALITY_DIR); \
+	probe_dir="$$(mktemp -d $(QUALITY_DIR)/readiness-negative.XXXXXX)"; \
+	probe_log="$$probe_dir/lint.log"; \
+	poisoned_log="$$probe_dir/lint-poisoned-home.log"; \
+	poisoned_home="$$probe_dir/home"; \
+	repository_root="$$(pwd -P)"; \
+	normal_lint_cache="$$repository_root/$$probe_dir/lint-cache-normal"; \
+	poisoned_lint_cache="$$repository_root/$$probe_dir/lint-cache-poisoned"; \
+	trap 'rm -rf "$$probe_dir"' EXIT HUP INT TERM; \
+	mkdir -p "$$poisoned_home" "$$poisoned_home/xdg-config" "$$normal_lint_cache" "$$poisoned_lint_cache"; \
+	printf '%s\n' 'version: "2"' 'linters:' '  default: none' >"$$poisoned_home/.golangci.yml"; \
+	printf '%s\n' 'package readinessprobe' '' 'func MissingContract() {}' >"$$probe_dir/probe.go"; \
+	if GOLANGCI_LINT_CACHE="$$normal_lint_cache" go tool golangci-lint run --config .golangci.yml "./$$probe_dir/..." >"$$probe_log" 2>&1; then \
+		echo "negative readiness probe unexpectedly passed" >&2; \
+		exit 1; \
+	fi; \
+	grep -q 'godoclint' "$$probe_log" || { cat "$$probe_log" >&2; echo "negative readiness probe failed for the wrong reason" >&2; exit 1; }; \
+	gocache="$$(go env GOCACHE)"; \
+	gomodcache="$$(go env GOMODCACHE)"; \
+	if HOME="$$poisoned_home" XDG_CONFIG_HOME="$$poisoned_home/xdg-config" GOCACHE="$$gocache" GOMODCACHE="$$gomodcache" GOLANGCI_LINT_CACHE="$$poisoned_lint_cache" go tool golangci-lint run --config .golangci.yml "./$$probe_dir/..." >"$$poisoned_log" 2>&1; then \
+		echo "poisoned-home negative probe unexpectedly passed" >&2; \
+		exit 1; \
+	fi; \
+	grep -q 'godoclint' "$$poisoned_log" || { cat "$$poisoned_log" >&2; echo "poisoned home changed the effective analyzer" >&2; exit 1; }
+
+test:
+	@mkdir -p $(QUALITY_DIR); \
+	final="$(QUALITY_DIR)/overall.coverage"; \
+	temporary="$$final.tmp"; \
+	rm -f "$$final" "$$temporary"; \
+	go test -count=1 -covermode=atomic -coverpkg=$(OVERALL_COVERPKG) -coverprofile="$$temporary" $(GO_TEST_PACKAGES) || { rm -f "$$temporary"; exit 1; }; \
+	test -s "$$temporary" || { rm -f "$$temporary"; echo "overall coverage profile is missing" >&2; exit 1; }; \
+	mv "$$temporary" "$$final"
+
+test-core:
+	@mkdir -p $(QUALITY_DIR); \
+	final="$(QUALITY_DIR)/core.coverage"; \
+	temporary="$$final.tmp"; \
+	rm -f "$$final" "$$temporary"; \
+	go test -count=1 -covermode=atomic -coverpkg=$(CORE_COVERPKG) -coverprofile="$$temporary" $(GO_CORE_PACKAGES) || { rm -f "$$temporary"; exit 1; }; \
+	test -s "$$temporary" || { rm -f "$$temporary"; echo "core coverage profile is missing" >&2; exit 1; }; \
+	mv "$$temporary" "$$final"
+
+coverage: coverage-core coverage-overall
+
+coverage-core: test-core
+	@awk 'NR > 1 { statements[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } END { for (block in statements) { total += statements[block]; if (hit[block]) covered += statements[block] } printf "core coverage: %d/%d statements\n", covered, total; if (total == 0 || covered != total) { print "core coverage must be exactly 100%" > "/dev/stderr"; exit 1 } }' $(QUALITY_DIR)/core.coverage
+
+coverage-overall: test
+	@awk 'NR > 1 { statements[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } END { for (block in statements) { total += statements[block]; if (hit[block]) covered += statements[block] } printf "overall coverage: %d/%d statements (%.2f%%)\n", covered, total, total ? covered * 100 / total : 0; if (total == 0 || covered * 100 <= total * 85) { print "overall coverage must be strictly greater than 85%" > "/dev/stderr"; exit 1 } }' $(QUALITY_DIR)/overall.coverage
+
+vet:
+	go vet $(GO_TEST_PACKAGES)
+
+lint:
+	go tool golangci-lint run --config .golangci.yml $(GO_TEST_PACKAGES)
+
+check: fmt-check mod-verify coverage vet lint
+
+vuln:
+	go tool govulncheck -db $(VULN_DB) $(GO_TEST_PACKAGES)
+
+test-race:
+	go test -race $(GO_TEST_PACKAGES)
+
+test-fuzz:
+	@test -n "$(FUZZ_PACKAGE)" || { echo "no bounded fuzz package is configured" >&2; exit 1; }
+	@test -n "$(FUZZ_TARGET)" || { echo "no bounded fuzz target is configured" >&2; exit 1; }
+	go test -run '^$$' -fuzz '^$(FUZZ_TARGET)$$' -fuzztime=$(FUZZ_TIME) $(FUZZ_PACKAGE)
+
+mutation-baseline:
+	go test -count=1 $(MUTATION_BASELINE_PACKAGES)
+
+mutation-run: mutation-baseline
+	@mkdir -p $(MUTATION_DIR); \
+	final="$(MUTATION_REPORT)"; \
+	temporary="$$final.tmp"; \
+	rm -f "$$final" "$$temporary"; \
+	go tool gremlins --config .gremlins.yaml unleash --silent -o "$$temporary" $(MUTATION_SCOPE) || { rm -f "$$temporary"; exit 1; }; \
+	test -s "$$temporary" || { rm -f "$$temporary"; echo "mutation report is missing" >&2; exit 1; }; \
+	mv "$$temporary" "$$final"
+
+mutation-verdict: mutation-run
+	go tool gojq -e '[.files[] as $$file | $$file.mutations[] | . + {file_name: $$file.file_name}] as $$all | [$$all[] | select(.status != "KILLED")] as $$unresolved | if ($$all | length) == 0 then error("mutation campaigns produced zero mutants") elif ($$unresolved | length) > 0 then error("unresolved mutations require contextual review: \($$unresolved)") else {mutants: ($$all | length), killed: ([ $$all[] | select(.status == "KILLED") ] | length), operator_families: ([ $$all[].type ] | unique)} end' $(MUTATION_REPORT)
+
+mutation: mutation-verdict
+
+test-e2e:
+	go test -tags=e2e -count=1 $(E2E_PACKAGES)
+
+verify-hardening:
+	@$(MAKE) -k --no-print-directory check vuln test-race test-fuzz mutation test-e2e $(HARDENING_EXTRA_TARGETS)

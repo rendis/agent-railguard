@@ -1,0 +1,92 @@
+import { posix } from "node:path";
+import type { ProjectionIdentity, ProjectedUnit } from "../../../domain/projection/model.js";
+import {
+  ReadonlyBytes,
+  compareUtf8,
+  harnessTargetId,
+  relativePosixPath,
+  semVer,
+  sha256,
+  type ComponentRef,
+  type HarnessTargetId,
+} from "../../../domain/shared/types.js";
+import { harnessCapabilities } from "./harness-inspection.js";
+
+export function nativeProjectionIdentity(target: HarnessTargetId): ProjectionIdentity {
+  return Object.freeze({
+    target,
+    adapter: Object.freeze({ id: target, version: semVer("0.1.0") }),
+    capabilities: harnessCapabilities,
+  });
+}
+
+export function nativeFileUnit(input: {
+  readonly target: HarnessTargetId;
+  readonly role: "agent" | "mcp";
+  readonly path: string;
+  readonly text: string;
+  readonly sources: readonly ComponentRef[];
+  readonly owner?: string;
+  readonly mode?: number;
+}): ProjectedUnit {
+  const path = relativePosixPath(input.path);
+  const directory = posix.dirname(path);
+  const scopeRoot = relativePosixPath(directory, { allowRoot: directory === "." });
+  const suffix = sha256(path).slice("sha256:".length, "sha256:".length + 12);
+  return Object.freeze({
+    kind: "artifact",
+    ownershipId: `${input.target}.${input.role}.file.${suffix}`,
+    sources: Object.freeze([...input.sources].sort(compareUtf8)),
+    intent: Object.freeze({
+      kind: "file",
+      owner: input.owner ?? `${input.target}:${input.role}`,
+      scopeRoot,
+      path,
+      bytes: new ReadonlyBytes(new TextEncoder().encode(input.text)),
+      mode: input.mode ?? 0o644,
+    }),
+  });
+}
+
+export function nativeSectionUnit(input: {
+  readonly target: HarnessTargetId;
+  readonly path: string;
+  readonly sectionId: string;
+  readonly body: string;
+  readonly source: ComponentRef;
+}): ProjectedUnit {
+  return Object.freeze({
+    kind: "artifact",
+    ownershipId: `${input.target}.mcp.section.${input.sectionId}`,
+    sources: Object.freeze([input.source]),
+    intent: Object.freeze({
+      kind: "managed-section",
+      owner: input.source,
+      path: relativePosixPath(input.path),
+      sectionId: input.sectionId,
+      body: input.body,
+      mode: 0o644,
+      markerStyle: "hash",
+    }),
+  });
+}
+
+export function stablePrettyJson(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+export function yamlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+export function normalizedPrompt(value: string): string {
+  return value.trimEnd();
+}
+
+export function componentId(ref: ComponentRef): string {
+  return ref.slice(ref.indexOf(":") + 1);
+}
+
+export function target(value: string): HarnessTargetId {
+  return harnessTargetId(value);
+}

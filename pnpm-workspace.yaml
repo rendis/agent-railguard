@@ -1,0 +1,8 @@
+packages:
+  - .
+
+allowBuilds:
+  esbuild: true
+
+verifyDepsBeforeRun: error
+enableGlobalVirtualStore: false

@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Harness · Shared CLI/TUI interaction prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090b0d;
+      --panel: #101417;
+      --panel-2: #14191d;
+      --line: #38434a;
+      --text: #e8edf0;
+      --muted: #92a0a8;
+      --cyan: #46d7e8;
+      --green: #62df83;
+      --yellow: #f6c453;
+      --red: #f07878;
+      --focus: #0c343b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 80% -10%, rgba(70, 215, 232, 0.08), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      line-height: 1.45;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #10161a;
+      color: var(--text);
+      padding: 0.55rem 0.7rem;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    button:hover, button:focus-visible {
+      border-color: var(--cyan);
+      outline: none;
+      background: var(--focus);
+    }
+
+    button[disabled] {
+      opacity: 0.38;
+      cursor: not-allowed;
+    }
+
+    .page {
+      width: min(1540px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 1.25rem 0 3rem;
+    }
+
+    .prototype-notice {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--yellow);
+      color: var(--yellow);
+      background: rgba(246, 196, 83, 0.05);
+    }
+
+    .question {
+      margin-bottom: 1rem;
+      padding: 1rem 1.15rem;
+      border-left: 3px solid var(--cyan);
+      background: var(--panel);
+    }
+
+    .question h1 {
+      margin: 0 0 0.45rem;
+      color: var(--cyan);
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .question p { margin: 0; max-width: 110ch; }
+
+    .shell {
+      border: 1px solid var(--line);
+      background: rgba(9, 11, 13, 0.92);
+      box-shadow: 0 18px 70px rgba(0, 0, 0, 0.35);
+    }
+
+    .app-header, .health, .impact, .activity {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.4rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand { font-weight: 800; letter-spacing: 0.08em; }
+    .accent { color: var(--cyan); }
+    .success { color: var(--green); }
+    .warning { color: var(--yellow); }
+    .danger { color: var(--red); }
+    .muted { color: var(--muted); }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 250px minmax(420px, 1fr) minmax(320px, 0.78fr);
+      min-height: 580px;
+    }
+
+    .panel {
+      min-width: 0;
+      padding: 1rem;
+      border-right: 1px solid var(--line);
+    }
+
+    .panel:last-child { border-right: 0; }
+
+    .panel h2, .panel h3 {
+      margin: 0 0 0.8rem;
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .nav-item {
+      padding: 0.5rem 0.65rem;
+      color: var(--muted);
+    }
+
+    .nav-item.active {
+      color: var(--cyan);
+      background: var(--focus);
+      border-left: 3px solid var(--cyan);
+    }
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr);
+      gap: 0.42rem 0.8rem;
+      margin-bottom: 1rem;
+    }
+
+    .state-grid dt { color: var(--muted); }
+    .state-grid dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .component {
+      display: grid;
+      grid-template-columns: 2rem minmax(0, 1fr) auto;
+      gap: 0.5rem;
+      padding: 0.46rem 0;
+      border-bottom: 1px solid rgba(56, 67, 74, 0.55);
+    }
+
+    .component small {
+      display: block;
+      margin-top: 0.15rem;
+      color: var(--muted);
+    }
+
+    .receipt {
+      padding: 0.85rem;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+    }
+
+    .receipt.empty { color: var(--muted); }
+
+    .task {
+      display: grid;
+      grid-template-columns: 1.5rem minmax(0, 1fr);
+      gap: 0.45rem;
+      padding: 0.3rem 0;
+    }
+
+    .impact {
+      justify-content: center;
+      color: var(--green);
+      border-top: 1px solid var(--line);
+    }
+
+    .activity { color: var(--cyan); }
+
+    .lab {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 1rem;
+    }
+
+    .card h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+      color: var(--cyan);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.5rem;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .tab.active {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: var(--focus);
+    }
+
+    .scenario-steps {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .scenario-step {
+      display: grid;
+      grid-template-columns: 2rem minmax(0, 1fr);
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .scenario-step .number {
+      display: grid;
+      width: 1.8rem;
+      height: 1.8rem;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+    }
+
+    .scenario-step.done .number {
+      color: var(--green);
+      border-color: var(--green);
+    }
+
+    .history {
+      max-height: 270px;
+      overflow: auto;
+      margin: 0;
+      padding-left: 1.4rem;
+      color: var(--muted);
+    }
+
+    .history li { padding: 0.18rem 0; }
+
+    .footer-note {
+      margin-top: 1rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 1080px) {
+      .workspace { grid-template-columns: 210px 1fr; }
+      .workspace .panel:last-child {
+        grid-column: 1 / -1;
+        border-top: 1px solid var(--line);
+      }
+      .lab { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .page { width: min(100% - 1rem, 1540px); }
+      .workspace { display: block; }
+      .panel { border-right: 0; border-bottom: 1px solid var(--line); }
+      .actions { grid-template-columns: 1fr 1fr; }
+      .prototype-notice { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="prototype-notice">
+      <strong>PROTOTYPE · no escribe archivos</strong>
+      <span>La máquina es deliberadamente descartable; el contrato validado se trasladará al código real.</span>
+    </div>
+
+    <section class="question">
+      <h1>Pregunta que responde</h1>
+      <p>
+        ¿Una única sesión que conserva el mismo snapshot, draft, resolución, plan y stream
+        de eventos puede alimentar CLI y TUI sin duplicar reglas; hacer visibles las
+        dependencias; exigir el plan ID exacto; y distinguir cancelación, rollback,
+        verificación fallida y recovery sin llamar “success” a un estado desconocido?
+      </p>
+    </section>
+
+    <section class="shell" aria-label="AI Harness interaction model">
+      <header class="app-header">
+        <span class="brand">AI HARNESS</span>
+        <span class="accent">inventory-service</span>
+        <span>main</span>
+        <span>CLI 0.1.0</span>
+        <span class="warning">INTERACTION PROTOTYPE</span>
+      </header>
+      <div class="health" id="health"></div>
+      <div class="workspace">
+        <nav class="panel">
+          <h2>Navigation</h2>
+          <div class="nav-item" data-nav="overview">Overview</div>
+          <div class="nav-item" data-nav="configure">Configure</div>
+          <div class="nav-item" data-nav="changes">Changes</div>
+          <div class="nav-item" data-nav="diagnostics">Diagnostics</div>
+          <h3 style="margin-top: 1.5rem">Transaction</h3>
+          <div class="nav-item" data-nav="reviewing">Review</div>
+          <div class="nav-item" data-nav="applying">Apply</div>
+          <div class="nav-item" data-nav="verifying">Verify</div>
+          <div class="nav-item" data-nav="receipted">Receipt</div>
+          <h3 style="margin-top: 1.5rem">Tasks</h3>
+          <div id="tasks"></div>
+        </nav>
+
+        <section class="panel">
+          <h2 class="accent">Current state</h2>
+          <dl class="state-grid" id="state-grid"></dl>
+          <h3>Resolved components</h3>
+          <div id="components"></div>
+        </section>
+
+        <aside class="panel">
+          <h2 class="accent">Why included / outcome</h2>
+          <div id="why"></div>
+          <h3 style="margin-top: 1.5rem">Receipt</h3>
+          <div class="receipt empty" id="receipt">No receipt yet. Review and approval have not produced an outcome.</div>
+        </aside>
+      </div>
+      <div class="impact" id="impact"></div>
+      <div class="activity" id="activity"></div>
+    </section>
+
+    <section class="lab">
+      <div class="card">
+        <h2>Free play · acciones siempre disponibles</h2>
+        <div class="actions" id="actions"></div>
+        <p class="footer-note">
+          Una acción ilegal no cambia el estado. Queda registrada como diagnóstico para
+          comprobar que la máquina no oculta transiciones imposibles.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>Guided walkthroughs</h2>
+        <div class="tabs" id="tabs"></div>
+        <div id="scenario"></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top: 1rem">
+      <h2>Event history</h2>
+      <ol class="history" id="history"></ol>
+    </section>
+
+    <p class="footer-note">
+      El ejecutable real del spike se inicia con <strong>pnpm prototype:interaction</strong>
+      y usa el slice Go + Codex sobre un repositorio temporal. Este HTML modela además
+      fallos y límites seguros que aún no expone el mutation engine provisional.
+    </p>
+  </main>
+
+  <script>
+    const COMPONENTS = [
+      { id: "skill:develop-go-hexagonal-service", origin: "direct", cause: "Selected directly" },
+      { id: "skill:configure-go-quality", origin: "required", cause: "required by develop-go-hexagonal-service" },
+      { id: "skill:review-go-quality", origin: "required", cause: "required by develop-go-hexagonal-service" },
+      { id: "skill:test-go-service", origin: "required", cause: "required by develop-go-hexagonal-service" },
+      { id: "skill:tdd", origin: "required", cause: "required by develop-go-hexagonal-service" },
+      { id: "skill:design-tests", origin: "required", cause: "required by tdd and test-go-service" },
+      { id: "skill:build-e2e-test-suite", origin: "required", cause: "required by develop-go-hexagonal-service" }
+    ];
+
+    const ACTIONS = [
+      ["reset", "Reset session"],
+      ["scan.start", "Start scan"],
+      ["scan.complete", "Complete scan"],
+      ["draft.recommended", "Select recommendation"],
+      ["target.select", "Select Codex target"],
+      ["resolution.complete", "Resolve dependencies"],
+      ["plan.create", "Create immutable plan"],
+      ["plan.approve", "Approve exact plan ID"],
+      ["apply.start", "Start apply / preflight"],
+      ["preflight.block", "Block preflight"],
+      ["write.start", "Cross first write"],
+      ["cancel.request", "Request cancellation"],
+      ["apply.complete", "Commit materialization"],
+      ["materialization.fail", "Fail materialization"],
+      ["rollback.complete", "Complete rollback"],
+      ["rollback.fail", "Fail rollback"],
+      ["certification.pass", "Pass certification"],
+      ["certification.fail", "Fail certification"],
+      ["remove.prepare", "Prepare removal"],
+      ["recovery.start", "Open recovery gate"],
+      ["recovery.complete", "Complete recovery"]
+    ];
+
+    const SCENARIOS = [
+      {
+        id: "happy",
+        label: "Install success",
+        description: "Happy path: scan, explicit target, visible dependency closure, exact approval, materialization and certification.",
+        seed: "fresh",
+        steps: ["scan.start", "scan.complete", "draft.recommended", "target.select", "resolution.complete", "plan.create", "plan.approve", "apply.start", "write.start", "apply.complete", "certification.pass"]
+      },
+      {
+        id: "remove",
+        label: "Remove direct",
+        description: "Removing the Direct selection recomputes an empty closure and removes only managed artifacts.",
+        seed: "managed",
+        steps: ["remove.prepare", "plan.create", "plan.approve", "apply.start", "write.start", "apply.complete", "certification.pass"]
+      },
+      {
+        id: "cancel-before",
+        label: "Cancel before write",
+        description: "Cancellation after Review but before the first write yields cancelled + unchanged.",
+        seed: "fresh",
+        steps: ["scan.start", "scan.complete", "draft.recommended", "target.select", "resolution.complete", "plan.create", "plan.approve", "cancel.request"]
+      },
+      {
+        id: "cancel-during",
+        label: "Cancel + rollback",
+        description: "A request during an atomic write waits for the safe boundary and then verifies rollback.",
+        seed: "approved",
+        steps: ["apply.start", "write.start", "cancel.request", "materialization.fail", "rollback.complete"]
+      },
+      {
+        id: "preflight",
+        label: "Preflight blocked",
+        description: "A predictable readiness failure rejects the plan before any consumer surface changes.",
+        seed: "approved",
+        steps: ["apply.start", "preflight.block"]
+      },
+      {
+        id: "certification",
+        label: "Certification failed",
+        description: "Mechanical commit remains; post-commit harness certification fails honestly and does not trigger rollback.",
+        seed: "approved",
+        steps: ["apply.start", "write.start", "apply.complete", "certification.fail"]
+      },
+      {
+        id: "recovery",
+        label: "Recovery required",
+        description: "A journal from an interrupted operation runs rollback before a new scan; unsafe evidence blocks instead of overwriting.",
+        seed: "interrupted",
+        steps: ["recovery.start", "rollback.fail"]
+      }
+    ];
+
+    function baseState() {
+      return {
+        phase: "idle",
+        management: "uninitialized",
+        integrity: "unknown",
+        readiness: "unknown",
+        update: "unknown",
+        scan: "not-started",
+        directSelections: [],
+        components: [],
+        target: null,
+        plan: null,
+        approvedPlanId: null,
+        writesStarted: false,
+        cancellation: "none",
+        materialization: "unchanged",
+        certification: "not-run",
+        receipt: null,
+        tasks: [],
+        lastEvent: "Session created",
+        history: ["session.created"],
+        diagnostic: null
+      };
+    }
+
+    function seedState(kind) {
+      let state = baseState();
+      if (kind === "managed") {
+        state.phase = "browsing";
+        state.management = "managed";
+        state.integrity = "clean";
+        state.readiness = "ready";
+        state.scan = "complete";
+        state.directSelections = [COMPONENTS[0].id];
+        state.components = COMPONENTS.slice();
+        state.target = "codex";
+        state.lastEvent = "Known managed repository loaded";
+        state.history.push("scenario.seed.managed");
+      }
+      if (kind === "approved") {
+        state = seedState("managed");
+        state.phase = "reviewing";
+        state.plan = { id: "sha256:70ff…525e8", mode: "reconcile", changes: 53 };
+        state.approvedPlanId = state.plan.id;
+        state.lastEvent = "Exact plan ID approved";
+        state.history.push("scenario.seed.approved");
+      }
+      if (kind === "interrupted") {
+        state = seedState("managed");
+        state.phase = "blocked";
+        state.integrity = "unknown";
+        state.writesStarted = true;
+        state.materialization = "unknown";
+        state.lastEvent = "Open journal detected before scan";
+        state.history.push("scenario.seed.interrupted-journal");
+      }
+      return state;
+    }
+
+    function illegal(state, action, reason) {
+      const next = structuredClone(state);
+      next.diagnostic = "Illegal transition: " + action + " · " + reason;
+      next.lastEvent = next.diagnostic;
+      next.history.push("rejected." + action);
+      return next;
+    }
+
+    function reduceInteraction(state, action) {
+      if (action === "reset") return baseState();
+      const next = structuredClone(state);
+      next.diagnostic = null;
+      next.history.push(action);
+      next.lastEvent = action;
+
+      switch (action) {
+        case "scan.start":
+          if (!["idle", "browsing", "receipted", "cancelled"].includes(state.phase)) return illegal(state, action, "scan requires a safe state");
+          next.phase = "scanning";
+          next.scan = "running";
+          next.tasks = [
+            { id: "inventory", label: "Repository inventory", state: "running" },
+            { id: "catalog", label: "Bundled catalog", state: "running" },
+            { id: "assessment", label: "Stack assessment", state: "waiting" },
+            { id: "harness", label: "Harness inspection", state: "waiting" }
+          ];
+          return next;
+        case "scan.complete":
+          if (state.phase !== "scanning") return illegal(state, action, "no scan is active");
+          next.phase = "browsing";
+          next.scan = "complete";
+          next.integrity = state.management === "managed" ? "clean" : "unknown";
+          next.readiness = "ready";
+          next.update = "none";
+          next.tasks = next.tasks.map(function (task) { return Object.assign({}, task, { state: "done" }); });
+          return next;
+        case "draft.recommended":
+          if (state.phase !== "browsing") return illegal(state, action, "recommendations require an observed snapshot");
+          next.phase = "drafting";
+          next.directSelections = [COMPONENTS[0].id];
+          next.components = [COMPONENTS[0]];
+          return next;
+        case "target.select":
+          if (state.phase !== "drafting") return illegal(state, action, "targets belong to the draft");
+          next.target = "codex";
+          return next;
+        case "resolution.complete":
+          if (state.phase !== "drafting" || state.directSelections.length === 0) return illegal(state, action, "a Direct selection is required");
+          next.components = COMPONENTS.slice();
+          return next;
+        case "plan.create":
+          if (state.phase !== "drafting") return illegal(state, action, "planning requires a resolved draft");
+          if (!state.target) return illegal(state, action, "detected harness is not an authorized target");
+          next.phase = "reviewing";
+          next.plan = {
+            id: state.directSelections.length === 0 ? "sha256:remove…91a2" : "sha256:70ff…525e8",
+            mode: state.directSelections.length === 0 ? "remove" : "reconcile",
+            changes: state.directSelections.length === 0 ? 53 : 53
+          };
+          next.approvedPlanId = null;
+          return next;
+        case "plan.approve":
+          if (state.phase !== "reviewing" || !state.plan) return illegal(state, action, "there is no immutable plan under review");
+          next.approvedPlanId = state.plan.id;
+          return next;
+        case "apply.start":
+          if (state.phase !== "reviewing" || !state.plan || state.approvedPlanId !== state.plan.id) return illegal(state, action, "the exact current plan ID is not approved");
+          next.phase = "applying";
+          next.tasks = [
+            { id: "preflight", label: "Preflight all destinations", state: "running" },
+            { id: "staging", label: "Stage every artifact", state: "waiting" },
+            { id: "backup", label: "Persist backups and journal", state: "waiting" },
+            { id: "materialize", label: "Materialize managed units", state: "waiting" },
+            { id: "verify", label: "Verify materialization", state: "waiting" }
+          ];
+          return next;
+        case "preflight.block":
+          if (state.phase !== "applying" || state.writesStarted) return illegal(state, action, "preflight must finish before writes");
+          next.phase = "receipted";
+          next.readiness = "blocked";
+          next.materialization = "unchanged";
+          next.tasks[0].state = "failed";
+          next.receipt = makeReceipt(next, "rejected", "unchanged", "not-run");
+          return next;
+        case "write.start":
+          if (state.phase !== "applying") return illegal(state, action, "apply is not active");
+          next.writesStarted = true;
+          next.materialization = "unknown";
+          next.tasks = next.tasks.map(function (task, index) {
+            return Object.assign({}, task, { state: index < 3 ? "done" : index === 3 ? "running" : "waiting" });
+          });
+          return next;
+        case "cancel.request":
+          if (state.phase === "reviewing" && !state.writesStarted) {
+            next.phase = "cancelled";
+            next.cancellation = "completed-before-write";
+            next.materialization = "unchanged";
+            next.receipt = makeReceipt(next, "cancelled", "unchanged", "not-run");
+            return next;
+          }
+          if (!["scanning", "applying", "verifying"].includes(state.phase)) return illegal(state, action, "nothing cancellable is active");
+          next.cancellation = "requested-waiting-safe-boundary";
+          return next;
+        case "apply.complete":
+          if (state.phase !== "applying" || !state.writesStarted) return illegal(state, action, "no writes were staged");
+          next.phase = "verifying";
+          next.materialization = "committed";
+          next.management = state.plan && state.plan.mode === "remove" ? "uninitialized" : "managed";
+          next.integrity = "clean";
+          next.tasks = next.tasks.map(function (task) { return Object.assign({}, task, { state: "done" }); });
+          return next;
+        case "materialization.fail":
+          if (state.phase !== "applying" || !state.writesStarted) return illegal(state, action, "a mechanical failure requires a changed unit");
+          next.phase = "applying";
+          next.materialization = "unknown";
+          next.tasks.push({ id: "rollback", label: "Rollback changed units", state: "running" });
+          return next;
+        case "rollback.complete":
+          if (!state.tasks.some(function (task) { return task.id === "rollback"; })) return illegal(state, action, "rollback was not started");
+          next.phase = "receipted";
+          next.materialization = "rolled-back";
+          next.cancellation = state.cancellation === "none" ? "none" : "completed-after-rollback";
+          next.tasks = next.tasks.map(function (task) {
+            return task.id === "rollback" ? Object.assign({}, task, { state: "done" }) : task;
+          });
+          next.receipt = makeReceipt(next, "rolled-back", "rolled-back", "not-run");
+          return next;
+        case "rollback.fail":
+          if (!(state.writesStarted || state.phase === "blocked")) return illegal(state, action, "there is no uncertain prior mutation");
+          next.phase = "receipted";
+          next.materialization = "unknown";
+          next.integrity = "unknown";
+          next.receipt = makeReceipt(next, "recovery-required", "unknown", "not-run");
+          return next;
+        case "certification.pass":
+          if (state.phase !== "verifying" || state.materialization !== "committed") return illegal(state, action, "mechanical commit is not verified");
+          next.phase = "receipted";
+          next.certification = "verified";
+          next.receipt = makeReceipt(next, "succeeded", "committed", "verified");
+          return next;
+        case "certification.fail":
+          if (state.phase !== "verifying" || state.materialization !== "committed") return illegal(state, action, "certification is post-commit");
+          next.phase = "receipted";
+          next.management = "partial";
+          next.certification = "failed";
+          next.receipt = makeReceipt(next, "verification-failed", "committed", "failed");
+          return next;
+        case "remove.prepare":
+          if (state.management !== "managed" || state.phase !== "browsing") return illegal(state, action, "only an owned Direct selection can be removed");
+          next.phase = "drafting";
+          next.directSelections = [];
+          next.components = [];
+          next.plan = null;
+          return next;
+        case "recovery.start":
+          if (!state.writesStarted || state.materialization !== "unknown") return illegal(state, action, "no open journal requires recovery");
+          next.phase = "applying";
+          next.tasks = [{ id: "rollback", label: "Recovery rollback before scan", state: "running" }];
+          return next;
+        case "recovery.complete":
+          if (!state.tasks.some(function (task) { return task.id === "rollback"; })) return illegal(state, action, "recovery is not active");
+          next.phase = "receipted";
+          next.materialization = "rolled-back";
+          next.receipt = makeReceipt(next, "rolled-back", "rolled-back", "not-run");
+          return next;
+        default:
+          return illegal(state, action, "unknown action");
+      }
+    }
+
+    function makeReceipt(state, result, materialization, certification) {
+      return {
+        result: result,
+        planId: state.plan ? state.plan.id : null,
+        materialization: materialization,
+        certification: certification,
+        cancellation: state.cancellation
+      };
+    }
+
+    let state = baseState();
+    let activeScenario = SCENARIOS[0];
+    let completedSteps = 0;
+
+    function dispatch(action) {
+      state = reduceInteraction(state, action);
+      renderAll();
+    }
+
+    function startScenario(id) {
+      activeScenario = SCENARIOS.find(function (scenario) { return scenario.id === id; });
+      state = seedState(activeScenario.seed);
+      completedSteps = 0;
+      renderAll();
+    }
+
+    function runScenarioStep(index) {
+      if (index !== completedSteps) return;
+      dispatch(activeScenario.steps[index]);
+      completedSteps += 1;
+      renderAll();
+    }
+
+    function renderAll() {
+      renderHealth();
+      renderNavigation();
+      renderState();
+      renderComponents();
+      renderWhy();
+      renderReceipt();
+      renderTasks();
+      renderImpact();
+      renderActivity();
+      renderActions();
+      renderTabs();
+      renderScenario();
+      renderHistory();
+    }
+
+    function renderHealth() {
+      document.getElementById("health").innerHTML =
+        healthItem("Management", state.management) +
+        healthItem("Integrity", state.integrity) +
+        healthItem("Readiness", state.readiness) +
+        healthItem("Updates", state.update);
+    }
+
+    function healthItem(label, value) {
+      const tone = ["clean", "ready", "managed", "none"].includes(value)
+        ? "success"
+        : ["blocked", "partial", "unknown"].includes(value)
+          ? "warning"
+          : "";
+      return "<span><span class='muted'>" + label + ":</span> <span class='" + tone + "'>" + value + "</span></span>";
+    }
+
+    function renderNavigation() {
+      const navState = state.phase === "browsing"
+        ? "overview"
+        : state.phase === "drafting"
+          ? "configure"
+          : state.phase;
+      document.querySelectorAll("[data-nav]").forEach(function (item) {
+        item.classList.toggle("active", item.getAttribute("data-nav") === navState);
+      });
+    }
+
+    function renderState() {
+      const rows = [
+        ["Phase", state.phase],
+        ["Scan", state.scan],
+        ["Target", state.target || "detected, not selected"],
+        ["Direct selections", String(state.directSelections.length)],
+        ["Resolved closure", String(state.components.length)],
+        ["Plan ID", state.plan ? state.plan.id : "none"],
+        ["Plan approved", state.approvedPlanId || "no"],
+        ["Writes started", state.writesStarted ? "yes" : "no"],
+        ["Cancellation", state.cancellation],
+        ["Materialization", state.materialization],
+        ["Certification", state.certification]
+      ];
+      document.getElementById("state-grid").innerHTML = rows.map(function (row) {
+        return "<dt>" + row[0] + "</dt><dd>" + row[1] + "</dd>";
+      }).join("");
+    }
+
+    function renderComponents() {
+      const target = document.getElementById("components");
+      if (state.components.length === 0) {
+        target.innerHTML = "<p class='muted'>No components in the resolved closure.</p>";
+        return;
+      }
+      target.innerHTML = state.components.map(function (component) {
+        const symbol = component.origin === "direct" ? "x" : "+";
+        return "<div class='component'><span>[" + symbol + "]</span><span>" +
+          component.id + "<small>" + component.cause + "</small></span><span class='" +
+          (component.origin === "direct" ? "success" : "accent") + "'>" + component.origin + "</span></div>";
+      }).join("");
+    }
+
+    function renderWhy() {
+      const direct = state.components.filter(function (component) { return component.origin === "direct"; });
+      const required = state.components.filter(function (component) { return component.origin === "required"; });
+      document.getElementById("why").innerHTML =
+        "<p><span class='success'>Direct:</span> " + (direct.map(function (item) { return item.id; }).join(", ") || "none") + "</p>" +
+        "<p><span class='accent'>Required:</span> " + required.length + " dependency components</p>" +
+        (state.diagnostic ? "<div class='receipt danger'>" + state.diagnostic + "</div>" : "") +
+        "<p class='muted'>A required component cannot be removed independently. Remove the Direct selection and resolve the graph again.</p>";
+    }
+
+    function renderReceipt() {
+      const target = document.getElementById("receipt");
+      if (!state.receipt) {
+        target.className = "receipt empty";
+        target.textContent = "No receipt yet. Review and approval have not produced an outcome.";
+        return;
+      }
+      target.className = "receipt";
+      const tone = ["succeeded", "no-changes"].includes(state.receipt.result)
+        ? "success"
+        : ["rejected", "cancelled", "verification-failed"].includes(state.receipt.result)
+          ? "warning"
+          : "danger";
+      target.innerHTML =
+        "<strong class='" + tone + "'>" + state.receipt.result + "</strong>" +
+        "<p>Plan: " + (state.receipt.planId || "none") + "</p>" +
+        "<p>Materialization: " + state.receipt.materialization + "</p>" +
+        "<p>Certification: " + state.receipt.certification + "</p>" +
+        "<p>Cancellation: " + state.receipt.cancellation + "</p>";
+    }
+
+    function renderTasks() {
+      const target = document.getElementById("tasks");
+      if (state.tasks.length === 0) {
+        target.innerHTML = "<p class='muted'>No active tasks.</p>";
+        return;
+      }
+      target.innerHTML = state.tasks.map(function (task) {
+        const symbol = task.state === "done" ? "✓" : task.state === "running" ? "◐" : task.state === "failed" ? "×" : "○";
+        const tone = task.state === "done" ? "success" : task.state === "running" ? "accent" : task.state === "failed" ? "danger" : "muted";
+        return "<div class='task'><span class='" + tone + "'>" + symbol + "</span><span>" + task.label + "<br><span class='muted'>" + task.state + "</span></span></div>";
+      }).join("");
+    }
+
+    function renderImpact() {
+      const changes = state.plan ? state.plan.changes : 0;
+      document.getElementById("impact").textContent =
+        "Draft: " + state.directSelections.length + " direct → " + state.components.length +
+        " components · " + changes + " changes · " + (state.target ? "1 target" : "0 targets");
+    }
+
+    function renderActivity() {
+      document.getElementById("activity").innerHTML =
+        "<span>Latest event:</span><span>" + state.lastEvent + "</span>";
+    }
+
+    function renderActions() {
+      document.getElementById("actions").innerHTML = ACTIONS.map(function (action) {
+        return "<button type='button' data-action='" + action[0] + "'>" + action[1] + "</button>";
+      }).join("");
+      document.querySelectorAll("[data-action]").forEach(function (button) {
+        button.addEventListener("click", function () { dispatch(button.getAttribute("data-action")); });
+      });
+    }
+
+    function renderTabs() {
+      document.getElementById("tabs").innerHTML = SCENARIOS.map(function (scenario) {
+        return "<button type='button' class='tab " + (scenario.id === activeScenario.id ? "active" : "") +
+          "' data-scenario='" + scenario.id + "'>" + scenario.label + "</button>";
+      }).join("");
+      document.querySelectorAll("[data-scenario]").forEach(function (button) {
+        button.addEventListener("click", function () { startScenario(button.getAttribute("data-scenario")); });
+      });
+    }
+
+    function renderScenario() {
+      document.getElementById("scenario").innerHTML =
+        "<p>" + activeScenario.description + "</p><div class='scenario-steps'>" +
+        activeScenario.steps.map(function (action, index) {
+          const done = index < completedSteps;
+          const active = index === completedSteps;
+          const label = ACTIONS.find(function (entry) { return entry[0] === action; })[1];
+          return "<div class='scenario-step " + (done ? "done" : "") + "'><span class='number'>" +
+            (done ? "✓" : index + 1) + "</span><button type='button' data-step='" + index + "'" +
+            (active ? "" : " disabled") + ">" + label + "<br><span class='muted'>" + action + "</span></button></div>";
+        }).join("") + "</div>";
+      document.querySelectorAll("[data-step]").forEach(function (button) {
+        button.addEventListener("click", function () { runScenarioStep(Number(button.getAttribute("data-step"))); });
+      });
+    }
+
+    function renderHistory() {
+      document.getElementById("history").innerHTML = state.history.map(function (entry) {
+        return "<li>" + entry + "</li>";
+      }).join("");
+    }
+
+    startScenario("happy");
+  </script>
+</body>
+</html>
