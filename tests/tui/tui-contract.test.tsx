@@ -1,12 +1,18 @@
 import React from "react";
 import { renderToString } from "ink";
+import { render as renderInteractive } from "ink-testing-library";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   componentRef,
   harnessTargetId,
 } from "../../src/domain/shared/types.js";
-import type { InteractionSnapshot } from "../../src/interaction/model.js";
+import type {
+  InteractionAction,
+  InteractionSession,
+  InteractionSnapshot,
+} from "../../src/interaction/model.js";
 import {
+  AiHarnessTui,
   AiHarnessTuiFrame,
   type TuiUpdateUi,
 } from "../../src/tui/app.js";
@@ -140,6 +146,87 @@ describe("responsive TUI contract", () => {
     expect(frame).not.toContain("[Enter] Apply exact plan");
     expect(frame).toContain("planning.managed-section.foreign");
     expect(frame).toContain("Resolve the reported collision");
+  });
+
+  it("shows exact Make collision evidence and a separate destructive confirmation", () => {
+    const blocked = makeCollisionSnapshot();
+    const review = renderToString(
+      <AiHarnessTuiFrame
+        snapshot={blocked}
+        root="/tmp/inventory-service"
+        columns={180}
+        rows={40}
+        detailOpen={false}
+        error={null}
+      />,
+      { columns: 180 },
+    );
+
+    expect(keyActions(blocked)).toContainEqual({ key: "o", label: "Replace conflicting targets" });
+    expect(review).toContain('Makefile defines unmanaged canonical target "check" at line');
+    expect(review).toContain("113.");
+    expect(review).toContain("Makefile:113");
+    expect(review).toContain('target "check" at line 113: check: fmt test');
+    expect(review).toContain("[o] Replace conflicting targets");
+    expect(review).not.toContain("[Enter] Apply exact plan");
+
+    const confirmation = renderToString(
+      <AiHarnessTuiFrame
+        snapshot={blocked}
+        root="/tmp/inventory-service"
+        columns={180}
+        rows={40}
+        detailOpen={false}
+        error={null}
+        makeCollisionConfirmation
+      />,
+      { columns: 180 },
+    );
+    expect(confirmation).toContain("CONFIRM MAKE TARGET REPLACEMENT");
+    expect(confirmation).toContain("Existing prerequisites and recipes");
+    expect(confirmation).toContain("No file is written now");
+    expect(confirmation).toContain("[Enter] Replace and review plan");
+    expect(confirmation).toContain("[Esc] Keep existing targets");
+  });
+
+  it("opens, cancels, and confirms Make replacement without dispatching Apply", async () => {
+    const blocked = makeCollisionSnapshot();
+    const actions: InteractionAction[] = [];
+    const session: InteractionSession = {
+      snapshot: blocked,
+      async dispatch(action) {
+        actions.push(action);
+        return blocked;
+      },
+      subscribe() {
+        return () => undefined;
+      },
+    };
+    const tui = renderInteractive(
+      <AiHarnessTui session={session} root="/tmp/inventory-service" />,
+    );
+    try {
+      await waitForInteractiveFrame(tui, "REVIEW EXACT PLAN");
+      tui.stdin.write("o");
+      await waitForInteractiveFrame(tui, "CONFIRM MAKE TARGET REPLACEMENT");
+      tui.stdin.write("\u001B");
+      await waitForInteractiveFrame(tui, "REVIEW EXACT PLAN");
+      expect(actions.filter((action) => action.type === "resolve-plan-blocker")).toEqual([]);
+
+      tui.stdin.write("o");
+      await waitForInteractiveFrame(tui, "CONFIRM MAKE TARGET REPLACEMENT");
+      tui.stdin.write("\r");
+      await waitForAction(actions, "resolve-plan-blocker");
+
+      expect(actions).toContainEqual({
+        type: "resolve-plan-blocker",
+        code: "quality.make.target-collision",
+        resolution: "replace",
+      });
+      expect(actions.some((action) => action.type === "approve-plan")).toBe(false);
+    } finally {
+      tui.unmount();
+    }
   });
 
   it("separates catalog composition from target selection", () => {
@@ -859,7 +946,9 @@ function blockedSnapshot(): InteractionSnapshot {
       Object.freeze({
         code: "repository.readiness.blocked",
         severity: "blocked" as const,
+        location: null,
         message: "Repository readiness check failed.",
+        evidence: Object.freeze([]),
         impact: "No changes can be applied.",
         action: "Resolve the condition and rescan.",
       }),
@@ -885,12 +974,71 @@ function reviewingBlockedSnapshot(): InteractionSnapshot {
       Object.freeze({
         code: "planning.managed-section.foreign",
         severity: "blocked" as const,
+        location: null,
         message: "A matching managed marker exists without portable ownership.",
+        evidence: Object.freeze([]),
         impact: "AI Harness will not adopt or overwrite the unowned block.",
         action: "Resolve the reported collision or unsafe evidence, then generate a new plan.",
       }),
     ]),
   });
+}
+
+function makeCollisionSnapshot(): InteractionSnapshot {
+  const baseline = draftingSnapshot();
+  return Object.freeze({
+    ...baseline,
+    phase: "reviewing" as const,
+    plan: Object.freeze({
+      kind: "blocked" as const,
+      id: null,
+      mode: "reconcile" as const,
+      changes: Object.freeze([]),
+      approvable: false,
+      review: null,
+      publicPlan: null,
+    }),
+    diagnostics: Object.freeze([
+      Object.freeze({
+        code: "quality.make.target-collision",
+        severity: "blocked" as const,
+        location: Object.freeze({ path: "Makefile", pointer: "line:113" }),
+        message: 'Makefile defines unmanaged canonical target "check" at line 113.',
+        evidence: Object.freeze(['target "check" at line 113: check: fmt test']),
+        impact: "AI Harness cannot own the canonical verification entrypoint while this rule remains.",
+        action: "Choose explicit replacement to remove this rule, or rename it before planning again.",
+        resolutions: Object.freeze([
+          Object.freeze({
+            action: "replace" as const,
+            label: "Replace conflicting Make targets",
+            destructive: true,
+          }),
+        ]),
+      }),
+    ]),
+  });
+}
+
+async function waitForInteractiveFrame(
+  tui: ReturnType<typeof renderInteractive>,
+  text: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (tui.lastFrame()?.includes(text) === true) return;
+    await new Promise<void>((resolveWait) => setTimeout(resolveWait, 5));
+  }
+  throw new Error(`Timed out waiting for frame containing ${text}`);
+}
+
+async function waitForAction(
+  actions: readonly InteractionAction[],
+  type: InteractionAction["type"],
+): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (actions.some((action) => action.type === type)) return;
+    await new Promise<void>((resolveWait) => setTimeout(resolveWait, 5));
+  }
+  throw new Error(`Timed out waiting for action ${type}`);
 }
 
 function catalogItem(

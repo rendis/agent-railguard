@@ -5,9 +5,11 @@ import type {
   CatalogVerificationProfileComponent,
 } from "../../../domain/catalog/model.js";
 import type { ExecutableProbe } from "../../../domain/harness/model.js";
-import type { ArtifactIntent } from "../../../domain/planning/model.js";
+import { inspectMakeTargets, type MakeTargetDeclaration } from "../../../domain/make/make-targets.js";
+import type { ArtifactIntent, ExactTextEdit } from "../../../domain/planning/model.js";
 import type {
   ProjectArtifactProjector,
+  ProjectPlanningContext,
   ProjectProjection,
   GitHookInventory,
   ProjectSelectionInputs,
@@ -51,6 +53,7 @@ export class QualityProjector implements ProjectArtifactProjector {
     assessment: RepositoryAssessmentResult,
     _targets: readonly HarnessTargetId[],
     selectionInputs: ProjectSelectionInputs,
+    context: ProjectPlanningContext = Object.freeze({ conflictResolutions: Object.freeze([]) }),
   ): Promise<ProjectProjection> {
     const byRef = new Map(catalog.components.map((component) => [component.ref, component]));
     const components = resolution.components
@@ -91,7 +94,12 @@ export class QualityProjector implements ProjectArtifactProjector {
         diagnostics.push(gitHooksUnreadableDiagnostic(error));
       }
     }
-    diagnostics.push(...(await detectMakeCollisions(snapshot, profiles)));
+    const replaceCollisions = context.conflictResolutions.some(
+      (resolution) =>
+        resolution.code === "quality.make.target-collision" && resolution.action === "replace",
+    );
+    const makeCollisions = await assessMakeCollisions(snapshot, profiles, replaceCollisions);
+    diagnostics.push(...makeCollisions.diagnostics);
 
     const intents: ArtifactIntent[] = profiles.map((profile) =>
       Object.freeze({
@@ -114,6 +122,9 @@ export class QualityProjector implements ProjectArtifactProjector {
           body: verificationEntrypoints(profiles),
           mode: 0o644,
           markerStyle: "hash",
+          ...(makeCollisions.edits.length === 0
+            ? {}
+            : { containerEdits: makeCollisions.edits }),
         }),
       );
     }
@@ -260,34 +271,66 @@ function intentSources(
   throw new TypeError(`Projection intent has no component source: ${intent.owner}`);
 }
 
-async function detectMakeCollisions(
+interface MakeCollisionAssessment {
+  readonly diagnostics: readonly Diagnostic[];
+  readonly edits: readonly ExactTextEdit[];
+}
+
+async function assessMakeCollisions(
   snapshot: RepositorySnapshot,
   profiles: readonly CatalogVerificationProfileComponent[],
-): Promise<readonly Diagnostic[]> {
+  replace: boolean,
+): Promise<MakeCollisionAssessment> {
   const entry = snapshot.entries.find((candidate) => candidate.path === "Makefile");
   if (entry === undefined) {
-    return [];
+    return Object.freeze({ diagnostics: Object.freeze([]), edits: Object.freeze([]) });
   }
   if (entry.kind !== "file") {
-    return [collisionDiagnostic([`Makefile:${entry.kind}`])];
+    return Object.freeze({
+      diagnostics: Object.freeze([collisionPathDiagnostic(entry.kind, profiles)]),
+      edits: Object.freeze([]),
+    });
   }
   const source = (await snapshot.read(relativePosixPath("Makefile"), maximumMakefileBytes)).bytes.toString();
   let unmanaged = source;
   for (const profile of profiles) {
     const id = `verification.${profile.ref.slice("verification-profile:".length)}`;
-    unmanaged = removeManagedSection(unmanaged, id);
+    unmanaged = maskManagedSection(unmanaged, id);
   }
-  unmanaged = removeManagedSection(unmanaged, "verification.entrypoints");
-  const collisions = profiles
+  unmanaged = maskManagedSection(unmanaged, "verification.entrypoints");
+  const targets = profiles
     .flatMap((profile) => [
       ...profile.make.targets,
       ...Object.keys(profile.make.operations),
     ])
-    .filter((target) => new RegExp(`^${escapeRegExp(target)}\\s*:`, "m").test(unmanaged));
-  return collisions.length === 0 ? [] : [collisionDiagnostic(collisions)];
+    .sort(compareUtf8);
+  const collisions = inspectMakeTargets(unmanaged, targets);
+  if (collisions.length === 0) {
+    return Object.freeze({ diagnostics: Object.freeze([]), edits: Object.freeze([]) });
+  }
+  const replaceable = collisions.every((collision) => collision.replaceable);
+  if (!replace || !replaceable) {
+    return Object.freeze({
+      diagnostics: Object.freeze([
+        collisionDiagnostic(collisions, profiles, !replaceable),
+      ]),
+      edits: Object.freeze([]),
+    });
+  }
+  return Object.freeze({
+    diagnostics: Object.freeze([]),
+    edits: Object.freeze(
+      collisions.map((collision) => Object.freeze({
+        start: collision.start,
+        end: collision.end,
+        expected: source.slice(collision.start, collision.end),
+        replacement: "",
+      })),
+    ),
+  });
 }
 
-function removeManagedSection(source: string, sectionId: string): string {
+function maskManagedSection(source: string, sectionId: string): string {
   const start = `# ai-harness:managed:start id="${sectionId}"`;
   const end = `# ai-harness:managed:end id="${sectionId}"`;
   const startIndex = source.indexOf(start);
@@ -295,7 +338,10 @@ function removeManagedSection(source: string, sectionId: string): string {
   if (startIndex < 0 || endIndex < startIndex) {
     return source;
   }
-  return `${source.slice(0, startIndex)}${source.slice(endIndex + end.length)}`;
+  const masked = source
+    .slice(startIndex, endIndex + end.length)
+    .replace(/[^\r\n]/gu, " ");
+  return `${source.slice(0, startIndex)}${masked}${source.slice(endIndex + end.length)}`;
 }
 
 function groupGatesByEvent(
@@ -358,17 +404,62 @@ function readinessDiagnostic(code: string, executable: string): Diagnostic {
   });
 }
 
-function collisionDiagnostic(targets: readonly string[]): Diagnostic {
+function collisionDiagnostic(
+  declarations: readonly MakeTargetDeclaration[],
+  profiles: readonly CatalogVerificationProfileComponent[],
+  unsupportedReplacement: boolean,
+): Diagnostic {
+  const summary = declarations
+    .map((declaration) => `"${declaration.target}" at line ${declaration.line}`)
+    .join(", ");
   return Object.freeze({
     code: "quality.make.target-collision",
     severity: "blocked",
     phase: "planning",
-    subjects: Object.freeze([]),
+    subjects: Object.freeze(profiles.map((profile) => profile.ref).sort(compareUtf8)),
+    location: Object.freeze({
+      path: relativePosixPath("Makefile"),
+      pointer: `line:${declarations[0]!.line}`,
+    }),
+    message: `Makefile defines unmanaged canonical target${declarations.length === 1 ? "" : "s"} ${summary}.`,
+    evidence: Object.freeze(
+      declarations.map(
+        (declaration) =>
+          `target "${declaration.target}" at line ${declaration.line}: ${declaration.declaration}`,
+      ),
+    ),
+    impact: "AI Harness cannot own the canonical verification entrypoint while these rules remain.",
+    action: unsupportedReplacement
+      ? "Rename the unsupported Make declaration before planning again."
+      : "Choose explicit replacement to remove these rules, or rename them before planning again.",
+    ...(unsupportedReplacement
+      ? {}
+      : {
+          resolutions: Object.freeze([
+            Object.freeze({
+              action: "replace" as const,
+              label: "Replace conflicting Make targets",
+              destructive: true,
+            }),
+          ]),
+        }),
+  });
+}
+
+function collisionPathDiagnostic(
+  kind: string,
+  profiles: readonly CatalogVerificationProfileComponent[],
+): Diagnostic {
+  return Object.freeze({
+    code: "quality.make.target-collision",
+    severity: "blocked",
+    phase: "planning",
+    subjects: Object.freeze(profiles.map((profile) => profile.ref).sort(compareUtf8)),
     location: Object.freeze({ path: relativePosixPath("Makefile") }),
-    message: "A foreign Make target collides with the canonical verification contract.",
-    evidence: Object.freeze([...targets].sort(compareUtf8)),
-    impact: "AI Harness cannot define an unambiguous check command without overwriting policy.",
-    action: "Rename the foreign target or explicitly adopt it before planning again.",
+    message: `Makefile is a ${kind}, not a writable regular file.`,
+    evidence: Object.freeze([`Makefile:${kind}`]),
+    impact: "AI Harness cannot define canonical verification entrypoints at this path.",
+    action: "Replace Makefile with a regular file before planning again.",
   });
 }
 
@@ -409,8 +500,4 @@ function requireComponent(
     throw new TypeError(`Resolution/catalog mismatch for component: ${ref}`);
   }
   return component;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

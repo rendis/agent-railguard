@@ -289,9 +289,14 @@ export function publicDiagnostics(
       Object.freeze({
         code: diagnostic.code,
         severity: diagnostic.severity,
+        location: diagnostic.location,
         message: diagnostic.message,
+        evidence: diagnostic.evidence,
         impact: diagnostic.impact,
         action: diagnostic.action,
+        ...(diagnostic.resolutions === undefined
+          ? {}
+          : { resolutions: diagnostic.resolutions }),
       }),
     ),
   );

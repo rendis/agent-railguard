@@ -4,6 +4,7 @@ import type { HarnessAdapter, HarnessInspection } from "../domain/harness/model.
 import type { ProjectObserver } from "../domain/observation/model.js";
 import type {
   ProjectArtifactProjector,
+  ProjectPlanningContext,
   ProjectProjectionCoordinator,
 } from "../domain/project/model.js";
 import { recommend } from "../domain/recommendation/recommend.js";
@@ -286,8 +287,9 @@ export class AiHarnessApplication implements AiHarnessCases {
     selections: readonly ComponentSelectionDraft[],
     targets: readonly HarnessTargetId[],
     mode: "reconcile" | "repair" | "remove",
+    context: ProjectPlanningContext = Object.freeze({ conflictResolutions: Object.freeze([]) }),
   ): Promise<InstallPreparation> {
-    return this.#prepare(scan, selections, targets, mode, false);
+    return this.#prepare(scan, selections, targets, mode, false, [], context);
   }
 
   public async prepareSync(scan: ScanResult): Promise<InstallPreparation> {
@@ -514,6 +516,7 @@ export class AiHarnessApplication implements AiHarnessCases {
     mode: "reconcile" | "repair" | "remove",
     uninitialize: boolean,
     initialDiagnostics: readonly Diagnostic[] = [],
+    context: ProjectPlanningContext = Object.freeze({ conflictResolutions: Object.freeze([]) }),
   ): Promise<InstallPreparation> {
     const ready = requireReadyScan(scan);
     const canonicalTargetIds = canonicalTargets(targets);
@@ -592,6 +595,7 @@ export class AiHarnessApplication implements AiHarnessCases {
                   selection.inputs,
                 ]) ?? [],
               ),
+              context,
             ),
           ),
         );

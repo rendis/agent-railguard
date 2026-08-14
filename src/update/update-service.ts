@@ -167,7 +167,15 @@ function diagnostic(
   impact: string,
   action: string,
 ): DiagnosticView {
-  return Object.freeze({ code, severity, message, impact, action });
+  return Object.freeze({
+    code,
+    severity,
+    location: null,
+    message,
+    evidence: Object.freeze([]),
+    impact,
+    action,
+  });
 }
 
 function parseStableSemVer(value: string): readonly [number, number, number] {

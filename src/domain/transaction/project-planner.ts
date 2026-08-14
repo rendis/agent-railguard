@@ -6,7 +6,7 @@ import {
   type ManagedSectionPlacement,
 } from "../managed-section/managed-section.js";
 import type { ManagedArtifactOwnership } from "../ownership/model.js";
-import type { GitConfigPort, GitConfigValue } from "../planning/model.js";
+import type { ExactTextEdit, GitConfigPort, GitConfigValue } from "../planning/model.js";
 import type { ProjectedUnit } from "../projection/model.js";
 import type { RepositoryEntry, RepositorySnapshot } from "../repository/model.js";
 import {
@@ -580,6 +580,20 @@ async function planSectionContainer(
       return;
     }
   }
+  const edited = applyExactContainerEdits(source, next, projected);
+  if (edited.kind === "invalid") {
+    diagnostics.push(
+      planningDiagnostic(
+        "planning.container-edit.invalid",
+        path,
+        edited.evidence,
+        "A confirmed container edit no longer matches the planned source.",
+        "Regenerate the plan and review the replacement against the current file.",
+      ),
+    );
+    return;
+  }
+  source = edited.text;
   let desired = source;
   const nextIds = new Set(next.map((artifact) => artifact.ownership_id));
   for (const artifact of [...previous]
@@ -691,6 +705,69 @@ async function planSectionContainer(
           : Object.freeze({ kind: "absent" }),
     }),
   );
+}
+
+function applyExactContainerEdits(
+  source: string,
+  next: readonly ManagedArtifactOwnership[],
+  projected: ReadonlyMap<string, Extract<ProjectedUnit, { readonly kind: "artifact" }>>,
+):
+  | { readonly kind: "ready"; readonly text: string }
+  | { readonly kind: "invalid"; readonly evidence: readonly string[] } {
+  const edits = next.flatMap((artifact) => {
+    if (artifact.kind !== "managed-section") return [];
+    const unit = projected.get(artifact.ownership_id);
+    return unit?.intent.kind === "managed-section"
+      ? [...(unit.intent.containerEdits ?? [])]
+      : [];
+  });
+  if (edits.length === 0) return Object.freeze({ kind: "ready", text: source });
+
+  const unique = new Map<string, ExactTextEdit>();
+  for (const edit of edits) {
+    const key = `${edit.start}\0${edit.end}\0${edit.expected}\0${edit.replacement}`;
+    unique.set(key, edit);
+  }
+  const ordered = [...unique.values()].sort((left, right) =>
+    left.start - right.start || left.end - right.end,
+  );
+  for (let index = 0; index < ordered.length; index += 1) {
+    const edit = ordered[index]!;
+    if (
+      !Number.isSafeInteger(edit.start) ||
+      !Number.isSafeInteger(edit.end) ||
+      edit.start < 0 ||
+      edit.end <= edit.start ||
+      edit.end > source.length ||
+      edit.expected.length !== edit.end - edit.start
+    ) {
+      return Object.freeze({
+        kind: "invalid",
+        evidence: Object.freeze([`invalid range ${edit.start}:${edit.end}`]),
+      });
+    }
+    const previous = ordered[index - 1];
+    if (previous !== undefined && edit.start < previous.end) {
+      return Object.freeze({
+        kind: "invalid",
+        evidence: Object.freeze([
+          `overlapping ranges ${previous.start}:${previous.end} and ${edit.start}:${edit.end}`,
+        ]),
+      });
+    }
+    if (source.slice(edit.start, edit.end) !== edit.expected) {
+      return Object.freeze({
+        kind: "invalid",
+        evidence: Object.freeze([`stale range ${edit.start}:${edit.end}`]),
+      });
+    }
+  }
+
+  let text = source;
+  for (const edit of [...ordered].reverse()) {
+    text = `${text.slice(0, edit.start)}${edit.replacement}${text.slice(edit.end)}`;
+  }
+  return Object.freeze({ kind: "ready", text });
 }
 
 async function planLocalEffects(

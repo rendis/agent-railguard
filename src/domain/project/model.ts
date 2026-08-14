@@ -11,6 +11,15 @@ export type ProjectSelectionInputs = ReadonlyMap<
   Readonly<Record<string, readonly string[]>>
 >;
 
+export type ProjectConflictResolution = Readonly<{
+  code: "quality.make.target-collision";
+  action: "replace";
+}>;
+
+export interface ProjectPlanningContext {
+  readonly conflictResolutions: readonly ProjectConflictResolution[];
+}
+
 export interface ProjectProjection extends ManagedProjection {
   readonly diagnostics: readonly Diagnostic[];
 }
@@ -23,6 +32,7 @@ export interface ProjectArtifactProjector {
     assessment: RepositoryAssessmentResult,
     targets: readonly HarnessTargetId[],
     selectionInputs: ProjectSelectionInputs,
+    context?: ProjectPlanningContext,
   ): Promise<ProjectProjection>;
 }
 

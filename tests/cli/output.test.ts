@@ -41,6 +41,9 @@ describe("CLI output renderer", () => {
     expect(output).toContain("Receipt: succeeded · committed");
     expect(output).toContain("Changed paths: 1");
     expect(output).toContain("FAILED example.failure");
+    expect(output).toContain("At: Makefile:113");
+    expect(output).toContain('Evidence: target "check" at line 113: check: fmt test');
+    expect(output).toContain("Resolution: replace — Replace conflicting Make targets (destructive)");
     expect(output).toContain("Next: Fix it");
   });
 
@@ -247,9 +250,18 @@ function fullResult(): CommandResultEnvelope {
       Object.freeze({
         code: "example.failure",
         severity: "failed",
+        location: Object.freeze({ path: "Makefile", pointer: "line:113" }),
         message: "Example failed",
+        evidence: Object.freeze(['target "check" at line 113: check: fmt test']),
         impact: "Visible impact",
         action: "Fix it",
+        resolutions: Object.freeze([
+          Object.freeze({
+            action: "replace" as const,
+            label: "Replace conflicting Make targets",
+            destructive: true,
+          }),
+        ]),
       }),
     ]),
   });

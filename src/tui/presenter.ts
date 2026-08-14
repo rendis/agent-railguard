@@ -222,6 +222,13 @@ export function keyActions(
         ...(snapshot.plan?.approvable === true && snapshot.plan.id !== null
           ? [{ key: "Enter", label: "Apply exact plan" }]
           : []),
+        ...(snapshot.diagnostics.some(
+          (diagnostic) =>
+            diagnostic.code === "quality.make.target-collision" &&
+            diagnostic.resolutions?.some((resolution) => resolution.action === "replace") === true,
+        )
+          ? [{ key: "o", label: "Replace conflicting targets" }]
+          : []),
         { key: "e", label: "Edit draft" },
         { key: "Esc", label: "Cancel" },
         { key: "q", label: "Quit" },

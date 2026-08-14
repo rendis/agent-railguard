@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useWindowSize } from "ink";
 import type {
   DraftComponentView,
+  DiagnosticView,
   InteractionPhase,
   InteractionSession,
   InteractionSnapshot,
@@ -83,6 +84,7 @@ export interface AiHarnessTuiFrameProps {
   readonly updateUi?: TuiUpdateUi;
   readonly currentVersion?: string;
   readonly mcpLogoutConfirmation?: ComponentRef | null;
+  readonly makeCollisionConfirmation?: boolean;
 }
 
 export function AiHarnessTui({
@@ -105,6 +107,7 @@ export function AiHarnessTui({
   const [searchActive, setSearchActive] = useState(false);
   const [updateUi, setUpdateUi] = useState<TuiUpdateUi>(idleUpdateUi);
   const [mcpLogoutConfirmation, setMcpLogoutConfirmation] = useState<ComponentRef | null>(null);
+  const [makeCollisionConfirmation, setMakeCollisionConfirmation] = useState(false);
   const filterIndexRef = useRef(0);
   const componentIndexRef = useRef(0);
   const targetIndexRef = useRef(0);
@@ -167,6 +170,7 @@ export function AiHarnessTui({
         setInformationOpen(false);
         setSummaryOpen(false);
         setMcpLogoutConfirmation(null);
+        setMakeCollisionConfirmation(false);
         if (next.phase === "drafting") {
           const initialFilter = next.recommendations.length === 0 ? 1 : 0;
           setComposerStage("components");
@@ -213,6 +217,21 @@ export function AiHarnessTui({
   };
 
   useInput((input, key) => {
+    if (makeCollisionConfirmation) {
+      if (key.escape) {
+        setMakeCollisionConfirmation(false);
+      } else if (key.return) {
+        setMakeCollisionConfirmation(false);
+        run(() => session.dispatch({
+          type: "resolve-plan-blocker",
+          code: "quality.make.target-collision",
+          resolution: "replace",
+        }));
+      } else if (input === "q") {
+        app.exit();
+      }
+      return;
+    }
     if (mcpLogoutConfirmation !== null) {
       if (key.escape) {
         setMcpLogoutConfirmation(null);
@@ -452,6 +471,10 @@ export function AiHarnessTui({
       return;
     }
     if (snapshot.phase === "reviewing") {
+      if (input === "o" && replaceableMakeCollision(snapshot) !== null) {
+        setMakeCollisionConfirmation(true);
+        return;
+      }
       if (input === "e" && snapshot.draft !== null) {
         const draft = snapshot.draft;
         run(() =>
@@ -519,6 +542,7 @@ export function AiHarnessTui({
       updateUi={updateUi}
       currentVersion={currentVersion}
       mcpLogoutConfirmation={mcpLogoutConfirmation}
+      makeCollisionConfirmation={makeCollisionConfirmation}
     />
   );
 }
@@ -542,9 +566,11 @@ export function AiHarnessTuiFrame({
   updateUi = idleUpdateUi,
   currentVersion = "0.1.0",
   mcpLogoutConfirmation = null,
+  makeCollisionConfirmation = false,
 }: AiHarnessTuiFrameProps): React.JSX.Element {
   const layout = layoutMode(columns, rows);
   const unsupported = layout === "unsupported";
+  const makeCollision = makeCollisionConfirmation ? replaceableMakeCollision(snapshot) : null;
   return (
     <Box flexDirection="column" width={columns} minHeight={rows}>
       <AppHeader snapshot={snapshot} root={root} currentVersion={currentVersion} />
@@ -555,6 +581,10 @@ export function AiHarnessTuiFrame({
       )}
       {unsupported ? (
         <TerminalRequirement columns={columns} rows={rows} />
+      ) : makeCollision !== null ? (
+        <Box flexGrow={1} minHeight={0} paddingX={1} flexDirection="column">
+          <MakeCollisionReplacementConfirmation diagnostic={makeCollision} />
+        </Box>
       ) : mcpLogoutConfirmation !== null ? (
         <Box flexGrow={1} minHeight={0} paddingX={1} flexDirection="column">
           <McpLogoutConfirmation component={mcpLogoutConfirmation} />
@@ -577,7 +607,9 @@ export function AiHarnessTuiFrame({
         <>
           {isTransaction(snapshot.phase) ? <ImpactBar snapshot={snapshot} /> : null}
           <ActivityRail snapshot={snapshot} updateUi={updateUi} />
-          {mcpLogoutConfirmation !== null ? (
+          {makeCollision !== null ? (
+            <MakeCollisionConfirmationKeyBar />
+          ) : mcpLogoutConfirmation !== null ? (
             <ConfirmationKeyBar />
           ) : <KeyBar
             snapshot={snapshot}
@@ -1347,6 +1379,15 @@ function ReviewScreen({
           {blockers.slice(0, 2).map((diagnostic, index) => (
             <Box key={`${diagnostic.code}:${index}`} flexDirection="column">
               <Text color="red">{diagnostic.code}{separator()}{diagnostic.message}</Text>
+              {diagnostic.location === null ? null : (
+                <Text dimColor>
+                  {diagnostic.location.path}
+                  {diagnostic.location.pointer === undefined ? "" : `:${diagnostic.location.pointer.replace(/^line:/u, "")}`}
+                </Text>
+              )}
+              {diagnostic.evidence.map((entry) => (
+                <Text key={entry} dimColor>{entry}</Text>
+              ))}
               <Text dimColor>{diagnostic.action ?? "Resolve this blocker and review a new plan."}</Text>
             </Box>
           ))}
@@ -1601,6 +1642,34 @@ function McpLogoutConfirmation({ component }: { readonly component: ComponentRef
   );
 }
 
+function MakeCollisionReplacementConfirmation({
+  diagnostic,
+}: {
+  readonly diagnostic: DiagnosticView;
+}): React.JSX.Element {
+  return (
+    <Box flexDirection="column">
+      <Text bold color="yellow">CONFIRM MAKE TARGET REPLACEMENT</Text>
+      <Text>{diagnostic.message}</Text>
+      {diagnostic.evidence.map((entry) => <Text key={entry}>{entry}</Text>)}
+      <Box marginTop={1} flexDirection="column">
+        <Text color="yellow">Existing prerequisites and recipes for these targets will be removed.</Text>
+        <Text dimColor>No file is written now. A new exact plan and diff must still be reviewed before Apply.</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function MakeCollisionConfirmationKeyBar(): React.JSX.Element {
+  return (
+    <Box paddingX={1} gap={3}>
+      <Text><Text bold color="cyan">[Enter]</Text> Replace and review plan</Text>
+      <Text><Text bold color="cyan">[Esc]</Text> Keep existing targets</Text>
+      <Text><Text bold color="cyan">[q]</Text> Quit</Text>
+    </Box>
+  );
+}
+
 function ConfirmationKeyBar(): React.JSX.Element {
   return (
     <Box paddingX={1} gap={3}>
@@ -1613,6 +1682,14 @@ function ConfirmationKeyBar(): React.JSX.Element {
 
 function oauthMcp(snapshot: InteractionSnapshot): ComponentRef | null {
   return snapshot.plan?.review?.runtimes.find((runtime) => runtime.auth === "oauth")?.component ?? null;
+}
+
+function replaceableMakeCollision(snapshot: InteractionSnapshot): DiagnosticView | null {
+  return snapshot.diagnostics.find(
+    (diagnostic) =>
+      diagnostic.code === "quality.make.target-collision" &&
+      diagnostic.resolutions?.some((resolution) => resolution.action === "replace") === true,
+  ) ?? null;
 }
 
 function installedOauthMcp(snapshot: InteractionSnapshot): ComponentRef | null {

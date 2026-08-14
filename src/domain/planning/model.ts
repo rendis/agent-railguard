@@ -2,6 +2,13 @@ import type { ReadonlyBytes, RelativePosixPath } from "../shared/types.js";
 
 export type ArtifactOwner = string;
 
+export interface ExactTextEdit {
+  readonly start: number;
+  readonly end: number;
+  readonly expected: string;
+  readonly replacement: string;
+}
+
 export type ArtifactIntent =
   | {
       readonly kind: "file";
@@ -19,6 +26,7 @@ export type ArtifactIntent =
       readonly body: string;
       readonly mode: number;
       readonly markerStyle?: "markdown" | "hash";
+      readonly containerEdits?: readonly ExactTextEdit[];
     }
   | {
       readonly kind: "symlink";

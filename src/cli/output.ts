@@ -60,7 +60,9 @@ function errorRun(
   const diagnostic: DiagnosticView = Object.freeze({
     code,
     severity: "failed",
+    location: null,
     message,
+    evidence: Object.freeze([]),
     impact: "No repository mutation was attempted.",
     action,
   });
@@ -139,6 +141,17 @@ function renderHumanResult(result: CommandResultEnvelope): string {
   }
   for (const diagnostic of result.diagnostics) {
     lines.push(`${diagnostic.severity.toUpperCase()} ${diagnostic.code}: ${diagnostic.message}`);
+    if (diagnostic.location !== null) {
+      lines.push(
+        `  At: ${diagnostic.location.path}${diagnostic.location.pointer === undefined ? "" : `:${diagnostic.location.pointer.replace(/^line:/u, "")}`}`,
+      );
+    }
+    for (const evidence of diagnostic.evidence) lines.push(`  Evidence: ${evidence}`);
+    for (const resolution of diagnostic.resolutions ?? []) {
+      lines.push(
+        `  Resolution: ${resolution.action} — ${resolution.label}${resolution.destructive ? " (destructive)" : ""}`,
+      );
+    }
     if (diagnostic.action !== null) lines.push(`  Next: ${diagnostic.action}`);
   }
   return `${lines.join("\n")}\n`;

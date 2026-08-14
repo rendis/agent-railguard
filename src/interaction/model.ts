@@ -38,9 +38,19 @@ export interface InteractionTask {
 export interface DiagnosticView {
   readonly code: string;
   readonly severity: "info" | "warning" | "blocked" | "failed";
+  readonly location: {
+    readonly path: string;
+    readonly pointer?: string;
+  } | null;
   readonly message: string;
+  readonly evidence: readonly string[];
   readonly impact: string;
   readonly action: string | null;
+  readonly resolutions?: readonly {
+    readonly action: "replace";
+    readonly label: string;
+    readonly destructive: boolean;
+  }[];
 }
 
 export interface RepositoryView {
@@ -231,6 +241,11 @@ export type InteractionAction =
   | {
       readonly type: "request-plan";
       readonly mode: "reconcile" | "repair" | "remove";
+    }
+  | {
+      readonly type: "resolve-plan-blocker";
+      readonly code: "quality.make.target-collision";
+      readonly resolution: "replace";
     }
   | { readonly type: "load-plan"; readonly root: string; readonly plan: PublicPlan }
   | { readonly type: "request-managed-plan"; readonly mode: "sync" | "repair" }

@@ -17,6 +17,7 @@ import type {
 import type { RecommendationSet } from "../domain/recommendation/model.js";
 import type { CatalogComponent } from "../domain/catalog/model.js";
 import type { ResolutionResult } from "../domain/resolution/model.js";
+import type { ProjectPlanningContext } from "../domain/project/model.js";
 import {
   compareUtf8,
   type ComponentRef,
@@ -119,6 +120,8 @@ export class DefaultInteractionSession implements InteractionSession {
           return this.#composeDraft(action);
         case "request-plan":
           return await this.#requestPlan(action.mode);
+        case "resolve-plan-blocker":
+          return await this.#resolvePlanBlocker(action.code, action.resolution);
         case "load-plan":
           return await this.#loadPlan(action.root, action.plan);
         case "request-managed-plan":
@@ -259,6 +262,7 @@ export class DefaultInteractionSession implements InteractionSession {
 
   async #requestPlan(
     mode: "reconcile" | "repair" | "remove",
+    context: ProjectPlanningContext = Object.freeze({ conflictResolutions: Object.freeze([]) }),
   ): Promise<InteractionSnapshot> {
     const scan = this.#requireReadyScan();
     if (this.#snapshot.draft === null) {
@@ -275,6 +279,7 @@ export class DefaultInteractionSession implements InteractionSession {
             this.#selections,
             this.#targets,
             mode,
+            context,
           ),
     );
     this.#plan = preparation.plan?.kind === "ready" ? preparation.plan : null;
@@ -299,6 +304,26 @@ export class DefaultInteractionSession implements InteractionSession {
       this.#emitState("reviewing");
     }
     return this.#snapshot;
+  }
+
+  async #resolvePlanBlocker(
+    code: "quality.make.target-collision",
+    resolution: "replace",
+  ): Promise<InteractionSnapshot> {
+    if (this.#snapshot.phase !== "reviewing") {
+      throw new TypeError("A reviewed blocked plan is required before resolving a blocker");
+    }
+    if (!this.#snapshot.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === code &&
+        diagnostic.resolutions?.some((candidate) => candidate.action === resolution) === true,
+    )) {
+      throw new TypeError(`The active plan does not contain blocker ${code}`);
+    }
+    const mode = this.#snapshot.plan?.mode ?? "reconcile";
+    return await this.#requestPlan(mode, {
+      conflictResolutions: Object.freeze([Object.freeze({ code, action: resolution })]),
+    });
   }
 
   async #requestManagedPlan(
@@ -945,9 +970,14 @@ function diagnosticViews(diagnostics: readonly Diagnostic[]): readonly Diagnosti
       Object.freeze({
         code: diagnostic.code,
         severity: diagnostic.severity,
+        location: diagnostic.location,
         message: diagnostic.message,
+        evidence: diagnostic.evidence,
         impact: diagnostic.impact,
         action: diagnostic.action,
+        ...(diagnostic.resolutions === undefined
+          ? {}
+          : { resolutions: diagnostic.resolutions }),
       }),
     ),
   );
@@ -960,7 +990,15 @@ function interactionDiagnostic(
   impact: string,
   action: string | null,
 ): DiagnosticView {
-  return Object.freeze({ code, severity, message, impact, action });
+  return Object.freeze({
+    code,
+    severity,
+    location: null,
+    message,
+    evidence: Object.freeze([]),
+    impact,
+    action,
+  });
 }
 
 function taskLabel(event: ApplicationEvent): string {

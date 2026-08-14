@@ -412,6 +412,76 @@ describe("production shared CLI/TUI interaction contract", () => {
     }
   });
 
+  it("resolves an active Make collision into a new reviewable replacement plan", async () => {
+    const repository = await createTempRepository({
+      "go.mod": "module example.com/interaction-collision\n\ngo 1.24\n",
+      Makefile: "custom:\n\t@echo keep\ncheck: fmt test\n\t@echo foreign\n",
+    });
+    await execute("git", ["init", "--quiet", repository.root]);
+    const interaction = await runtime("33333333-3333-4333-8333-333333333333");
+    try {
+      await interaction.session.dispatch({ type: "scan", root: repository.root });
+      await interaction.session.dispatch({
+        type: "replace-draft",
+        selections: [{ ref: componentRef("skill:configure-go-quality") }],
+        targets: [codex],
+      });
+      const blocked = await interaction.session.dispatch({
+        type: "request-plan",
+        mode: "reconcile",
+      });
+
+      expect(blocked.phase).toBe("reviewing");
+      expect(blocked.plan).toMatchObject({ kind: "blocked", approvable: false });
+      expect(blocked.diagnostics).toContainEqual(expect.objectContaining({
+        code: "quality.make.target-collision",
+        location: { path: "Makefile", pointer: "line:3" },
+        evidence: ['target "check" at line 3: check: fmt test'],
+        resolutions: [expect.objectContaining({ action: "replace", destructive: true })],
+      }));
+
+      const replacement = await interaction.session.dispatch({
+        type: "resolve-plan-blocker",
+        code: "quality.make.target-collision",
+        resolution: "replace",
+      });
+
+      expect(replacement.phase).toBe("reviewing");
+      expect(replacement.plan).toMatchObject({ kind: "ready", approvable: true });
+      expect(replacement.plan?.changes).toContainEqual(expect.objectContaining({
+        action: "replace",
+        path: "Makefile",
+      }));
+      expect(replacement.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain(
+        "quality.make.target-collision",
+      );
+    } finally {
+      await Promise.all([interaction.dispose(), repository.cleanup()]);
+    }
+  });
+
+  it("rejects Make replacement when the reviewed plan has no eligible collision", async () => {
+    const repository = await goRepository();
+    const interaction = await runtime("34343434-3434-4434-8434-343434343434");
+    try {
+      await interaction.session.dispatch({ type: "scan", root: repository.root });
+      await interaction.session.dispatch({
+        type: "replace-draft",
+        selections: [{ ref: componentRef("skill:configure-go-quality") }],
+        targets: [codex],
+      });
+      await interaction.session.dispatch({ type: "request-plan", mode: "reconcile" });
+
+      await expect(interaction.session.dispatch({
+        type: "resolve-plan-blocker",
+        code: "quality.make.target-collision",
+        resolution: "replace",
+      })).rejects.toThrow("does not contain blocker quality.make.target-collision");
+    } finally {
+      await Promise.all([interaction.dispose(), repository.cleanup()]);
+    }
+  });
+
   it("honors cancellation at the apply pre-mutation boundary", async () => {
     const repository = await goRepository();
     const interaction = await runtime("77777777-7777-4777-8777-777777777777");

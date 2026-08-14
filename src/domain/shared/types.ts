@@ -160,6 +160,12 @@ export class ReadonlyBytes {
 
 export type DiagnosticSeverity = "info" | "warning" | "blocked" | "failed";
 
+export interface DiagnosticResolution {
+  readonly action: "replace";
+  readonly label: string;
+  readonly destructive: boolean;
+}
+
 export interface Diagnostic {
   readonly code: string;
   readonly severity: DiagnosticSeverity;
@@ -193,6 +199,7 @@ export interface Diagnostic {
   readonly evidence: readonly string[];
   readonly impact: string;
   readonly action: string | null;
+  readonly resolutions?: readonly DiagnosticResolution[];
 }
 
 export function compareDiagnostics(left: Diagnostic, right: Diagnostic): number {

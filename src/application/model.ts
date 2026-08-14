@@ -7,6 +7,7 @@ import type {
   RepositoryAssessmentResult,
   RepositorySnapshot,
 } from "../domain/repository/model.js";
+import type { ProjectPlanningContext } from "../domain/project/model.js";
 import type { ResolutionResult } from "../domain/resolution/model.js";
 import type {
   ComponentRef,
@@ -126,6 +127,7 @@ export interface AiHarnessCases {
     selections: readonly ComponentSelectionDraft[],
     targets: readonly HarnessTargetId[],
     mode: "reconcile" | "repair" | "remove",
+    context?: ProjectPlanningContext,
   ): Promise<InstallPreparation>;
   prepareSync(scan: ScanResult): Promise<InstallPreparation>;
   prepareRepair(scan: ScanResult): Promise<InstallPreparation>;

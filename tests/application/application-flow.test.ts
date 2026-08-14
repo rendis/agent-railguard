@@ -495,6 +495,99 @@ describe("AiHarnessApplication", () => {
       expect(prepared.plan?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
         "quality.make.target-collision",
       );
+      const collision = prepared.plan?.diagnostics.find(
+        (diagnostic) => diagnostic.code === "quality.make.target-collision",
+      );
+      expect(collision).toMatchObject({
+        location: { path: "Makefile", pointer: "line:1" },
+        message: 'Makefile defines unmanaged canonical target "check" at line 1.',
+        evidence: ['target "check" at line 1: check:'],
+        resolutions: [{ action: "replace", destructive: true }],
+      });
+      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(originalMakefile);
+    } finally {
+      await Promise.all([runtime.dispose(), repository.cleanup()]);
+    }
+  });
+
+  it("prepares and applies an explicitly confirmed Make target replacement", async () => {
+    const originalMakefile = "custom:\n\t@echo keep\ncheck: fmt test\n\t@echo foreign\n";
+    const repository = await createTempRepository({
+      "go.mod": "module example.com/replacement\n\ngo 1.24\n",
+      Makefile: originalMakefile,
+    });
+    await exec("git", ["init", "--quiet", repository.root]);
+    const runtime = await createDefaultApplication({ executableProbe: probe });
+    try {
+      const scan = await runtime.application.scan(repository.root);
+      if (scan.kind !== "ready") throw new Error("Expected replacement fixture scan to be ready");
+      const prepared = await runtime.application.preparePlan(
+        scan,
+        [{ ref: componentRef("skill:configure-go-quality") }],
+        [codex],
+        "reconcile",
+        {
+          conflictResolutions: [{
+            code: "quality.make.target-collision",
+            action: "replace",
+          }],
+        },
+      );
+
+      expect(prepared.plan?.kind).toBe("ready");
+      if (prepared.plan?.kind !== "ready") throw new Error("Expected ready replacement plan");
+      const makeWrite = prepared.plan.operations.find(
+        (operation) => operation.kind === "write-file" && operation.path === "Makefile",
+      );
+      expect(makeWrite?.kind).toBe("write-file");
+      const planned = makeWrite?.kind === "write-file" ? makeWrite.bytes.toString() : "";
+      expect(planned).toContain("custom:\n\t@echo keep\n");
+      expect(planned).not.toContain("@echo foreign");
+      expect(planned).not.toContain("check: fmt test");
+      expect(planned).toContain("check: ai-harness-go-check");
+      expect(planned).toContain("verify: ai-harness-go-verify");
+      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(originalMakefile);
+
+      expect((await runtime.application.apply(prepared.plan)).kind).toBe("applied");
+      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(planned);
+    } finally {
+      await Promise.all([runtime.dispose(), repository.cleanup()]);
+    }
+  });
+
+  it("keeps unsupported double-colon Make targets blocked under replacement", async () => {
+    const originalMakefile = "check:: first\n\t@echo foreign\n";
+    const repository = await createTempRepository({
+      "go.mod": "module example.com/double-colon\n\ngo 1.24\n",
+      Makefile: originalMakefile,
+    });
+    await exec("git", ["init", "--quiet", repository.root]);
+    const runtime = await createDefaultApplication({ executableProbe: probe });
+    try {
+      const scan = await runtime.application.scan(repository.root);
+      if (scan.kind !== "ready") throw new Error("Expected double-colon fixture scan to be ready");
+      const prepared = await runtime.application.preparePlan(
+        scan,
+        [{ ref: componentRef("skill:configure-go-quality") }],
+        [codex],
+        "reconcile",
+        {
+          conflictResolutions: [{
+            code: "quality.make.target-collision",
+            action: "replace",
+          }],
+        },
+      );
+
+      expect(prepared.plan?.kind).toBe("blocked");
+      const collision = prepared.plan?.diagnostics.find(
+        (diagnostic) => diagnostic.code === "quality.make.target-collision",
+      );
+      expect(collision).toMatchObject({
+        evidence: ['target "check" at line 1: check:: first'],
+        action: "Rename the unsupported Make declaration before planning again.",
+      });
+      expect(collision?.resolutions).toBeUndefined();
       expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(originalMakefile);
     } finally {
       await Promise.all([runtime.dispose(), repository.cleanup()]);
