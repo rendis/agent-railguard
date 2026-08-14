@@ -1,5 +1,19 @@
 # Behavioral Proof Design
 
+## Keep a task-local behavior inventory
+
+Represent every authorized behavior or material risk before implementation. Keep one task-local row with these fields:
+
+- `behavior/risk`: the observable rule, boundary, transition, or effect;
+- `authority`: the requirement, policy, defect, or named risk that makes it in scope;
+- `plausible defect`: the smallest wrong behavior the proof must reject;
+- `proof/seam`: the stable observable boundary and intended signal;
+- `evidence state`: one of `planned`, `proved`, `removed`, `not_applicable`, `blocked`, `unavailable`, or `out_of_scope`.
+
+Use `planned` while a proof is designed but not yet observed; it is the normal handoff to TDD. Use `proved` only for observed discriminating evidence and `removed` when the owning workflow removes the production decision and rechecks affected behavior. `not_applicable` needs concrete evidence that the named risk has no executable production decision in the governed scope. `blocked` and `unavailable` preserve required evidence that cannot currently run and do not close delivery. Use `out_of_scope` only for visible pre-existing behavior outside edit authority; a candidate-created or changed decision cannot move there.
+
+Do not version this inventory as a ledger or exception database. Return it to the caller and update it as implementation reveals decisions. The design handoff is complete when every known in-scope item is represented, even though its evidence state is still `planned`.
+
 ## Start from the rule and defect class
 
 State the observable rule, the actor or caller that depends on it, and the plausible defect the test must detect. A test is useful when its failure distinguishes an incorrect product behavior from broken discovery, setup, infrastructure, or the test itself.

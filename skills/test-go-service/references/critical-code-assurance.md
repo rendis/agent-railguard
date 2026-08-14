@@ -10,6 +10,12 @@ When repository policy declares a package scope critical/core, require all three
 
 Overall production coverage remains a separate gate and must be strictly greater than 85% under the standard service baseline. E2E or adapter execution may improve overall evidence but cannot substitute for critical-scope-owned tests.
 
+## Keep the three coverage tiers separate
+
+Treat exact critical/core reachability, zero unclassified gaps in the authorized changed or audited production scope, and the adopted whole-product percentage as three independent decisions. The critical scope requires `covered == total`; the changed/audited scope requires each uncovered block to be proved, removed, concretely non-applicable, or retained as a visible non-closing limitation; the overall percentage remains a mechanical regression floor. A block introduced or changed by the candidate cannot become `out_of_scope`.
+
+Generate and inspect fresh matching profiles after production or test edits. A passing core count or overall floor never closes another tier and never proves branch sensitivity or oracle independence.
+
 ## Build semantic tests
 
 For constructors, commands, results, mappers, and port propagation:

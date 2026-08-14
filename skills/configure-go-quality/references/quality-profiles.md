@@ -24,6 +24,8 @@ Use one pinned `golangci-lint` configuration for compatible analyzers over produ
 
 Adopt coverage thresholds only from explicit repository policy or an approved advanced baseline. Declare production and critical scopes, generate fresh profiles, compare integer statement counts, and keep reachability distinct from oracle quality.
 
+Treat an adopted overall threshold as a mechanical regression floor. Configuration readiness such as `READY` or `READY_WITH_FINDINGS` proves reproducible inputs and execution, not semantic test completeness or closure of individual uncovered blocks. Return those blocks to testing and review without changing the configured threshold.
+
 ### Concurrency, fuzz, and mutation
 
 Run race only over suites that exercise concurrency. Fuzz selected invariants with seeds and a bounded budget. Adopt mutation only after a stable normal suite and explicit owned scopes; require a non-empty campaign and fail every unresolved native status.

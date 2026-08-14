@@ -4,7 +4,7 @@
 
 1. **Focused behavior:** observe RED→GREEN for features/fixes or a green safety net for refactors; broaden to immediate consumers.
 2. **Public acceptance:** when applicable, run the existing E2E journey. Functional failure returns to focused TDD; setup failure is `BLOCKED_SETUP`.
-3. **Candidate:** run the native standard gate with repository pins and configs and fix a stable snapshot for review.
+3. **Candidate:** reconcile the behavior inventory, generate fresh matching Go gap evidence, run the native standard gate with repository pins and configs, and fix a stable snapshot for review.
 4. **Challenge:** review that snapshot read-only. Any accepted edit invalidates it and returns to candidate formation.
 5. **Hardening:** run applicable mutation, race, fuzz, vulnerability, integration, contract, and E2E signals after review. Any governed edit creates a new candidate and review.
 6. **Delivery:** repeat affected signals, run the final canonical command, inspect the diff, and report gaps.
@@ -48,6 +48,8 @@ Delivery closes only when:
 - discovery proves what existed and why the change verifies, extends, reuses, extracts, replaces, or creates;
 - the design lens identifies owner, direct alternative, effects, compatibility, debt, and falsifying evidence;
 - every behavioral change has observed discriminating RED→GREEN, or a truthful green-safety-net route;
+- every Go production candidate has zero unclassified gaps in its authorized changed or audited scope, with no required item left `planned`, `blocked`, or `unavailable` unless the user explicitly accepts that named limitation;
+- a candidate-created or changed block cannot be reclassified as `out_of_scope`; visible pre-existing gaps remain reported without expanding edit authority;
 - boundaries, errors, absence of improper effects, and affected public journeys are proven according to risk;
 - configuration readiness is `READY` or product findings have been remediated and reassessed;
 - the standard gate passes with repository pins and exact scopes;

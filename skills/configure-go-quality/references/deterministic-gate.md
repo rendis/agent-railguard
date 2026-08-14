@@ -30,6 +30,8 @@ Declare production and critical scopes in the repository task surface. For the a
 
 Parse statement counts from the Go coverage profile or use an approved pinned coverage CLI. Do not compare rounded display percentages. Coverage proves reachability only.
 
+Treat the configured whole-product percentage as a mechanical regression floor. It does not classify uncovered behavior or prove that changed, audited, or critical scopes are semantically complete. Configuration owns the producer command, exact scope, freshness, and numeric decision; testing and review own contextual gap disposition.
+
 ## Make mutation verdicts exact
 
 For every adopted campaign:

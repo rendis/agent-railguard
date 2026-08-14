@@ -64,6 +64,9 @@ catalog:
         - kind: requires
           target: skill:configure-go-quality
           reason: Configuration candidates and readiness claims require the configuration assessment semantics.
+        - kind: requires
+          target: skill:test-go-service
+          reason: Go coverage reviews require the installed gap-analysis contract and deterministic profile reporter.
 
     tdd:
       version: 0.1.0
@@ -76,7 +79,7 @@ catalog:
 
     test-go-service:
       version: 0.1.0
-      details: Use for focused Go test work that does not require the full service delivery workflow. Choose the correct boundary, doubles and deterministic evidence.
+      details: Use for focused Go test or coverage-gap analysis that does not require the full service delivery workflow. Choose the correct boundary, doubles and deterministic evidence.
       source: skills/test-go-service
       applies:
         languages: [go]
