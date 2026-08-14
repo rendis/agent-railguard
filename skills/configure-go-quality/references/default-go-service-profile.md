@@ -22,15 +22,24 @@ Prove this baseline with the exact generated commands:
 
 A failing test, vet, formatting, or race command is `READY_WITH_FINDINGS` after the complete task surface executes. Missing or invalid managed inputs are `MISSING` or `BROKEN`. An unavailable required executable or platform after complete inputs is `BLOCKED_SETUP`.
 
-## Explicit advanced unmanaged baseline
+## Explicit managed assurance
 
-Lint, coverage thresholds, vulnerability scanning, fuzzing, mutation, E2E, and other hardening are not implicit parts of the managed v1 profile. Adopt them only when the repository already owns them or the user explicitly selects them with a compatible task owner. A managed repository requires an explicit provider that declares the additional files, inputs, targets, and lifecycle; without one, the requested capability is `MISSING`.
+Use one public `make check` and `make verify` interface for every adopted level. Keep `verification-profile:go-quality` as the portable baseline, then select only the managed profiles justified by repository evidence:
 
-For an explicitly approved advanced baseline under an unmanaged Make owner, use the bundled files as one coherent template:
+| Profile | `check` contribution | `verify` contribution | Required inputs |
+|---|---|---|---|
+| `verification-profile:go-assurance` | module verification and configured lint | exact core/overall coverage and reachable vulnerabilities | test, core, and cover packages |
+| `verification-profile:go-fuzz` | explicit case/scope readiness | each selected fuzz case | `package:FuzzName:duration` cases |
+| `verification-profile:go-mutation` | explicit package/scope readiness | non-empty KILLED-only campaigns | production package scopes |
+| `verification-profile:go-e2e` | explicit package/scope readiness | `e2e`-tagged acceptance packages | E2E package scopes |
 
-- [Makefile.quality](../assets/Makefile.quality) for native targets and decision wiring;
-- [golangci.yml](../assets/golangci.yml) for the pinned aggregator;
-- [gremlins.yaml](../assets/gremlins.yaml) for mutation configuration.
+The projector composes selected private `ai-harness-*` targets behind the same two public commands. Apply inputs through `.ai-harness/project.yaml` and the CLI transaction; never copy, reconstruct, or extend the generated Make sections manually. A selected profile with its default `disabled` sentinel is intentionally incomplete and must be classified `MISSING` until explicit inputs replace it.
+
+Strict assurance also requires repository-owned supporting inputs:
+
+- [golangci.yml](../assets/golangci.yml) for the pinned analyzer policy;
+- [gremlins.yaml](../assets/gremlins.yaml) for mutation configuration;
+- ignored `tmp/ai-harness` evidence paths and exact Go tool pins.
 
 Pin the validated tool set atomically through repository `tool` directives:
 
@@ -42,4 +51,4 @@ go get -tool \
   github.com/itchyny/gojq/cmd/gojq@v0.12.19
 ```
 
-Adapt only observed package, source, critical, mutation, fuzz, race, and E2E scopes. Preserve overrideable external prerequisites such as `VULN_DB` with `?=` assignments. Require non-empty mutation campaigns, bounded fuzz, explicit E2E ownership, ignored volatile output, native config paths, keep-going hardening execution, and one observed direct run per adopted dimension. A missing behavioral proof remains a product finding; this skill configures its signal without inventing the proof.
+Adapt only observed test, critical, cover, mutation, fuzz, and E2E inputs. Require non-empty mutation campaigns, bounded fuzz, explicit E2E ownership, ignored volatile output, native config paths, and one observed `make verify` run. When Sonar is adopted, require the CI scanner to wait for the actual Quality Gate and retain its analysis identity; repository-side proxies cannot replace that verdict. A missing behavioral proof remains a product finding; this skill configures its signal without inventing the proof.

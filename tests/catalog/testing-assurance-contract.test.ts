@@ -79,7 +79,7 @@ describe("testing assurance contract", () => {
     expect(e2e).toContain("do not create scenarios for internal branches");
   });
 
-  it("installs the Go gap-analysis contract for review without expanding the managed profile", async () => {
+  it("installs the Go gap-analysis contract without selecting optional assurance profiles", async () => {
     const result = await new FilesystemCatalog({
       catalogFile: resolve("ai-harness.yaml"),
       supportedLanguages: [
@@ -99,13 +99,18 @@ describe("testing assurance contract", () => {
       componentRef("skill:test-go-service"),
     ]);
 
-    const profiles = result.catalog.components.filter(
-      (component) => component.kind === "verification-profile",
+    const configure = result.catalog.components.find(
+      (component) => component.ref === componentRef("skill:configure-go-quality"),
     );
-    expect(profiles.map((profile) => profile.ref)).toEqual([
+    expect(configure?.relations
+      .filter((relation) => relation.target.startsWith("verification-profile:"))
+      .map((relation) => relation.target)).toEqual([
       componentRef("verification-profile:go-quality"),
     ]);
-    expect(profiles[0]?.kind === "verification-profile" ? profiles[0].make : null).toMatchObject({
+    const baseline = result.catalog.components.find(
+      (component) => component.ref === componentRef("verification-profile:go-quality"),
+    );
+    expect(baseline?.kind === "verification-profile" ? baseline.make : null).toMatchObject({
       targets: ["ai-harness-go-check", "ai-harness-go-verify"],
       operations: { check: "ai-harness-go-check", verify: "ai-harness-go-verify" },
     });

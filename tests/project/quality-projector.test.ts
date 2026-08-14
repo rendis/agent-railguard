@@ -30,6 +30,78 @@ const noHooks: GitHookInventory = {
 };
 
 describe("QualityProjector", () => {
+  it("composes selected Go assurance behind only check and verify", async () => {
+    const repository = await createTempRepository({});
+    try {
+      const catalogResult = await new FilesystemCatalog({
+        catalogFile: resolve("ai-harness.yaml"),
+        supportedLanguages: [languageId("go")],
+      }).load();
+      if (catalogResult.kind !== "ready") {
+        throw new Error(JSON.stringify(catalogResult.diagnostics, null, 2));
+      }
+      const profiles = [
+        componentRef("verification-profile:go-quality"),
+        componentRef("verification-profile:go-assurance"),
+        componentRef("verification-profile:go-fuzz"),
+        componentRef("verification-profile:go-mutation"),
+        componentRef("verification-profile:go-e2e"),
+      ];
+      const resolution = new DefaultResolver().resolve({
+        catalog: catalogResult.catalog,
+        directSelections: profiles,
+        projectUnits: [],
+        targets: [{
+          target: harnessTargetId("codex"),
+          capabilities: [capabilityId("project.instructions")],
+        }],
+      });
+      if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
+      const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
+      const projection = await new QualityProjector(available, noHooks).project(
+        resolution,
+        catalogResult.catalog,
+        snapshot,
+        repositoryAssessment(snapshot),
+        [harnessTargetId("codex")],
+        new Map([
+          [componentRef("verification-profile:go-assurance"), {
+            core_cover_packages: ["./internal/core/..."],
+            core_packages: ["./internal/core/..."],
+            overall_cover_packages: ["./cmd/...", "./internal/..."],
+            test_packages: ["./..."],
+          }],
+          [componentRef("verification-profile:go-fuzz"), {
+            cases: ["./internal/infra/config:FuzzConfig:5s"],
+          }],
+          [componentRef("verification-profile:go-mutation"), {
+            packages: ["./internal/core/domain", "./internal/core/service"],
+          }],
+          [componentRef("verification-profile:go-e2e"), {
+            packages: ["./tests/e2e/..."],
+          }],
+        ]),
+      );
+
+      const entrypoints = managedSectionBody(projection, "verification.entrypoints");
+      expect(entrypoints).toBe([
+        ".PHONY: check verify",
+        "",
+        "check: ai-harness-go-assurance-check ai-harness-go-check ai-harness-go-e2e-check ai-harness-go-fuzz-check ai-harness-go-mutation-check",
+        "",
+        "verify: ai-harness-go-assurance-verify ai-harness-go-e2e-verify ai-harness-go-fuzz-verify ai-harness-go-mutation-verify ai-harness-go-verify",
+      ].join("\n"));
+      const generated = projection.units.flatMap((unit) =>
+        unit.kind === "artifact" && unit.intent.kind === "managed-section"
+          ? [unit.intent.body]
+          : []
+      ).join("\n");
+      expect(generated).not.toMatch(/^(?:quality-check|verify-hardening|verify-all):/m);
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
   it("renders approved verification inputs and catalog defaults into the managed Make block", async () => {
     const repository = await createTempRepository({});
     try {
@@ -73,9 +145,11 @@ describe("QualityProjector", () => {
       const configuredBody = managedMakeBody(configured);
       const defaultBody = managedMakeBody(defaults);
 
-      expect(configuredBody).toContain("GO_TEST_PACKAGES := ./core/... ./internal/...");
-      expect(defaultBody).toContain("GO_TEST_PACKAGES := ./...");
-      expect(configuredBody).not.toContain("GO_TEST_PACKAGES ?=");
+      expect(configuredBody).toContain(
+        "AI_HARNESS_GO_TEST_PACKAGES := ./core/... ./internal/...",
+      );
+      expect(defaultBody).toContain("AI_HARNESS_GO_TEST_PACKAGES := ./...");
+      expect(configuredBody).not.toContain("AI_HARNESS_GO_TEST_PACKAGES ?=");
     } finally {
       await repository.cleanup();
     }
@@ -118,7 +192,7 @@ describe("QualityProjector", () => {
       );
 
       expect(managedMakeBody(projection)).toContain(
-        "GO_MODULE_ROOTS := . services/orders",
+        "AI_HARNESS_GO_MODULE_ROOTS := . services/orders",
       );
       const entrypoints = projection.units.find(
         (unit) => unit.kind === "artifact" &&
@@ -135,11 +209,18 @@ describe("QualityProjector", () => {
 });
 
 function managedMakeBody(projection: Awaited<ReturnType<QualityProjector["project"]>>): string {
+  return managedSectionBody(projection, "verification.go-quality");
+}
+
+function managedSectionBody(
+  projection: Awaited<ReturnType<QualityProjector["project"]>>,
+  sectionId: string,
+): string {
   const unit = projection.units.find(
     (candidate) =>
       candidate.kind === "artifact" &&
       candidate.intent.kind === "managed-section" &&
-      candidate.intent.sectionId === "verification.go-quality",
+      candidate.intent.sectionId === sectionId,
   );
   if (unit?.kind !== "artifact" || unit.intent.kind !== "managed-section") {
     throw new Error("Expected a managed Make section");

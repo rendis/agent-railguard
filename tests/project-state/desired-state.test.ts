@@ -112,6 +112,20 @@ selections: []
       code: "project-state.input-value",
     },
     {
+      name: "unsafe managed fuzz command input",
+      input: {
+        kind: "draft" as const,
+        targets: ["codex"],
+        selections: [
+          {
+            ref: "verification-profile:go-fuzz",
+            inputs: { cases: ["./internal/parser:FuzzDecode:5s;rm"] },
+          },
+        ],
+      },
+      code: "project-state.input-value",
+    },
+    {
       name: "duplicate target",
       input: {
         kind: "draft" as const,

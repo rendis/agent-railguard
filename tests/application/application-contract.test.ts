@@ -81,7 +81,7 @@ describe("AiHarnessApplication public cases", () => {
       if (preparation.plan?.kind !== "ready") throw new Error("Expected ready plan");
       expect((await runtime.application.apply(preparation.plan)).kind).toBe("applied");
       expect(await readFile(`${repository.root}/Makefile`, "utf8")).toContain(
-        "GO_TEST_PACKAGES := ./cmd/... ./internal/...",
+        "AI_HARNESS_GO_TEST_PACKAGES := ./cmd/... ./internal/...",
       );
 
       const managed = await runtime.application.scan(repository.root);

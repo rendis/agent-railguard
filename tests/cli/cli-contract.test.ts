@@ -300,7 +300,7 @@ describe.sequential("production CLI contract", () => {
       ]);
       expect(installed.code).toBe(0);
       expect(await readFile(join(repository.root, "Makefile"), "utf8")).toContain(
-        "GO_TEST_PACKAGES := ./cmd/... ./internal/...",
+        "AI_HARNESS_GO_TEST_PACKAGES := ./cmd/... ./internal/...",
       );
 
       const already = await cli([

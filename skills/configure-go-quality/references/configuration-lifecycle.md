@@ -25,15 +25,15 @@ Production, tests, E2E scenarios, behavioral fixtures, assertions, and product c
 ## Execute readiness probes
 
 1. Confirm repository root, `go.mod` or `go.work`, effective Go version, platforms, and build tags.
-2. Identify the task owner and any AI Harness managed markers before proposing writes.
+2. Identify `.ai-harness/project.yaml`, every `verification.*` managed marker, and the selected profile owner before proposing writes.
 3. Verify every adopted tool is a repository pin or standard Go command and record its effective version.
 4. Validate native configs with parser-only commands when available; otherwise prove the explicit path structurally and use the first real execution as runtime proof.
-5. Confirm canonical commands, scopes, non-zero semantics, fresh producer artifacts, and generated-output ignores.
+5. Confirm the public `check`/`verify` commands, selected profile inputs, non-zero semantics, fresh producer artifacts, and generated-output ignores.
 6. Prove developer-home configuration cannot change the effective command when the tool searches ambient paths.
 7. Compare local and CI commands, versions, flags, scopes, prerequisites, and environment differences.
 8. Execute every adopted dimension once. Preserve its first product finding or unavailable prerequisite without remediation or blind retry.
 
-When a declarative analyzer configuration changes, use a disposable ignored fixture to prove one known violation is detected and cleanup succeeds. The managed v1 baseline needs no invented analyzer probe; its real check and verify commands are authoritative.
+When a declarative analyzer configuration changes, use a disposable ignored fixture to prove one known violation is detected and cleanup succeeds. Managed profile targets remain private; the real `make check` and `make verify` commands are authoritative.
 
 ## Prove idempotency
 

@@ -10,13 +10,13 @@ Classify every adopted requirement:
 
 Every mechanical `MUST` belongs in the repository's native task or CI graph. Skill prose and agent promises are not gates.
 
-## Use the existing task graph
+## Use the managed task graph
 
-Compose direct tool targets with Make dependencies, Taskfile dependencies, native build tasks, or independent CI jobs. Continue independent checks with the task runner's native capability such as `make -k`; do not implement another DAG, schema, report renderer, fingerprint service, or runner application.
+Expose only `make check` and `make verify`. Let AI Harness compose selected profiles through private `ai-harness-*` targets; never call, copy, or edit those implementation targets from repository code or CI. `check` carries fast readiness and deterministic feedback. `verify` carries `check` plus the selected delivery evidence. Do not implement another public DAG, alias layer, report renderer, fingerprint service, or runner application.
 
 Each producer removes its previous artifact before execution and creates output below an ignored temporary directory. A failed producer invalidates its partial artifact. Consumers depend on the successful producer rather than interpreting stale files. Native exit codes and diagnostics are authoritative; a skill-side summary is optional presentation only.
 
-Canonical commands must run from a clean clone with repository pins and explicit configs. They must not invoke developer-home files, `.agents`, `.codex`, or an installed skill path.
+Canonical commands must run from a clean clone with repository pins and explicit configs. They must not invoke developer-home files, `.agents`, `.codex`, or an installed skill path. Repository-specific scopes live in selected profile inputs, not hand-written Make rules.
 
 ## Compare coverage exactly
 
@@ -54,3 +54,9 @@ Prefer independently expressed behavioral oracles and preserve clear idiomatic s
 Formatting, module verification, static analysis, exact coverage counts, and fixed regression suites should give pure deterministic verdicts for the same snapshot and environment. Race, bounded fuzz, mutation ordering, timings, logs, and E2E traces may contain noise; require the same verdict class, scope, seed or budget, and invariants rather than identical bytes.
 
 Version only the inputs needed to reproduce the decision. Store coverage, mutation output, fuzz artifacts, logs, traces, reports, and temporary fixtures under ignored paths or as CI artifacts.
+
+## Require the external SonarQube verdict
+
+When repository scanner properties are owned, set `sonar.qualitygate.wait=true` and a bounded `sonar.qualitygate.timeout` so the scanner command cannot report success before the server gate is known. Keep that scanner invocation in the same blocking CI path as strict delivery and record its analyzed revision plus observed Quality Gate identity/status.
+
+This wait setting does not version the server Quality Profile, Quality Gate, new-code definition, or rule parameters. Manage those through an authorized server-side workflow and compare their exported identity when reproducibility is required. Local `gocognit`, `dupl`, coverage, and other analyzers are complementary proxies; never translate their pass into a SonarQube pass. Missing credentials or unavailable server evidence is `BLOCKED_SETUP` or unobserved evidence, not local success.

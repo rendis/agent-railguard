@@ -12,9 +12,11 @@ Before adding or upgrading a tool, inspect its official release, license, suppor
 
 ## Aggregate overlapping analyzers once
 
-Use one pinned `golangci-lint` configuration for same-scope Staticcheck, `gosec`, `gocritic`, `gocognit`, GoDoc, and applicable test analyzers. Keep tests enabled. Configure cognitive complexity for production code with the approved baseline maximum of 15 unless repository policy is stronger.
+Use one pinned `golangci-lint` configuration for same-scope Staticcheck, `gosec`, `gocritic`, `gocognit`, GoDoc, and applicable test analyzers. Keep tests enabled. For the strict AI-code profile, configure cognitive complexity for production code with a maximum of 10. The analyzer reports values above that configured maximum; verify this boundary with the pinned version before changing it.
 
-Do not add standalone Staticcheck or gosec over the same scope. Do not add `gocyclo` when cognitive complexity is the mechanical gate and cyclomatic outliers are contextual diagnostics. Evaluate `dupl` against a clean baseline, but treat duplication as shared knowledge or policy—not automatically similar syntax—and do not enable it merely to increase tool count. Reject CRAP as a universal gate; coverage and complexity already provide its mechanical inputs without proving oracle quality.
+The bundled strict profile also enables `goconst` for repeated production literals, `dupl` at threshold 100 as a local duplication proxy, `godox` for `TODO` and `FIXME`, and a narrow explicit `revive` rule set for unambiguous control-flow defects. Keep `goconst.ignore-tests=true`: repeated fixture values are test evidence, and extracting them mechanically can hide the discriminating data. Other applicable test analyzers remain enabled. These signals are preventive: inspect each finding and do not claim equivalence with Sonar duplication or rule engines. Require `nolintlint` so every suppression identifies a specific linter and explains the exceptional reason. A suppression changes policy evidence and must not be generated merely to silence AI-authored code.
+
+Do not add standalone Staticcheck or gosec over the same scope. Do not add `gocyclo` when cognitive complexity is the mechanical gate and cyclomatic outliers are contextual diagnostics. Do not add a whole-repository aggregate complexity budget: it grows with legitimate functionality, changes with scope, and can be gamed without improving a function. Reject CRAP as a universal gate; coverage and complexity already provide its mechanical inputs without proving oracle quality.
 
 Run `govulncheck` separately because it evaluates reachable dependency vulnerabilities. Keep deprecation evidence in Staticcheck and inspect the authoritative replacement before remediation.
 

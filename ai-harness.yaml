@@ -14,7 +14,7 @@ catalog:
 
     configure-go-quality:
       version: 0.1.0
-      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair the managed `make check` and `make verify` baseline; preserve stronger adopted profiles and require an explicit provider for additional signals.
+      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair one managed `make check` and `make verify` interface, and select strict assurance profiles with explicit repository scopes when required.
       source: skills/configure-go-quality
       applies:
         languages: [go]
@@ -136,35 +136,242 @@ catalog:
           type: string-list
           default: ["."]
           item_pattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
-          make_variable: GO_MODULE_ROOTS
+          make_variable: AI_HARNESS_GO_MODULE_ROOTS
           source: project-units
         test_packages:
           type: string-list
           default: ["./..."]
           item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
-          make_variable: GO_TEST_PACKAGES
+          make_variable: AI_HARNESS_GO_TEST_PACKAGES
       make:
         targets: [ai-harness-go-check, ai-harness-go-verify]
         operations:
           check: ai-harness-go-check
           verify: ai-harness-go-verify
         body: |
-          GO_SELECTED_MODULE_ROOTS = $(if $(strip $(SCOPE)),$(filter $(SCOPE),$(GO_MODULE_ROOTS)),$(GO_MODULE_ROOTS))
+          AI_HARNESS_GO_SELECTED_MODULE_ROOTS = $(if $(strip $(SCOPE)),$(filter $(SCOPE),$(AI_HARNESS_GO_MODULE_ROOTS)),$(AI_HARNESS_GO_MODULE_ROOTS))
 
           .PHONY: ai-harness-go-check ai-harness-go-verify
 
           ai-harness-go-check:
-          	@if test -n "$(strip $(SCOPE))" && test -z "$(GO_SELECTED_MODULE_ROOTS)"; then echo "Unknown Go quality scope: $(SCOPE)" >&2; exit 2; fi
-          	@set -eu; for module in $(GO_SELECTED_MODULE_ROOTS); do \
+          	@if test -n "$(strip $(SCOPE))" && test -z "$(AI_HARNESS_GO_SELECTED_MODULE_ROOTS)"; then echo "Unknown Go quality scope: $(SCOPE)" >&2; exit 2; fi
+          	@set -eu; for module in $(AI_HARNESS_GO_SELECTED_MODULE_ROOTS); do \
           	  unformatted="$$(find "$$module" -type f -name '*.go' -not -path '*/vendor/*' -exec gofmt -l {} +)"; \
           	  if test -n "$$unformatted"; then echo "Go files require gofmt in $$module:" >&2; echo "$$unformatted" >&2; exit 1; fi; \
-          	  (cd "$$module" && go test $(GO_TEST_PACKAGES)); \
-          	  (cd "$$module" && go vet $(GO_TEST_PACKAGES)); \
+          	  (cd "$$module" && go test $(AI_HARNESS_GO_TEST_PACKAGES)); \
+          	  (cd "$$module" && go vet $(AI_HARNESS_GO_TEST_PACKAGES)); \
           	done
 
           ai-harness-go-verify: ai-harness-go-check
-          	@set -eu; for module in $(GO_SELECTED_MODULE_ROOTS); do \
-          	  (cd "$$module" && go test -race $(GO_TEST_PACKAGES)); \
+          	@set -eu; for module in $(AI_HARNESS_GO_SELECTED_MODULE_ROOTS); do \
+          	  (cd "$$module" && go test -race $(AI_HARNESS_GO_TEST_PACKAGES)); \
+          	done
+
+    go-assurance:
+      version: 0.1.0
+      description: Add strict static analysis, exact coverage and reachable-vulnerability checks to the managed Go verification interface.
+      details: Contribute module verification and repository-configured golangci-lint to make check. Contribute exact core and overall statement coverage plus govulncheck to make verify. The repository owns pinned Go tool directives, .golangci.yml, coverage scopes and generated-evidence ignores; selecting this profile without those prerequisites produces an explicit product or readiness failure.
+      applies:
+        languages: [go]
+      executables: [go, make]
+      inputs:
+        module_roots:
+          type: string-list
+          default: ["."]
+          item_pattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+          make_variable: AI_HARNESS_GO_ASSURANCE_MODULE_ROOTS
+          source: project-units
+        test_packages:
+          type: string-list
+          default: ["./..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+          make_variable: AI_HARNESS_GO_ASSURANCE_TEST_PACKAGES
+        core_packages:
+          type: string-list
+          default: ["./internal/core/..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+          make_variable: AI_HARNESS_GO_ASSURANCE_CORE_PACKAGES
+        core_cover_packages:
+          type: string-list
+          default: ["./internal/core/..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+          make_variable: AI_HARNESS_GO_ASSURANCE_CORE_COVER_PACKAGES
+        overall_cover_packages:
+          type: string-list
+          default: ["./cmd/...", "./internal/..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+          make_variable: AI_HARNESS_GO_ASSURANCE_OVERALL_COVER_PACKAGES
+      make:
+        targets: [ai-harness-go-assurance-check, ai-harness-go-assurance-verify]
+        operations:
+          check: ai-harness-go-assurance-check
+          verify: ai-harness-go-assurance-verify
+        body: |
+          AI_HARNESS_GO_ASSURANCE_SELECTED_MODULE_ROOTS = $(if $(strip $(SCOPE)),$(filter $(SCOPE),$(AI_HARNESS_GO_ASSURANCE_MODULE_ROOTS)),$(AI_HARNESS_GO_ASSURANCE_MODULE_ROOTS))
+          AI_HARNESS_GO_ASSURANCE_DIR ?= tmp/ai-harness/quality
+
+          .PHONY: ai-harness-go-assurance-check ai-harness-go-assurance-verify
+
+          ai-harness-go-assurance-check:
+          	@if test -n "$(strip $(SCOPE))" && test -z "$(AI_HARNESS_GO_ASSURANCE_SELECTED_MODULE_ROOTS)"; then echo "Unknown Go assurance scope: $(SCOPE)" >&2; exit 2; fi
+          	@set -eu; for module in $(AI_HARNESS_GO_ASSURANCE_SELECTED_MODULE_ROOTS); do \
+          	  (cd "$$module" && go mod verify); \
+          	  (cd "$$module" && go tool golangci-lint config verify --config .golangci.yml); \
+          	  (cd "$$module" && go tool golangci-lint run --config .golangci.yml $(AI_HARNESS_GO_ASSURANCE_TEST_PACKAGES)); \
+          	done
+
+          ai-harness-go-assurance-verify: ai-harness-go-assurance-check
+          	@set -eu; for module in $(AI_HARNESS_GO_ASSURANCE_SELECTED_MODULE_ROOTS); do \
+          	  (cd "$$module" && \
+          	    mkdir -p "$(AI_HARNESS_GO_ASSURANCE_DIR)"; \
+          	    core_profile="$(AI_HARNESS_GO_ASSURANCE_DIR)/core.coverage"; \
+          	    overall_profile="$(AI_HARNESS_GO_ASSURANCE_DIR)/overall.coverage"; \
+          	    core_temporary="$$core_profile.tmp"; \
+          	    overall_temporary="$$overall_profile.tmp"; \
+          	    core_coverpkg="$$(printf '%s' '$(AI_HARNESS_GO_ASSURANCE_CORE_COVER_PACKAGES)' | tr ' ' ',')"; \
+          	    overall_coverpkg="$$(printf '%s' '$(AI_HARNESS_GO_ASSURANCE_OVERALL_COVER_PACKAGES)' | tr ' ' ',')"; \
+          	    rm -f "$$core_profile" "$$overall_profile" "$$core_temporary" "$$overall_temporary"; \
+          	    go test -count=1 -covermode=atomic -coverpkg="$$core_coverpkg" -coverprofile="$$core_temporary" $(AI_HARNESS_GO_ASSURANCE_CORE_PACKAGES); \
+          	    test -s "$$core_temporary" || { rm -f "$$core_temporary"; echo "core coverage profile is missing" >&2; exit 1; }; \
+          	    mv "$$core_temporary" "$$core_profile"; \
+          	    awk 'NR > 1 { statements[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } END { for (block in statements) { total += statements[block]; if (hit[block]) covered += statements[block] } printf "core coverage: %d/%d statements\\n", covered, total; if (total == 0 || covered != total) { print "core coverage must be exactly 100%" > "/dev/stderr"; exit 1 } }' "$$core_profile"; \
+          	    go test -count=1 -covermode=atomic -coverpkg="$$overall_coverpkg" -coverprofile="$$overall_temporary" $(AI_HARNESS_GO_ASSURANCE_TEST_PACKAGES); \
+          	    test -s "$$overall_temporary" || { rm -f "$$overall_temporary"; echo "overall coverage profile is missing" >&2; exit 1; }; \
+          	    mv "$$overall_temporary" "$$overall_profile"; \
+          	    awk 'NR > 1 { statements[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } END { for (block in statements) { total += statements[block]; if (hit[block]) covered += statements[block] } printf "overall coverage: %d/%d statements (%.2f%%)\\n", covered, total, total ? covered * 100 / total : 0; if (total == 0 || covered * 100 <= total * 85) { print "overall coverage must be strictly greater than 85%" > "/dev/stderr"; exit 1 } }' "$$overall_profile"; \
+          	    go tool govulncheck -db "$${VULN_DB:-https://vuln.go.dev}" $(AI_HARNESS_GO_ASSURANCE_TEST_PACKAGES)); \
+          	done
+
+    go-fuzz:
+      version: 0.1.0
+      description: Add explicitly selected bounded Go fuzz cases to make verify.
+      details: Each case declares one package, one Go fuzz identifier and one bounded duration. make check validates the selected scope and explicit case inputs without running a campaign; make verify executes every configured case.
+      applies:
+        languages: [go]
+      executables: [go, make]
+      inputs:
+        module_roots:
+          type: string-list
+          default: ["."]
+          item_pattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+          make_variable: AI_HARNESS_GO_FUZZ_MODULE_ROOTS
+          source: project-units
+        cases:
+          type: string-list
+          default: ["disabled"]
+          item_pattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*:Fuzz[A-Za-z0-9_]+:[1-9][0-9]*(?:ms|s|m))$"
+          make_variable: AI_HARNESS_GO_FUZZ_CASES
+      make:
+        targets: [ai-harness-go-fuzz-check, ai-harness-go-fuzz-verify]
+        operations:
+          check: ai-harness-go-fuzz-check
+          verify: ai-harness-go-fuzz-verify
+        body: |
+          AI_HARNESS_GO_FUZZ_SELECTED_MODULE_ROOTS = $(if $(strip $(SCOPE)),$(filter $(SCOPE),$(AI_HARNESS_GO_FUZZ_MODULE_ROOTS)),$(AI_HARNESS_GO_FUZZ_MODULE_ROOTS))
+
+          .PHONY: ai-harness-go-fuzz-check ai-harness-go-fuzz-verify
+
+          ai-harness-go-fuzz-check:
+          	@if test -n "$(strip $(SCOPE))" && test -z "$(AI_HARNESS_GO_FUZZ_SELECTED_MODULE_ROOTS)"; then echo "Unknown Go fuzz scope: $(SCOPE)" >&2; exit 2; fi
+          	@test "$(AI_HARNESS_GO_FUZZ_CASES)" != "disabled" || { echo "go-fuzz requires explicit cases" >&2; exit 2; }
+
+          ai-harness-go-fuzz-verify: ai-harness-go-fuzz-check
+          	@set -eu; for module in $(AI_HARNESS_GO_FUZZ_SELECTED_MODULE_ROOTS); do \
+          	  (cd "$$module" && for spec in $(AI_HARNESS_GO_FUZZ_CASES); do \
+          	    package="$${spec%%:*}"; remainder="$${spec#*:}"; target="$${remainder%%:*}"; duration="$${remainder#*:}"; \
+          	    go test -run '^$$' -fuzz "^$${target}$$" -fuzztime="$$duration" "$$package"; \
+          	  done); \
+          	done
+
+    go-mutation:
+      version: 0.1.0
+      description: Add explicitly selected Go mutation packages to make verify.
+      details: Run the repository-pinned Gremlins configuration for each selected production package, require at least one mutant, and accept only KILLED results. Reports are generated under tmp/ai-harness/mutation.
+      applies:
+        languages: [go]
+      executables: [go, make]
+      inputs:
+        module_roots:
+          type: string-list
+          default: ["."]
+          item_pattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+          make_variable: AI_HARNESS_GO_MUTATION_MODULE_ROOTS
+          source: project-units
+        packages:
+          type: string-list
+          default: ["disabled"]
+          item_pattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*)$"
+          make_variable: AI_HARNESS_GO_MUTATION_PACKAGES
+      make:
+        targets: [ai-harness-go-mutation-check, ai-harness-go-mutation-verify]
+        operations:
+          check: ai-harness-go-mutation-check
+          verify: ai-harness-go-mutation-verify
+        body: |
+          AI_HARNESS_GO_MUTATION_SELECTED_MODULE_ROOTS = $(if $(strip $(SCOPE)),$(filter $(SCOPE),$(AI_HARNESS_GO_MUTATION_MODULE_ROOTS)),$(AI_HARNESS_GO_MUTATION_MODULE_ROOTS))
+          AI_HARNESS_GO_MUTATION_DIR ?= tmp/ai-harness/mutation
+
+          .PHONY: ai-harness-go-mutation-check ai-harness-go-mutation-verify
+
+          ai-harness-go-mutation-check:
+          	@if test -n "$(strip $(SCOPE))" && test -z "$(AI_HARNESS_GO_MUTATION_SELECTED_MODULE_ROOTS)"; then echo "Unknown Go mutation scope: $(SCOPE)" >&2; exit 2; fi
+          	@test "$(AI_HARNESS_GO_MUTATION_PACKAGES)" != "disabled" || { echo "go-mutation requires explicit packages" >&2; exit 2; }
+
+          ai-harness-go-mutation-verify: ai-harness-go-mutation-check
+          	@set -eu; for module in $(AI_HARNESS_GO_MUTATION_SELECTED_MODULE_ROOTS); do \
+          	  (cd "$$module" && \
+          	    mkdir -p "$(AI_HARNESS_GO_MUTATION_DIR)"; \
+          	    go test -count=1 $(AI_HARNESS_GO_MUTATION_PACKAGES); \
+          	    reports=""; index=0; \
+          	    for package in $(AI_HARNESS_GO_MUTATION_PACKAGES); do \
+          	      index=$$((index + 1)); final="$(AI_HARNESS_GO_MUTATION_DIR)/governed-$$index.json"; temporary="$$final.tmp"; \
+          	      rm -f "$$final" "$$temporary"; \
+          	      go tool gremlins --config .gremlins.yaml unleash --silent -o "$$temporary" "$$package" || { rm -f "$$temporary"; exit 1; }; \
+          	      test -s "$$temporary" || { rm -f "$$temporary"; echo "mutation report is missing for $$package" >&2; exit 1; }; \
+          	      mv "$$temporary" "$$final"; reports="$$reports $$final"; \
+          	    done; \
+          	    go tool gojq -s -e '[.[] | .files[] as $$file | $$file.mutations[] | . + {file_name: $$file.file_name}] as $$all | [$$all[] | select(.status != "KILLED")] as $$unresolved | if ($$all | length) == 0 then error("mutation campaigns produced zero mutants") elif ($$unresolved | length) > 0 then error("unresolved mutations require contextual review: \($$unresolved)") else {mutants: ($$all | length), killed: ([ $$all[] | select(.status == "KILLED") ] | length), operator_families: ([ $$all[].type ] | unique)} end' $$reports); \
+          	done
+
+    go-e2e:
+      version: 0.1.0
+      description: Add explicitly selected Go E2E packages to make verify.
+      details: Run repository acceptance packages with the e2e build tag and a five-minute bound. Docker and Testcontainers environment discovery remain execution prerequisites rather than generic repository policy.
+      applies:
+        languages: [go]
+      executables: [docker, go, make]
+      inputs:
+        module_roots:
+          type: string-list
+          default: ["."]
+          item_pattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$"
+          make_variable: AI_HARNESS_GO_E2E_MODULE_ROOTS
+          source: project-units
+        packages:
+          type: string-list
+          default: ["disabled"]
+          item_pattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?)$"
+          make_variable: AI_HARNESS_GO_E2E_PACKAGES
+      make:
+        targets: [ai-harness-go-e2e-check, ai-harness-go-e2e-verify]
+        operations:
+          check: ai-harness-go-e2e-check
+          verify: ai-harness-go-e2e-verify
+        body: |
+          AI_HARNESS_GO_E2E_SELECTED_MODULE_ROOTS = $(if $(strip $(SCOPE)),$(filter $(SCOPE),$(AI_HARNESS_GO_E2E_MODULE_ROOTS)),$(AI_HARNESS_GO_E2E_MODULE_ROOTS))
+
+          .PHONY: ai-harness-go-e2e-check ai-harness-go-e2e-verify
+
+          ai-harness-go-e2e-check:
+          	@if test -n "$(strip $(SCOPE))" && test -z "$(AI_HARNESS_GO_E2E_SELECTED_MODULE_ROOTS)"; then echo "Unknown Go E2E scope: $(SCOPE)" >&2; exit 2; fi
+          	@test "$(AI_HARNESS_GO_E2E_PACKAGES)" != "disabled" || { echo "go-e2e requires explicit packages" >&2; exit 2; }
+
+          ai-harness-go-e2e-verify: ai-harness-go-e2e-check
+          	@set -eu; for module in $(AI_HARNESS_GO_E2E_SELECTED_MODULE_ROOTS); do \
+          	  (cd "$$module" && \
+          	    docker_host="$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)}"; \
+          	    socket="$${TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE:-/var/run/docker.sock}"; \
+          	    DOCKER_HOST="$$docker_host" TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="$$socket" go test -tags=e2e -count=1 -timeout=5m $(AI_HARNESS_GO_E2E_PACKAGES)); \
           	done
 
   git-gates:

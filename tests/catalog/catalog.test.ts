@@ -76,7 +76,13 @@ describe("FilesystemCatalog", () => {
       result.catalog.components
         .filter((component) => component.ref.startsWith("verification-profile:"))
         .map((component) => component.ref),
-    ).toEqual(["verification-profile:go-quality"]);
+    ).toEqual([
+      "verification-profile:go-assurance",
+      "verification-profile:go-e2e",
+      "verification-profile:go-fuzz",
+      "verification-profile:go-mutation",
+      "verification-profile:go-quality",
+    ]);
     expect(
       result.catalog.components
         .filter((component) => component.ref.startsWith("git-gate:"))
@@ -93,7 +99,7 @@ describe("FilesystemCatalog", () => {
         ?.relations.map((relation) => [relation.kind, relation.target]),
     ).toContainEqual(["requires", "verification-profile:go-quality"]);
     const profile = result.catalog.components.find(
-      (component) => component.kind === "verification-profile",
+      (component) => component.ref === "verification-profile:go-quality",
     );
     expect(profile?.kind === "verification-profile" ? profile.inputs : []).toEqual([
       {
@@ -101,7 +107,7 @@ describe("FilesystemCatalog", () => {
         type: "string-list",
         default: ["."],
         itemPattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$",
-        makeVariable: "GO_MODULE_ROOTS",
+        makeVariable: "AI_HARNESS_GO_MODULE_ROOTS",
         source: "project-units",
       },
       {
@@ -109,7 +115,7 @@ describe("FilesystemCatalog", () => {
         type: "string-list",
         default: ["./..."],
         itemPattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$",
-        makeVariable: "GO_TEST_PACKAGES",
+        makeVariable: "AI_HARNESS_GO_TEST_PACKAGES",
         source: "literal",
       },
     ]);
