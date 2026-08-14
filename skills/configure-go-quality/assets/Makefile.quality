@@ -4,8 +4,8 @@
 
 .PHONY: fmt-check mod-verify quality-readiness quality-negative-probe test test-core coverage coverage-core coverage-overall vet lint check vuln test-race test-fuzz mutation mutation-baseline mutation-run mutation-verdict test-e2e verify-hardening
 
-QUALITY_DIR ?= tmp/quality
-MUTATION_DIR ?= tmp/mutation
+QUALITY_DIR ?= tmp/ai-harness/quality
+MUTATION_DIR ?= tmp/ai-harness/mutation
 GO_SOURCE_DIRS ?= cmd internal tests
 GO_TEST_PACKAGES ?= ./...
 GO_CORE_PACKAGES ?= ./internal/core/...

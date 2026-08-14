@@ -39,6 +39,8 @@ const defaultExcludedDirectories = Object.freeze([
   "vendor",
 ]);
 
+const defaultExcludedDirectoryPaths = Object.freeze(["tmp/ai-harness"]);
+
 interface InventoryBudget {
   entries: number;
   bytes: number;
@@ -167,9 +169,15 @@ export class NodeRepositoryInventory implements RepositoryInventory {
     directoryEntries.sort((left, right) => compareUtf8(left.name, right.name));
 
     for (const directoryEntry of directoryEntries) {
+      const relativeValue =
+        input.relativeDirectory.length === 0
+          ? directoryEntry.name
+          : `${input.relativeDirectory}/${directoryEntry.name}`;
       if (
         directoryEntry.name === ".git" ||
-        (directoryEntry.isDirectory() && this.#excludedDirectories.has(directoryEntry.name))
+        (directoryEntry.isDirectory() &&
+          (this.#excludedDirectories.has(directoryEntry.name) ||
+            defaultExcludedDirectoryPaths.includes(relativeValue)))
       ) {
         continue;
       }
@@ -178,10 +186,6 @@ export class NodeRepositoryInventory implements RepositoryInventory {
         throw new Error(`Repository inventory exceeded entry limit ${this.#maxEntries}`);
       }
 
-      const relativeValue =
-        input.relativeDirectory.length === 0
-          ? directoryEntry.name
-          : `${input.relativeDirectory}/${directoryEntry.name}`;
       const path = relativePosixPath(relativeValue);
       const absolutePath = resolve(input.absoluteDirectory, directoryEntry.name);
       const pathStat = await lstat(absolutePath);
