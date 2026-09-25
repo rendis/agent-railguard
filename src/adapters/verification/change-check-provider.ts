@@ -34,6 +34,7 @@ export class ChangeCheckProvider implements CheckProvider {
 
   public constructor(
     private readonly process: ProcessRunner,
+    private readonly changeSets: ChangeSetReader,
     private readonly review: ChangeReview,
   ) {}
 
@@ -42,9 +43,9 @@ export class ChangeCheckProvider implements CheckProvider {
     if (changes === null) return skipped("Judges a change; run with --changed");
     switch (kind) {
       case "change-integrity":
-        return await this.#integrity(request, changes);
+        return await this.#sinceAccepted(request, changes, kind, (scope) => this.#integrity(request, scope));
       case "change-size":
-        return await this.#size(request, changes);
+        return await this.#sinceAccepted(request, changes, kind, (scope) => this.#size(request, scope));
       case "change-review":
         return await this.review.evaluate(request.repositoryRoot, changes);
       default:
@@ -71,14 +72,14 @@ export class ChangeCheckProvider implements CheckProvider {
       else if (matchesAnyGlob(path, protectedPaths)) findings.push(`${path}: protected quality configuration deleted`);
     }
     if (findings.length === 0) return passed("No suppression, deleted test or protected configuration change");
-    return await this.#unlessAllowed(request, changes, "change-integrity", {
+    return {
       status: "failed",
       summary: `${findings.length} change(s) weaken what the checks can see`,
       details: [
         ...findings,
-        "Fix the cause instead. Only a person may accept this on purpose, with a `Railguard-Allow: change-integrity: <reason>` trailer in a commit of this branch (`git commit --no-verify` for that commit).",
+        "Fix the cause instead. Only a person may accept what the branch holds so far, with a `Railguard-Allow: change-integrity: <reason>` trailer in a commit (`git commit --no-verify` for that commit).",
       ],
-    });
+    };
   }
 
   async #size(request: CheckRequest, changes: ChangeSet): Promise<CheckOutcome> {
@@ -93,14 +94,14 @@ export class ChangeCheckProvider implements CheckProvider {
     }
     const total = counted.reduce((sum, file) => sum + file.lines, 0);
     if (total <= limit) return passed(`${total} changed line(s) outside tests, within ${limit}`);
-    return await this.#unlessAllowed(request, changes, "change-size", {
+    return {
       status: "failed",
       summary: `${total} changed line(s) outside tests exceed the reviewable limit of ${limit}`,
       details: [
         ...counted.sort((left, right) => right.lines - left.lines).slice(0, 10).map((file) => `${file.path}: ${file.lines}`),
-        "Split the change into smaller deliveries. A person may accept it with a `Railguard-Allow: change-size: <reason>` trailer.",
+        "Split the change into smaller deliveries. A person may accept what the branch holds so far with a `Railguard-Allow: change-size: <reason>` trailer.",
       ],
-    });
+    };
   }
 
   async #existsAtBase(root: string, base: string | null, path: string): Promise<boolean> {
@@ -109,20 +110,37 @@ export class ChangeCheckProvider implements CheckProvider {
     return result.exitCode === 0;
   }
 
-  async #unlessAllowed(
+  /**
+   * A `Railguard-Allow` trailer accepts what the branch held at that commit, such as work that
+   * predates adopting Railguard. Later changes are judged from that commit on.
+   */
+  async #sinceAccepted(
     request: CheckRequest,
     changes: ChangeSet,
     kind: string,
-    failure: CheckOutcome,
+    judge: (scope: ChangeSet) => Promise<CheckOutcome>,
   ): Promise<CheckOutcome> {
-    if (changes.base === null) return failure;
-    const log = await this.process.run("git", ["log", "--format=%B", `${changes.base}..HEAD`], {
-      cwd: request.repositoryRoot,
-      timeoutMs: 60_000,
-    });
-    const reason = log.exitCode === 0 ? parseAllowances(log.stdout).get(kind) : undefined;
-    if (reason === undefined) return failure;
-    return { status: "passed", summary: `Accepted by Railguard-Allow: ${reason}`, details: failure.details.slice(0, -1) };
+    const accepted = await this.#acceptedCommit(request.repositoryRoot, changes.base, kind);
+    if (accepted === null) return await judge(changes);
+    const outcome = await judge(await this.changeSets.read(request.repositoryRoot, accepted.commit));
+    const since = `since ${accepted.commit.slice(0, 12)} (accepted: ${accepted.reason})`;
+    return { ...outcome, summary: `${outcome.summary} ${since}` };
+  }
+
+  async #acceptedCommit(
+    root: string,
+    base: string | null,
+    kind: string,
+  ): Promise<{ readonly commit: string; readonly reason: string } | null> {
+    if (base === null) return null;
+    const log = await this.process.run("git", ["log", "--format=%H%x1f%B%x1e", `${base}..HEAD`], { cwd: root, timeoutMs: 60_000 });
+    if (log.exitCode !== 0) return null;
+    for (const entry of log.stdout.split("\x1e")) {
+      const [commit, message] = entry.trim().split("\x1f");
+      const reason = message === undefined ? undefined : parseAllowances(message).get(kind);
+      if (commit !== undefined && reason !== undefined) return { commit, reason };
+    }
+    return null;
   }
 }
 

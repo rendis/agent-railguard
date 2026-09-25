@@ -148,7 +148,7 @@ export async function createDefaultApplication(
   const verification = new VerificationService({
     scan: (root) => application.scan(root),
     changeSets,
-    providers: [...registeredCheckProviders(processRunner), new ChangeCheckProvider(processRunner, review)],
+    providers: [...registeredCheckProviders(processRunner), new ChangeCheckProvider(processRunner, changeSets, review)],
   });
   return Object.freeze({
     application,

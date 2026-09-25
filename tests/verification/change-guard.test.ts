@@ -112,15 +112,20 @@ describe("ChangeCheckProvider", () => {
     expect(outcome.status).toBe("passed");
   });
 
-  it("passes a finding a person accepted with a commit trailer", async () => {
+  it("accepts what the branch held at a trailer commit and judges later changes", async () => {
     const { root, git } = await repository({ "a.go": "package a\n" });
     await git("checkout", "-q", "-b", "feature");
     await writeFile(join(root, "a.go"), "package a\n\nfunc A() {} //nolint:all\n");
-    await git("commit", "-qam", "legacy lint\n\nRailguard-Allow: change-integrity: generated code");
+    await git("commit", "-qam", "legacy lint\n\nRailguard-Allow: change-integrity: predates Railguard");
 
-    const outcome = await provider().run("change-integrity", await request(root));
+    const accepted = await provider().run("change-integrity", await request(root));
+    expect(accepted.status).toBe("passed");
+    expect(accepted.summary).toMatch(/^No suppression.* since [0-9a-f]{12} \(accepted: predates Railguard\)$/u);
 
-    expect(outcome).toMatchObject({ status: "passed", summary: "Accepted by Railguard-Allow: generated code" });
+    await writeFile(join(root, "b.go"), "package a\n\nfunc B() {} //nolint:all\n");
+    const later = await provider().run("change-integrity", await request(root));
+    expect(later.status).toBe("failed");
+    expect(later.details[0]).toBe("b.go:3: lint suppression: func B() {} //nolint:all");
   });
 
   it("limits changed lines outside tests and excluded paths", async () => {
@@ -202,7 +207,7 @@ describe("ChangeReview", () => {
 });
 
 function provider(): ChangeCheckProvider {
-  return new ChangeCheckProvider(process, new ChangeReview(process, changeSets));
+  return new ChangeCheckProvider(process, changeSets, new ChangeReview(process, changeSets));
 }
 
 async function request(root: string, inputs: Record<string, readonly string[]> = {}): Promise<CheckRequest> {

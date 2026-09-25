@@ -285,7 +285,7 @@ catalog:
     change-guard:
       version: 0.1.0
       description: Block changes that silence checks, delete tests or grow past a reviewable size.
-      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, or deletes a test file. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles and harness configuration. A person may accept one finding on purpose with a `Railguard-Allow: <check-kind>: <reason>` trailer in a commit of the branch. It judges only changes; a full run skips it."
+      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, or deletes a test file. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles and harness configuration. A person may accept what the branch holds at one commit with a `Railguard-Allow: <check-kind>: <reason>` trailer; later changes are still judged. It judges only changes; a full run skips it."
       executables: [git]
       inputs:
         protected_paths:
