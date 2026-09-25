@@ -467,6 +467,31 @@ describe("RailguardApplication", () => {
     }
   });
 
+  it("adopts the core.hooksPath a sibling worktree already set", async () => {
+    const repository = await createTempRepository({ "go.mod": "module example.com/worktree\n" });
+    await exec("git", ["init", "--quiet", repository.root]);
+    await exec("git", ["-C", repository.root, "config", "--local", "core.hooksPath", ".railguard/hooks"]);
+    const runtime = await createDefaultApplication({ executableProbe: probe });
+    try {
+      const baseline = await runtime.application.scan(repository.root);
+      const install = await runtime.application.prepareInstall(
+        baseline,
+        [componentRef("git-gate:pre-commit-check")],
+        [codex],
+      );
+      if (install.plan?.kind !== "ready") {
+        throw new Error("Expected the shared hooks path to be adopted");
+      }
+      expect(install.plan.operations.map((operation) => operation.path)).not.toContain(".git/config");
+      expect((await runtime.application.apply(install.plan)).kind).toBe("applied");
+
+      const status = await runtime.application.status(repository.root, [codex]);
+      expect(status.verification?.materialization).toBe("verified");
+    } finally {
+      await Promise.all([runtime.dispose(), repository.cleanup()]);
+    }
+  });
+
   it("preserves foreign or drifted core.hooksPath values", async () => {
     const repository = await createTempRepository({ "go.mod": "module example.com/git-policy\n" });
     await exec("git", ["init", "--quiet", repository.root]);

@@ -877,7 +877,7 @@ async function planLocalEffects(
       continue;
     }
     if (newEffect !== undefined) {
-      if (oldEffect === undefined && current.kind === "value") {
+      if (oldEffect === undefined && current.kind === "value" && current.value !== newEffect.expected_value) {
         diagnostics.push(
           planningDiagnostic(
             "planning.git-config.foreign",

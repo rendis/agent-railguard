@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { lstat, open, opendir, readlink, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import type {
   RepositoryDirectoryEntry,
   RepositoryEntry,
@@ -39,7 +41,7 @@ const defaultExcludedDirectories = Object.freeze([
   "vendor",
 ]);
 
-const defaultExcludedDirectoryPaths = Object.freeze(["tmp/railguard"]);
+const execute = promisify(execFile);
 
 interface InventoryBudget {
   entries: number;
@@ -117,12 +119,14 @@ export class NodeRepositoryInventory implements RepositoryInventory {
     const entries: RepositoryEntry[] = [];
     const files = new Map<RelativePosixPath, { readonly bytes: ReadonlyBytes; readonly mode: number }>();
     const budget: InventoryBudget = { entries: 0, bytes: 0 };
+    const ignoredDirectories = await ignoredOutputDirectories(logicalRoot);
 
     await this.#walk({
       absoluteDirectory: logicalRoot,
       relativeDirectory: "",
       depth: 0,
       rootRealPath,
+      ignoredDirectories,
       entries,
       files,
       budget,
@@ -153,6 +157,7 @@ export class NodeRepositoryInventory implements RepositoryInventory {
     readonly relativeDirectory: string;
     readonly depth: number;
     readonly rootRealPath: string;
+    readonly ignoredDirectories: ReadonlySet<string>;
     readonly entries: RepositoryEntry[];
     readonly files: Map<RelativePosixPath, { readonly bytes: ReadonlyBytes; readonly mode: number }>;
     readonly budget: InventoryBudget;
@@ -177,7 +182,7 @@ export class NodeRepositoryInventory implements RepositoryInventory {
         directoryEntry.name === ".git" ||
         (directoryEntry.isDirectory() &&
           (this.#excludedDirectories.has(directoryEntry.name) ||
-            defaultExcludedDirectoryPaths.includes(relativeValue)))
+            input.ignoredDirectories.has(relativeValue)))
       ) {
         continue;
       }
@@ -270,6 +275,29 @@ export class NodeRepositoryInventory implements RepositoryInventory {
       input.entries.push(entry);
       input.files.set(path, { bytes: readonlyBytes, mode: fileMode });
     }
+  }
+}
+
+/**
+ * Git-ignored directories outside hidden configuration directories hold build output and caches
+ * (`tmp/`, `bin/`, `out/`); nothing is ever projected there. Hidden directories such as `.claude`
+ * stay inventoried even when ignored because harness configuration lives in them.
+ */
+async function ignoredOutputDirectories(root: string): Promise<ReadonlySet<string>> {
+  try {
+    const { stdout } = await execute(
+      "git",
+      ["-C", root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+      { maxBuffer: 64 * 1024 * 1024 },
+    );
+    return new Set(
+      stdout
+        .split("\0")
+        .filter((path) => path.endsWith("/") && !path.startsWith(".") && !path.includes("/."))
+        .map((path) => path.slice(0, -1)),
+    );
+  } catch {
+    return new Set();
   }
 }
 

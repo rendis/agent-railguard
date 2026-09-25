@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeRepositoryInventory } from "../../src/adapters/platform/repository-inventory/node-repository-inventory.js";
 import { relativePosixPath } from "../../src/domain/shared/types.js";
@@ -71,5 +73,22 @@ describe("NodeRepositoryInventory", () => {
     const inventory = new NodeRepositoryInventory({ maxEntries: 1 });
 
     await expect(inventory.snapshot(repository.root)).rejects.toThrow("entry limit");
+  });
+
+  it("skips git-ignored output directories but keeps ignored hidden configuration", async () => {
+    const repository = await createTempRepository({
+      ".gitignore": "tmp/\n.claude/\n",
+      "go.mod": "module example.com/service\n",
+      "tmp/cache/huge.bin": "x".repeat(64),
+      ".claude/settings.local.json": "{}\n",
+    });
+    cleanups.push(repository.cleanup);
+    await promisify(execFile)("git", ["init", "--quiet", repository.root]);
+
+    const snapshot = await new NodeRepositoryInventory({ maxFileBytes: 32 }).snapshot(repository.root);
+    const paths = snapshot.entries.map((entry) => entry.path);
+
+    expect(paths.some((path) => path.startsWith("tmp"))).toBe(false);
+    expect(paths).toContain(relativePosixPath(".claude/settings.local.json"));
   });
 });
