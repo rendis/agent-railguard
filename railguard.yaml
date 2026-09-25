@@ -282,6 +282,69 @@ catalog:
           kind: go-imports
           stage: check
 
+    change-guard:
+      version: 0.1.0
+      description: Block changes that silence checks, delete tests or grow past a reviewable size.
+      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, or deletes a test file. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles and harness configuration. A person may accept one finding on purpose with a `Railguard-Allow: <check-kind>: <reason>` trailer in a commit of the branch. It judges only changes; a full run skips it."
+      executables: [git]
+      inputs:
+        protected_paths:
+          type: string-list
+          default:
+            - ".golangci.*"
+            - ".gremlins.yaml"
+            - ".railguard/project.yaml"
+            - "sonar-project.properties"
+            - ".eslintrc*"
+            - "eslint.config.*"
+            - "jest.config.*"
+            - "vitest.config.*"
+            - ".coveragerc"
+            - "codecov.yml"
+          item_pattern: "^(?![/~])[^\\s]+$"
+        size_excluded_paths:
+          type: string-list
+          default:
+            - "go.sum"
+            - "*.lock"
+            - "pnpm-lock.yaml"
+            - "package-lock.json"
+            - "*.pb.go"
+            - "*_gen.go"
+            - "*.gen.*"
+            - "vendor/**"
+            - "**/testdata/**"
+            - "**/__snapshots__/**"
+            - ".railguard/**"
+            - ".agents/**"
+            - ".claude/**"
+            - ".codex/**"
+            - ".cursor/**"
+            - "AGENTS.md"
+            - "CLAUDE.md"
+          item_pattern: "^(?![/~])[^\\s]+$"
+        max_changed_lines:
+          type: string-list
+          default: ["400"]
+          item_pattern: "^[1-9][0-9]{0,5}$"
+      checks:
+        - id: integrity
+          kind: change-integrity
+          stage: check
+        - id: size
+          kind: change-size
+          stage: verify
+
+    handoff-review:
+      version: 0.1.0
+      description: Require a current review of the change against every active knowledge-os handoff before delivery.
+      details: "Verify fails while a handoff in .knowledge-os-handoffs/ACTIVE.yaml is active and the change has no review recorded with `railguard review record` for its exact content. The review lists each acceptance criterion as met, not_met or not_applicable with evidence; the reviewer should be a subagent given only the handoff and the diff. Railguard checks that the record is current, covers every active handoff, cites files that exist and has no unmet criterion. Without an active handoff it is skipped."
+      executables: [git]
+      checks:
+        - id: review
+          kind: change-review
+          stage: verify
+
   git-gates:
     pre-commit-check:
       version: 0.2.0
@@ -397,6 +460,12 @@ catalog:
         - kind: includes
           target: verification-profile:go-architecture
           reason: The foundation keeps the hexagonal core free of adapter and infrastructure imports.
+        - kind: includes
+          target: verification-profile:change-guard
+          reason: The foundation rejects changes that silence checks, delete tests or grow past a reviewable size.
+        - kind: includes
+          target: verification-profile:handoff-review
+          reason: The foundation reviews a change against its active handoff before delivery.
         - kind: includes
           target: git-gate:pre-commit-check
           reason: The foundation checks fast verification before commits.

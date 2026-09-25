@@ -155,7 +155,7 @@
     "verificationProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "description", "details", "applies", "executables", "checks"],
+      "required": ["version", "description", "details", "executables", "checks"],
       "properties": {
         "version": {
           "$ref": "#/$defs/semver"
@@ -167,21 +167,7 @@
           "pattern": "^(?!\\s)(?:[^\\r\\n]*\\S)?$"
         },
         "details": { "$ref": "#/$defs/details" },
-        "applies": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["languages"],
-          "properties": {
-            "languages": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": {
-                "$ref": "#/$defs/languageId"
-              }
-            }
-          }
-        },
+        "applies": { "$ref": "#/$defs/optionalApplies" },
         "executables": {
           "type": "array",
           "minItems": 1,

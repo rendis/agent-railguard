@@ -137,12 +137,14 @@ describe("configure-go-quality contract", () => {
     expect(policy).toContain("cognitive complexity `6`");
     expect(policy).toContain("Do not add a whole-repository aggregate");
     expect(Object.keys(authoring.catalog["verification-profiles"]).sort()).toEqual([
+      "change-guard",
       "go-architecture",
       "go-assurance",
       "go-e2e",
       "go-fuzz",
       "go-mutation",
       "go-quality",
+      "handoff-review",
     ]);
     for (const id of ["go-architecture", "go-assurance", "go-e2e", "go-fuzz", "go-mutation", "go-quality"]) {
       const checks = authoring.catalog["verification-profiles"][id]?.checks ?? [];

@@ -102,11 +102,14 @@ export class VerificationService {
 
     const results: CheckResult[] = [];
     for (const profile of profiles) {
+      // A profile without languages judges the repository as a whole, once.
       const languages = new Set(profile.applies?.languages ?? []);
-      const units = scan.assessment.projectUnits
-        .filter((unit) => languages.size === 0 || unit.languages.some((language) => languages.has(language)))
-        .map((unit) => unit.root as string)
-        .sort(compareUtf8);
+      const units = languages.size === 0
+        ? ["."]
+        : scan.assessment.projectUnits
+            .filter((unit) => unit.languages.some((language) => languages.has(language)))
+            .map((unit) => unit.root as string)
+            .sort(compareUtf8);
       const inputs = Object.freeze({
         ...Object.fromEntries(profile.inputs.map((input) => [input.id, input.default])),
         ...selectedInputs.get(profile.ref),

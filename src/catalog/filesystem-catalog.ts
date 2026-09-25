@@ -110,7 +110,7 @@ interface VerificationProfileDefinition {
   readonly version: string;
   readonly description: string;
   readonly details: string;
-  readonly applies: AppliesDefinition;
+  readonly applies?: AppliesDefinition;
   readonly executables: readonly string[];
   readonly inputs: Readonly<
     Record<
@@ -710,7 +710,7 @@ export class FilesystemCatalog implements Catalog {
     const ref = componentRef(`verification-profile:${id}`);
     const version = semVer(definition.version);
     const relations = normalizeRelations(definition.relations ?? []);
-    const applies = normalizeApplies(definition.applies);
+    const applies = definition.applies === undefined ? null : normalizeApplies(definition.applies);
     const inputs = Object.freeze(
       Object.entries(definition.inputs ?? {})
         .sort(([left], [right]) => compareUtf8(left, right))

@@ -77,12 +77,14 @@ describe("FilesystemCatalog", () => {
         .filter((component) => component.ref.startsWith("verification-profile:"))
         .map((component) => component.ref),
     ).toEqual([
+      "verification-profile:change-guard",
       "verification-profile:go-architecture",
       "verification-profile:go-assurance",
       "verification-profile:go-e2e",
       "verification-profile:go-fuzz",
       "verification-profile:go-mutation",
       "verification-profile:go-quality",
+      "verification-profile:handoff-review",
     ]);
     expect(
       result.catalog.components

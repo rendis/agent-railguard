@@ -58,6 +58,24 @@ describe("VerificationService", () => {
     expect(provider.requests.every((request) => request.unitRoot === "svc/b" && request.changes === changes)).toBe(true);
   });
 
+  it("runs a profile without languages once for the whole repository", async () => {
+    const requests: CheckRequest[] = [];
+    const provider: CheckProvider = {
+      kinds: ["change-integrity", "change-size"],
+      async run(_kind, request) {
+        requests.push(request);
+        return passed();
+      },
+    };
+    const changes: ChangeSet = { base: "a".repeat(40), baseRef: "main", files: new Map([["svc/b/main.go", "all"]]), deleted: [] };
+    const service = await serviceFor(provider, ["verification-profile:change-guard"], {}, ["svc/a", "svc/b"], changes);
+
+    const report = await service.run({ root: "/repo", stage: "verify", changed: true });
+
+    expect(report.results.map((result) => [result.check, result.unit])).toEqual([["integrity", "."], ["size", "."]]);
+    expect(requests.map((request) => request.inputs.max_changed_lines)).toEqual([["400"], ["400"]]);
+  });
+
   it("ranks failed above unavailable and never counts unavailable as passed", async () => {
     const unavailable = await (await serviceFor(
       recordingProvider((kind) => (kind === "go-vet" ? { status: "unavailable", summary: "no tool", details: [] } : passed())),

@@ -24,6 +24,7 @@ import { QualityProjector } from "../adapters/project/quality/quality-projector.
 import { InstructionProjector } from "../adapters/project/instructions/instruction-projector.js";
 import { SharedSkillProjector } from "../adapters/project/skills/shared-skill-projector.js";
 import { registeredCheckProviders, registeredStackAdapters } from "../adapters/stack/registry.js";
+import { ChangeCheckProvider, ChangeReview } from "../adapters/verification/change-check-provider.js";
 import { createDefaultContentSource } from "../catalog/source/content-source-composition.js";
 import type { ContentSource, ContentSourceProgress } from "../catalog/source/content-source.js";
 import { SourcedCatalog } from "../catalog/source/sourced-catalog.js";
@@ -55,6 +56,7 @@ export interface DefaultApplicationOptions {
 export interface DefaultApplicationRuntime {
   readonly application: RailguardApplication;
   readonly verification: VerificationService;
+  readonly review: ChangeReview;
   dispose(): Promise<void>;
 }
 
@@ -141,14 +143,17 @@ export async function createDefaultApplication(
     ...(options.events === undefined ? {} : { events: options.events }),
   });
   const processRunner = new NodeProcessRunner();
+  const changeSets = new NodeChangeSetReader(processRunner);
+  const review = new ChangeReview(processRunner, changeSets);
   const verification = new VerificationService({
     scan: (root) => application.scan(root),
-    changeSets: new NodeChangeSetReader(processRunner),
-    providers: registeredCheckProviders(processRunner),
+    changeSets,
+    providers: [...registeredCheckProviders(processRunner), new ChangeCheckProvider(processRunner, review)],
   });
   return Object.freeze({
     application,
     verification,
+    review,
     async dispose() {
       // Durable state is repository-owned; there is no process-local store to remove.
     },

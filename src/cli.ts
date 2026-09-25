@@ -239,6 +239,36 @@ for (const stage of ["check", "verify"] as const) {
   });
 }
 
+const review = program
+  .command("review")
+  .description("Show what a review of this change against its active handoff needs")
+  .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch")
+  .action(async (_options, command: Command) => {
+    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+    const runtime = await createDefaultApplication();
+    try {
+      process.stdout.write(await runtime.review.brief(rootFrom(options), baseFrom(options)));
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+review
+  .command("record")
+  .description("Record a reviewer's criteria JSON for the current change content")
+  .argument("<file>", "JSON file with the reviewed criteria")
+  .action(async (file: string, _options, command: Command) => {
+    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+    const runtime = await createDefaultApplication();
+    try {
+      const result = await runtime.review.record(rootFrom(options), file, baseFrom(options));
+      process.stdout.write(`${result.message}\n`);
+      process.exitCode = result.ok ? 0 : 8;
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
 program
   .command("hook", { hidden: true })
   .description("Entry points called by managed agent hooks")
@@ -533,6 +563,10 @@ function outputFormat(options: Readonly<Record<string, unknown>>): OutputFormat 
     throw new CommandInputError(`Unsupported output format: ${value}`);
   }
   return value;
+}
+
+function baseFrom(options: Readonly<Record<string, unknown>>): string | undefined {
+  return options.base === undefined ? undefined : requiredString(options.base, "--base");
 }
 
 function rootFrom(options: Readonly<Record<string, unknown>>): string {
