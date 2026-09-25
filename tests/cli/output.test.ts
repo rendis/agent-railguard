@@ -43,7 +43,6 @@ describe("CLI output renderer", () => {
     expect(output).toContain("FAILED example.failure");
     expect(output).toContain("At: Makefile:113");
     expect(output).toContain('Evidence: target "check" at line 113: check: fmt test');
-    expect(output).toContain("Resolution: replace — Replace conflicting Make targets (destructive)");
     expect(output).toContain("Next: Fix it");
   });
 
@@ -101,7 +100,7 @@ describe("CLI output renderer", () => {
     }
     expect(renderProgress(taskEvent("running", 2, 4))).toContain("2/4");
     expect(renderProgress({
-      schema: "ai-harness/interaction-event/v1",
+      schema: "railguard/interaction-event/v1",
       operation_id: "11111111-1111-4111-8111-111111111111",
       sequence: 1,
       type: "state",
@@ -149,7 +148,7 @@ describe("CLI output renderer", () => {
     });
 
     const event: PublicInteractionEvent = Object.freeze({
-      schema: "ai-harness/interaction-event/v1",
+      schema: "railguard/interaction-event/v1",
       operation_id: "11111111-1111-4111-8111-111111111111",
       sequence: 1,
       type: "mcp-session-result",
@@ -169,7 +168,7 @@ function taskEvent(
   total?: number,
 ): PublicInteractionEvent {
   return Object.freeze({
-    schema: "ai-harness/interaction-event/v1",
+    schema: "railguard/interaction-event/v1",
     operation_id: "11111111-1111-4111-8111-111111111111",
     sequence: 1,
     type: "task",
@@ -255,13 +254,6 @@ function fullResult(): CommandResultEnvelope {
         evidence: Object.freeze(['target "check" at line 113: check: fmt test']),
         impact: "Visible impact",
         action: "Fix it",
-        resolutions: Object.freeze([
-          Object.freeze({
-            action: "replace" as const,
-            label: "Replace conflicting Make targets",
-            destructive: true,
-          }),
-        ]),
       }),
     ]),
   });

@@ -17,7 +17,6 @@ import {
 
 const execute = promisify(execFile);
 const gitLockNames = Object.freeze(["HEAD.lock", "config.lock", "index.lock", "packed-refs.lock"]);
-const safeEnvironmentTemplates = new Set([".env.example", ".env.sample", ".env.template"]);
 
 export class NodeRepositoryGate implements RepositoryGate {
   public async check(root: string): Promise<RepositoryGateResult> {
@@ -90,8 +89,6 @@ export class NodeRepositoryGate implements RepositoryGate {
     let tracked: readonly string[] = [];
     try {
       tracked = splitNull(await runGit(rootRealPath, ["ls-files", "-z"]));
-      const sensitive = tracked.filter(isSensitivePath).sort(compareUtf8);
-      if (sensitive.length > 0) diagnostics.push(sensitivePathDiagnostic(sensitive));
 
       const staged = splitNull(await runGit(rootRealPath, ["ls-files", "--stage", "-z"]));
       const submodules = staged
@@ -137,22 +134,6 @@ async function runGit(root: string, args: readonly string[], trim = true): Promi
 
 function splitNull(value: string): readonly string[] {
   return Object.freeze(value.split("\0").filter((entry) => entry.length > 0));
-}
-
-function isSensitivePath(path: string): boolean {
-  const name = basename(path).toLowerCase();
-  if (safeEnvironmentTemplates.has(name)) return false;
-  return name === ".env" ||
-    name === ".env.local" ||
-    name === ".env-local" ||
-    name === ".env.development" ||
-    name === ".env.production" ||
-    name === ".env.test" ||
-    name === ".npmrc" ||
-    name === ".pypirc" ||
-    name === "id_rsa" ||
-    name === "id_ed25519" ||
-    /\.(?:key|p12|pem|pfx)$/u.test(name);
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -207,7 +188,7 @@ function invalidWorktreeDiagnostic(error: unknown): Diagnostic {
     path: relativePosixPath(".git"),
     message: "A writable non-bare Git worktree is required.",
     evidence: [error instanceof Error ? error.message : String(error)],
-    impact: "AI Harness cannot establish a reversible project transaction.",
+    impact: "Railguard cannot establish a reversible project transaction.",
     action: "Run from the top-level directory of a non-bare Git worktree.",
   });
 }
@@ -218,7 +199,7 @@ function gitUninitializedDiagnostic(): Diagnostic {
     path: relativePosixPath(".git"),
     message: "Git is not initialized for this project.",
     evidence: ["No Git worktree was found at the project root."],
-    impact: "AI Harness can browse and compose a draft, but cannot start a reversible mutation yet.",
+    impact: "Railguard can browse and compose a draft, but cannot start a reversible mutation yet.",
     action: "Run `git init` in this project directory, then review the draft again.",
   });
 }
@@ -227,10 +208,10 @@ function notTopLevelDiagnostic(topLevel: string): Diagnostic {
   return diagnostic({
     code: "repository.gate.not-top-level",
     path: relativePosixPath(".git"),
-    message: "AI Harness was not invoked from the Git worktree root.",
+    message: "Railguard was not invoked from the Git worktree root.",
     evidence: [topLevel],
     impact: "Project-scoped paths would be ambiguous or incomplete.",
-    action: `Run AI Harness from ${topLevel}.`,
+    action: `Run Railguard from ${topLevel}.`,
   });
 }
 
@@ -251,19 +232,8 @@ function gitLockDiagnostic(name: string): Diagnostic {
     path: relativePosixPath(".git"),
     message: "Git has an active lock file.",
     evidence: [name],
-    impact: "AI Harness could race or interfere with another Git operation.",
+    impact: "Railguard could race or interfere with another Git operation.",
     action: "Finish the active Git operation and retry; remove a stale lock only after verifying no Git process owns it.",
-  });
-}
-
-function sensitivePathDiagnostic(paths: readonly string[]): Diagnostic {
-  return diagnostic({
-    code: "repository.gate.sensitive-path",
-    path: relativePosixPath(paths[0] ?? ".git"),
-    message: "The repository tracks a path commonly used for credentials or private keys.",
-    evidence: paths,
-    impact: "Automated evaluation could expose sensitive material even without reading file contents.",
-    action: "Remove the sensitive file from version control or explicitly remediate the repository before using AI Harness.",
   });
 }
 
@@ -274,7 +244,7 @@ function submoduleDiagnostic(paths: readonly string[]): Diagnostic {
     message: "The repository contains Git submodules that v0.1.0 has not certified.",
     evidence: paths,
     impact: "Path ownership and rollback cannot yet be proven across nested Git identities.",
-    action: "Run AI Harness in a repository without submodules or wait for certified submodule support.",
+    action: "Run Railguard in a repository without submodules or wait for certified submodule support.",
   });
 }
 
@@ -285,7 +255,7 @@ function lfsDiagnostic(paths: readonly string[]): Diagnostic {
     message: "The repository declares Git LFS filters that v0.1.0 has not certified.",
     evidence: paths,
     impact: "The worktree may contain pointer files instead of the bytes a plan would review.",
-    action: "Materialize and certify LFS objects in an explicit evaluation profile before using AI Harness.",
+    action: "Materialize and certify LFS objects in an explicit evaluation profile before using Railguard.",
   });
 }
 
@@ -295,7 +265,7 @@ function inventoryDiagnostic(error: unknown): Diagnostic {
     path: relativePosixPath(".git"),
     message: "Git metadata could not be inspected safely.",
     evidence: [error instanceof Error ? error.message : String(error)],
-    impact: "AI Harness cannot prove that the repository is safe to mutate.",
+    impact: "Railguard cannot prove that the repository is safe to mutate.",
     action: "Resolve the Git error and retry the repository gate.",
   });
 }

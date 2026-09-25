@@ -32,8 +32,8 @@ type ParsedManagedSections =
   | { readonly kind: "invalid"; readonly evidence: readonly string[] };
 
 const sectionIdPattern = /^[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*$/u;
-const reservedMarkerPattern = /^(?:<!-- |# )ai-harness:managed:/gmu;
-const markerPattern = /^(?:(<!--) |(#) )ai-harness:managed:(start|end) id="([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*)"(?: -->)?\r?(?:\n|$)/gmu;
+const reservedMarkerPattern = /^(?:<!-- |# )railguard:managed:/gmu;
+const markerPattern = /^(?:(<!--) |(#) )railguard:managed:(start|end) id="([a-z][a-z0-9-]*(?:\.[a-z0-9-]+)*)"(?: -->)?\r?(?:\n|$)/gmu;
 
 export function canonicalManagedEnvelope(
   sectionId: string,
@@ -187,8 +187,8 @@ function parseManagedSections(source: string): ParsedManagedSections {
 
 function marker(style: ManagedMarkerStyle, kind: "start" | "end", sectionId: string): string {
   return style === "markdown"
-    ? `<!-- ai-harness:managed:${kind} id="${sectionId}" -->`
-    : `# ai-harness:managed:${kind} id="${sectionId}"`;
+    ? `<!-- railguard:managed:${kind} id="${sectionId}" -->`
+    : `# railguard:managed:${kind} id="${sectionId}"`;
 }
 
 function ownedRange(
@@ -197,7 +197,9 @@ function ownedRange(
   placement: ManagedSectionPlacement,
 ): { readonly start: number; readonly end: number } | null {
   if (placement === "whole-file") {
-    return section.start === 0 ? Object.freeze({ start: 0, end: section.end }) : null;
+    // Another tool may have added its own content around a block that once was the whole file;
+    // the owned block stays exactly the markers and body, and foreign content is preserved.
+    return Object.freeze({ start: section.start, end: section.end });
   }
   if (section.start === 0) return null;
   if (source.slice(Math.max(0, section.start - 2), section.start) === "\r\n") {

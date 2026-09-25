@@ -120,7 +120,7 @@ describe("recommend", () => {
 
 async function loadCatalog(): Promise<CatalogSnapshot> {
   const result = await new FilesystemCatalog({
-    catalogFile: resolve("ai-harness.yaml"),
+    catalogFile: resolve("railguard.yaml"),
     supportedLanguages: [
       languageId("go"),
       languageId("python"),

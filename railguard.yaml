@@ -1,0 +1,437 @@
+schema: railguard/v1
+version: 0.1.0
+
+catalog:
+  skills:
+    build-e2e-test-suite:
+      version: 0.1.0
+      details: Use when a change needs executable proof across real system boundaries. Build end-to-end acceptance coverage for its public user journeys.
+      source: skills/build-e2e-test-suite
+      relations:
+        - kind: requires
+          target: skill:design-tests
+          reason: Creating or changing an acceptance scenario requires an explicit behavioral proof contract.
+
+    configure-go-quality:
+      version: 0.1.0
+      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair one managed `make check` and `make verify` interface, and select strict assurance profiles with explicit repository scopes when required. Product and test findings belong to behavioral workflows; this skill remains read-only Assess during review.
+      source: skills/configure-go-quality
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The skill configures and operates the canonical Go verification contract.
+
+    design-tests:
+      version: 0.1.0
+      details: Use when tests must be created or materially redesigned. Turn expected behavior and risks into observable test contracts before implementation.
+      source: skills/design-tests
+
+    develop-go-hexagonal-service:
+      version: 0.1.0
+      details: Use when a Go change crosses production behavior or architectural/runtime boundaries, or when complete delivery is requested. Coordinate design, implementation, tests, acceptance, quality configuration and review. Standalone test-only, E2E-only, configuration-only, and read-only review work use their focused skills.
+      source: skills/develop-go-hexagonal-service
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: skill:build-e2e-test-suite
+          reason: The delivery workflow promises applicable public-journey acceptance.
+        - kind: requires
+          target: skill:configure-go-quality
+          reason: The delivery workflow promises quality readiness setup and repair.
+        - kind: requires
+          target: skill:design-tests
+          reason: The delivery workflow can create or materially redesign behavioral proofs.
+        - kind: requires
+          target: skill:review-go-quality
+          reason: The delivery workflow requires a read-only challenge of each fixed candidate.
+        - kind: requires
+          target: skill:tdd
+          reason: Features, fixes, and behavior-preserving refactors require the test-first workflow.
+        - kind: requires
+          target: skill:test-go-service
+          reason: Test-only work and selected hardening require Go-specific test evidence.
+
+    review-go-quality:
+      version: 0.1.0
+      details: Use after a Go change is implemented and its quality commands are known. Challenge correctness, architecture, verification evidence and operational risk without editing the candidate.
+      source: skills/review-go-quality
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: skill:configure-go-quality
+          reason: Configuration candidates and readiness claims require the configuration assessment semantics.
+        - kind: requires
+          target: skill:test-go-service
+          reason: Go coverage reviews require the installed gap-analysis contract and deterministic profile reporter.
+
+    tdd:
+      version: 0.1.0
+      details: Use for features, bug fixes and behavior-preserving refactors. Implement the change through a red, green and refactor cycle with observable evidence.
+      source: skills/tdd
+      relations:
+        - kind: requires
+          target: skill:design-tests
+          reason: Creating or materially redesigning a test requires an explicit behavioral proof contract.
+
+    test-go-service:
+      version: 0.1.0
+      details: Use for focused Go test or coverage-gap analysis that does not require the full service delivery workflow. Choose the correct boundary, doubles and deterministic evidence.
+      source: skills/test-go-service
+      applies:
+        languages: [go]
+      relations:
+        - kind: requires
+          target: skill:design-tests
+          reason: Creating or materially redesigning a Go test requires an explicit behavioral proof contract.
+
+  mcps:
+    context7:
+      version: 0.1.0
+      description: Use Context7 when current third-party library behavior cannot be established from repository code, types or pinned documentation.
+      details: Install Context7 as a project-scoped MCP integration using its pinned npx command without login or an API key. Agents can resolve library identities and query current upstream documentation when repository evidence is insufficient.
+      trust: third-party-network
+      connection:
+        type: stdio
+        command: npx
+        args: ["-y", "@upstash/context7-mcp@4.0.0"]
+      tools: [query-docs, resolve-library-id]
+      network: runtime-required
+      auth:
+        type: none
+    atlassian-rovo:
+      version: 0.1.0
+      description: Use only when Jira or Confluence context or actions are required for the task.
+      details: Configure the official cloud-hosted Atlassian Rovo MCP endpoint in each selected project harness. The harness owns OAuth consent and credentials. The server can search and read Jira and Confluence and can expose write operations when the authenticated user and organization permit them; native approvals remain in force.
+      trust: third-party-network
+      connection:
+        type: remote-http
+        url: https://mcp.atlassian.com/v1/mcp/authv2
+      tools:
+        - createConfluencePage
+        - createJiraIssue
+        - editJiraIssue
+        - getConfluencePage
+        - getJiraIssue
+        - searchConfluenceUsingCql
+        - searchJiraIssuesUsingJql
+        - updateConfluencePage
+      network: runtime-required
+      auth:
+        type: oauth
+        activation: harness-native
+  verification-profiles:
+    go-quality:
+      version: 0.2.0
+      description: "Run `railguard check --changed` while developing and `railguard verify --changed` before delivery for Go changes."
+      details: Check formatting of changed Go files and vet and test the packages that contain changes. Verify additionally runs those tests with the race detector and a shuffled order. Without --changed every detected Go module is checked completely. Developers, agent hooks, Git gates and CI call the same commands.
+      applies:
+        languages: [go]
+      executables: [go, gofmt]
+      inputs:
+        test_packages:
+          type: string-list
+          default: ["./..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+      checks:
+        - id: format
+          kind: go-format
+          stage: check
+        - id: vet
+          kind: go-vet
+          stage: check
+        - id: test
+          kind: go-test
+          stage: check
+        - id: race
+          kind: go-test
+          stage: verify
+          params:
+            race: true
+
+    go-assurance:
+      version: 0.2.0
+      description: Add strict static analysis, changed-line coverage and reachable-vulnerability checks to Go verification.
+      details: Check runs the repository-configured golangci-lint only on issues introduced by the change and verifies modules when go.mod or go.sum change. Verify requires coverage of changed lines (100% in core packages, 80% elsewhere) and runs govulncheck when dependencies change. Without --changed the thresholds apply to all statements (100% core, 85% overall). The repository owns pinned Go tool directives and .golangci.yml; a missing prerequisite is reported as unavailable, never as a pass.
+      applies:
+        languages: [go]
+      executables: [go]
+      inputs:
+        tool_modfile:
+          type: string-list
+          default: ["go.mod"]
+          item_pattern: "^(?:[A-Za-z0-9_][A-Za-z0-9_-]*/)*go[.]mod$"
+        test_packages:
+          type: string-list
+          default: ["./..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+        core_packages:
+          type: string-list
+          default: ["./internal/core/..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+        core_cover_packages:
+          type: string-list
+          default: ["./internal/core/..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+        overall_cover_packages:
+          type: string-list
+          default: ["./cmd/...", "./internal/..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+      checks:
+        - id: modules
+          kind: go-mod-verify
+          stage: check
+        - id: lint
+          kind: golangci-lint
+          stage: check
+        - id: coverage
+          kind: go-coverage
+          stage: verify
+          params:
+            core_min: 100
+            changed_min: 80
+            overall_min: 85
+        - id: vulnerabilities
+          kind: govulncheck
+          stage: verify
+
+    go-fuzz:
+      version: 0.2.0
+      description: Add explicitly selected bounded Go fuzz cases to verification.
+      details: Each case declares one package, one Go fuzz identifier and one bounded duration. Verify runs every case whose package changed, or every case without --changed.
+      applies:
+        languages: [go]
+      executables: [go]
+      inputs:
+        cases:
+          type: string-list
+          default: ["disabled"]
+          item_pattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*:Fuzz[A-Za-z0-9_]+:[1-9][0-9]*(?:ms|s|m))$"
+      checks:
+        - id: fuzz
+          kind: go-fuzz
+          stage: verify
+
+    go-mutation:
+      version: 0.2.0
+      description: Require that tests kill every mutant on changed Go lines.
+      details: Verify runs the repository-pinned Gremlins configuration on changed packages inside the selected scope and fails when a mutant on a changed line survives or is not covered. Without --changed every selected package is mutated and any surviving mutant fails.
+      applies:
+        languages: [go]
+      executables: [go]
+      inputs:
+        tool_modfile:
+          type: string-list
+          default: ["go.mod"]
+          item_pattern: "^(?:[A-Za-z0-9_][A-Za-z0-9_-]*/)*go[.]mod$"
+        packages:
+          type: string-list
+          default: ["./..."]
+          item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+      checks:
+        - id: mutation
+          kind: go-mutation
+          stage: verify
+
+    go-e2e:
+      version: 0.2.0
+      description: Run the repository's Go end-to-end acceptance packages during verification.
+      details: Run the selected packages with the e2e build tag and a five-minute bound whenever the module changed. Acceptance suites that use containers own that prerequisite.
+      applies:
+        languages: [go]
+      executables: [go]
+      inputs:
+        packages:
+          type: string-list
+          default: ["disabled"]
+          item_pattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?)$"
+      checks:
+        - id: e2e
+          kind: go-e2e
+          stage: verify
+
+    go-architecture:
+      version: 0.1.0
+      description: Enforce dependency direction between Go packages; by default the core depends only on itself and the standard library.
+      details: Check fails when a production file in core_packages imports anything but the standard library (minus core_denied_stdlib), other core packages or core_allowed_imports, or when a file breaks a forbidden_imports rule such as "./internal/domain/... -> ./internal/infra/...". With --changed only changed files are judged, so an existing architecture is frozen instead of rewritten. Select it only when the repository adopts that architecture; set core_packages to disabled to keep only forbidden_imports rules.
+      applies:
+        languages: [go]
+      executables: [go]
+      inputs:
+        core_packages:
+          type: string-list
+          default: ["./internal/core/..."]
+          item_pattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?)$"
+        core_allowed_imports:
+          type: string-list
+          default: ["none"]
+          item_pattern: "^(?:none|[a-z0-9-]+(?:\\.[a-z0-9-]+)+(?:/[A-Za-z0-9_.~-]+)*)$"
+        core_denied_stdlib:
+          type: string-list
+          default: ["database/sql", "net/http", "net/rpc", "os/exec"]
+          item_pattern: "^(?:none|[a-z0-9]+(?:/[a-z0-9]+)*)$"
+        forbidden_imports:
+          type: string-list
+          default: ["none"]
+          item_pattern: "^(?:none|\\./[A-Za-z0-9_./-]* -> \\./[A-Za-z0-9_./-]*)$"
+      checks:
+        - id: imports
+          kind: go-imports
+          stage: check
+
+  git-gates:
+    pre-commit-check:
+      version: 0.2.0
+      description: Run `railguard check --changed` before a local commit.
+      details: Add the check stage of every selected verification profile to the managed pre-commit hook. Only the change since the base branch is judged.
+      event: pre-commit
+      operation: check
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality check provider.
+
+    pre-commit-verify:
+      version: 0.2.0
+      description: Run `railguard verify --changed` before a local commit.
+      details: Add the verify stage of every selected verification profile to the managed pre-commit hook for teams that require full verification before every commit.
+      event: pre-commit
+      operation: verify
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality verify provider.
+
+    pre-push-check:
+      version: 0.2.0
+      description: Run `railguard check --changed` before a local push.
+      details: Add the check stage of every selected verification profile to the managed pre-push hook. It provides a faster push gate than full verification.
+      event: pre-push
+      operation: check
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality check provider.
+
+    pre-push-verify:
+      version: 0.2.0
+      description: Run `railguard verify --changed` before a local push.
+      details: Add the verify stage of every selected verification profile to the managed pre-push hook.
+      event: pre-push
+      operation: verify
+      relations:
+        - kind: requires
+          target: verification-profile:go-quality
+          reason: The hook operation requires the Go Quality verify provider.
+  agent-hooks:
+    stop-check:
+      version: 0.1.0
+      description: Keep a coding agent working until `railguard check --changed` passes.
+      details: Adds a Stop hook to Claude Code, Codex and Cursor. When the agent tries to finish, the check stage of every selected verification profile runs on the change; failures return to the agent as its next instruction, at most three times per session, after which the agent may stop and the change is reported as not verified. Missing tools never trap the agent. Codex asks each developer to trust the hook once; Cursor runs it in the editor and its interactive CLI.
+      event: stop
+      operation: check
+
+  instruction-fragments:
+    agents-mapping:
+      version: 0.1.0
+      description: Route bounded review work to a matching specialist agent.
+      details: Generate a concise delegation index with an observable criterion and required workflow for each available specialist.
+      section: agents.mapping
+      content:
+        kind: catalog-index
+        group: agents
+
+    automation-mapping:
+      version: 0.1.0
+      description: Explain when automatic project gates run and how to respond to failures.
+      details: Generate a concise automation index with each gate's trigger and canonical reproduction command.
+      section: automation.mapping
+      content:
+        kind: catalog-index
+        group: automation
+
+    mcps-mapping:
+      version: 0.1.0
+      description: Route external-context work to the relevant project integration.
+      details: Generate a concise external-tool index with observable use criteria and material network or authorization boundaries.
+      section: mcps.mapping
+      content:
+        kind: catalog-index
+        group: mcps
+
+    quality-mapping:
+      version: 0.1.0
+      description: Route project verification through its canonical deterministic commands.
+      details: Generate a concise verification index with the command, timing and meaningful scope controls for each profile.
+      section: quality.mapping
+      content:
+        kind: catalog-index
+        group: quality
+
+    skills-mapping:
+      version: 0.1.0
+      description: Route applicable work to the relevant skill workflow.
+      details: Generate a concise skill index with an observable use criterion and one canonical SKILL.md pointer per workflow.
+      section: skills.mapping
+      content:
+        kind: catalog-index
+        group: skills
+
+  packs:
+    go-service-foundation:
+      version: 0.1.0
+      description: Install the complete project-scoped foundation for developing and reviewing a Go service.
+      details: Select the curated Go service setup as one direct choice while transparently including its skills, Context7 integration, quality profile, Git gates and reviewer agent. The review step still lists every dependency and file effect before installation.
+      applies:
+        languages: [go]
+      relations:
+        - kind: includes
+          target: agent:go-reviewer
+          reason: The foundation includes a focused Go review workflow.
+        - kind: includes
+          target: agent-hook:stop-check
+          reason: The foundation keeps agents working until their change passes the fast checks.
+        - kind: includes
+          target: verification-profile:go-architecture
+          reason: The foundation keeps the hexagonal core free of adapter and infrastructure imports.
+        - kind: includes
+          target: git-gate:pre-commit-check
+          reason: The foundation checks fast verification before commits.
+        - kind: includes
+          target: git-gate:pre-push-verify
+          reason: The foundation runs complete verification before pushes.
+        - kind: includes
+          target: mcp:context7
+          reason: Go services commonly depend on external libraries whose current APIs require documentation.
+        - kind: includes
+          target: skill:develop-go-hexagonal-service
+          reason: The foundation includes the complete Go delivery workflow.
+
+    testing-foundation:
+      version: 0.1.0
+      description: Install the portable test design, TDD and end-to-end workflow skills.
+      details: Select a language-portable testing foundation that combines behavioral test design, test-driven development and public-journey end-to-end coverage. It installs only project instructions and skills required by that workflow.
+      relations:
+        - kind: includes
+          target: skill:build-e2e-test-suite
+          reason: The foundation covers public-journey acceptance scenarios.
+        - kind: includes
+          target: skill:tdd
+          reason: The foundation covers behavior changes through a test-first workflow.
+
+  agents:
+    go-reviewer:
+      version: 0.1.0
+      description: Review a Go change for correctness, architecture, verification evidence and operational risk.
+      details: Install a specialized read-only Go reviewer for supported harnesses. It inspects repository rules, the exact change and verification evidence, then reports only actionable findings with precise locations and severity.
+      applies:
+        languages: [go]
+      prompt: |
+        Review the current Go change without editing it. Inspect the repository contract, the exact diff and available verification evidence. Report only actionable findings ordered by severity, cite precise paths, and state plainly when no finding remains.
+      relations:
+        - kind: requires
+          target: skill:review-go-quality
+          reason: The specialized agent follows the canonical Go quality review procedure.

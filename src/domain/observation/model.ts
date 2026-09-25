@@ -4,7 +4,7 @@ import type { RepositorySnapshot } from "../repository/model.js";
 import type { Diagnostic, Sha256Digest } from "../shared/types.js";
 
 export type ObservedUnitStatus = "clean" | "missing" | "drifted" | "unknown";
-export type ObservedUnitKind = "directory" | "file" | "symlink" | "managed-section" | "git-config";
+export type ObservedUnitKind = "directory" | "file" | "symlink" | "managed-section" | "json-member" | "git-config";
 
 export interface ObservedManagedUnit {
   readonly ownershipId: string;

@@ -29,7 +29,7 @@ const selection = componentRef("skill:develop-go-hexagonal-service");
 const codex = harnessTargetId("codex");
 const exec = promisify(execFile);
 
-describe("AiHarnessApplication", () => {
+describe("RailguardApplication", () => {
   it("reconstructs durable managed state in a new process and plans an exact no-op", async () => {
     const repository = await createTempRepository({
       "go.mod": "module example.com/restart\n\ngo 1.24\n",
@@ -120,11 +120,11 @@ describe("AiHarnessApplication", () => {
         throw new Error("Expected installation plan to be ready");
       }
       expect((await runtime.application.apply(prepared.plan)).kind).toBe("applied");
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toContain(
-        "verify: ai-harness-go-verify",
-      );
+      await expect(readFile(`${repository.root}/Makefile`, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
       await expect(
-        readFile(`${repository.root}/.ai-harness/hooks/pre-commit`, "utf8"),
+        readFile(`${repository.root}/.railguard/hooks/pre-commit`, "utf8"),
       ).rejects.toMatchObject({ code: "ENOENT" });
       const status = await runtime.application.status(repository.root, [codex]);
       expect(status.verification?.materialization).toBe("verified");
@@ -192,7 +192,7 @@ describe("AiHarnessApplication", () => {
       expect(await readFile(`${repository.root}/AGENTS.md`, "utf8")).toContain(
         "## Delegation",
       );
-      expect(await readFile(`${repository.root}/CLAUDE.md`, "utf8")).toContain("@AGENTS.md");
+      await expect(readFile(`${repository.root}/CLAUDE.md`, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
       expect(await readFile(`${repository.root}/.codex/config.toml`, "utf8")).toContain(
         "[mcp_servers.context7]",
       );
@@ -303,22 +303,25 @@ describe("AiHarnessApplication", () => {
     }
   });
 
-  it("blocks a mutable plan when the repository preflight finds a tracked sensitive path", async () => {
+  it("installs testing skills without changing unrelated tracked environment files", async () => {
     const repository = await createTempRepository({
       "go.mod": "module example.com/gated\n",
-      ".env": "TOKEN=redacted\n",
+      ".env-local": "DB_HOST=127.0.0.1\nDB_PASS=\n",
     });
     await exec("git", ["init", "--quiet", repository.root]);
     await exec("git", ["-C", repository.root, "add", "."]);
     const runtime = await createDefaultApplication({ executableProbe: probe });
     try {
       const scan = await runtime.application.scan(repository.root);
-      const prepared = await runtime.application.prepareInstall(scan, [selection], [codex]);
+      const prepared = await runtime.application.prepareInstall(scan, [componentRef("pack:testing-foundation")], [codex]);
 
-      expect(prepared.plan).toBeNull();
-      expect(prepared.diagnostics).toContainEqual(
-        expect.objectContaining({ code: "repository.gate.sensitive-path" }),
-      );
+      expect(prepared.plan?.kind).toBe("ready");
+      if (prepared.plan?.kind !== "ready") throw new Error("Expected a ready plan");
+      expect(prepared.plan.operations.some((operation) => operation.path === ".env-local")).toBe(false);
+      expect((await runtime.application.apply(prepared.plan)).kind).toBe("applied");
+      expect(await readFile(join(repository.root, ".env-local"), "utf8"))
+        .toBe("DB_HOST=127.0.0.1\nDB_PASS=\n");
+      expect((await exec("git", ["-C", repository.root, "diff", "--", ".env-local"])).stdout).toBe("");
     } finally {
       await Promise.all([runtime.dispose(), repository.cleanup()]);
     }
@@ -354,39 +357,30 @@ describe("AiHarnessApplication", () => {
         throw new Error("Expected pre-commit installation plan to be ready");
       }
       expect(prepared.plan.operations.map((operation) => operation.path)).toEqual([
-        ".ai-harness",
-        ".ai-harness/hooks",
-        ".ai-harness/hooks/pre-commit",
-        ".ai-harness/hooks/pre-push",
+        ".railguard",
+        ".railguard/hooks",
+        ".railguard/hooks/pre-commit",
+        ".railguard/hooks/pre-push",
         "AGENTS.md",
-        "Makefile",
-        ".ai-harness/project.yaml",
-        ".ai-harness/lock.json",
+        ".railguard/project.yaml",
+        ".railguard/lock.json",
         ".git/config",
       ]);
       expect((await runtime.application.apply(prepared.plan)).kind).toBe("applied");
 
-      expect(await readFile(`${repository.root}/.ai-harness/hooks/pre-commit`, "utf8")).toContain(
-        "make check",
+      expect(await readFile(`${repository.root}/.railguard/hooks/pre-commit`, "utf8")).toContain(
+        "railguard check --changed",
       );
-      expect(await readFile(`${repository.root}/.ai-harness/hooks/pre-push`, "utf8")).toContain(
-        "make verify",
+      expect(await readFile(`${repository.root}/.railguard/hooks/pre-push`, "utf8")).toContain(
+        "railguard verify --changed",
       );
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toContain(
-        "verify: ai-harness-go-verify",
-      );
-      const goCache = await mkdtemp(join(tmpdir(), "ai-harness-go-cache-"));
-      try {
-        const environment = { ...process.env, GOCACHE: goCache };
-        await exec("make", ["-C", repository.root, "check"], { env: environment });
-        await exec("make", ["-C", repository.root, "verify"], { env: environment });
-      } finally {
-        await rm(goCache, { recursive: true, force: true });
-      }
+      await expect(readFile(`${repository.root}/Makefile`, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
       expect(
         (await exec("git", ["-C", repository.root, "config", "--local", "--get", "core.hooksPath"]))
           .stdout.trim(),
-      ).toBe(".ai-harness/hooks");
+      ).toBe(".railguard/hooks");
 
       const installed = await runtime.application.scan(repository.root);
       const noOp = await runtime.application.prepareInstall(
@@ -435,229 +429,39 @@ describe("AiHarnessApplication", () => {
       if (install.plan?.kind !== "ready") throw new Error("Expected ready install");
       expect((await runtime.application.apply(install.plan)).kind).toBe("applied");
       const composedHook = await readFile(
-        `${repository.root}/.ai-harness/hooks/pre-commit`,
+        `${repository.root}/.railguard/hooks/pre-commit`,
         "utf8",
       );
-      expect(composedHook).toContain("make check");
-      expect(composedHook).toContain("make verify");
+      // Both operations for the same event compose into one hook; verify wins over check.
+      expect(composedHook).toContain("railguard verify --changed");
+      expect(composedHook).not.toContain("railguard check --changed");
       await expect(
-        readFile(`${repository.root}/.ai-harness/hooks/pre-push`, "utf8"),
+        readFile(`${repository.root}/.railguard/hooks/pre-push`, "utf8"),
       ).rejects.toMatchObject({ code: "ENOENT" });
 
       const installed = await runtime.application.scan(repository.root);
       const partial = await runtime.application.prepareRemove(installed, {
-        components: [preCommitCheck],
+        components: [preCommitVerify],
       });
 
       expect(partial.resolution.components.map((component) => component.ref)).toEqual([
         "verification-profile:go-quality",
-        "git-gate:pre-commit-verify",
+        "git-gate:pre-commit-check",
       ]);
       if (partial.plan?.kind !== "ready") throw new Error("Expected ready partial removal");
       expect((await runtime.application.apply(partial.plan)).kind).toBe("applied");
       const retainedHook = await readFile(
-        `${repository.root}/.ai-harness/hooks/pre-commit`,
+        `${repository.root}/.railguard/hooks/pre-commit`,
         "utf8",
       );
-      expect(retainedHook).not.toContain("make check");
-      expect(retainedHook).toContain("make verify");
+      expect(retainedHook).not.toContain("railguard verify --changed");
+      expect(retainedHook).toContain("railguard check --changed");
       const after = await runtime.application.scan(repository.root);
       if (after.kind !== "ready") throw new Error("Expected ready managed scan");
       expect(after.desired?.state.selections.map((entry) => entry.ref)).toEqual([
-        preCommitVerify,
+        preCommitCheck,
       ]);
       expect(after.reconciliation.management).toBe("managed");
-    } finally {
-      await Promise.all([runtime.dispose(), repository.cleanup()]);
-    }
-  });
-
-  it("blocks a foreign Make target before writing anything", async () => {
-    const originalMakefile = "check:\n\t@echo foreign\n";
-    const repository = await createTempRepository({
-      "go.mod": "module example.com/collision\n\ngo 1.24\n",
-      Makefile: originalMakefile,
-    });
-    await exec("git", ["init", "--quiet", repository.root]);
-    const runtime = await createDefaultApplication({ executableProbe: probe });
-    try {
-      const scan = await runtime.application.scan(repository.root);
-      if (scan.kind !== "ready") {
-        throw new Error("Expected collision fixture scan to be ready");
-      }
-      const prepared = await runtime.application.prepareInstall(
-        scan,
-        [componentRef("skill:configure-go-quality")],
-        [codex],
-      );
-
-      expect(prepared.plan?.kind).toBe("blocked");
-      expect(prepared.plan?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-        "quality.make.target-collision",
-      );
-      const collision = prepared.plan?.diagnostics.find(
-        (diagnostic) => diagnostic.code === "quality.make.target-collision",
-      );
-      expect(collision).toMatchObject({
-        location: { path: "Makefile", pointer: "line:1" },
-        message: 'Makefile defines unmanaged canonical target "check" at line 1.',
-        evidence: ['target "check" at line 1: check:'],
-        resolutions: [{ action: "replace", destructive: true }],
-      });
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(originalMakefile);
-    } finally {
-      await Promise.all([runtime.dispose(), repository.cleanup()]);
-    }
-  });
-
-  it("prepares and applies an explicitly confirmed Make target replacement", async () => {
-    const originalMakefile = "custom:\n\t@echo keep\ncheck: fmt test\n\t@echo foreign\n";
-    const repository = await createTempRepository({
-      "go.mod": "module example.com/replacement\n\ngo 1.24\n",
-      Makefile: originalMakefile,
-    });
-    await exec("git", ["init", "--quiet", repository.root]);
-    const runtime = await createDefaultApplication({ executableProbe: probe });
-    try {
-      const scan = await runtime.application.scan(repository.root);
-      if (scan.kind !== "ready") throw new Error("Expected replacement fixture scan to be ready");
-      const prepared = await runtime.application.preparePlan(
-        scan,
-        [{ ref: componentRef("skill:configure-go-quality") }],
-        [codex],
-        "reconcile",
-        {
-          conflictResolutions: [{
-            code: "quality.make.target-collision",
-            action: "replace",
-          }],
-        },
-      );
-
-      expect(prepared.plan?.kind).toBe("ready");
-      if (prepared.plan?.kind !== "ready") throw new Error("Expected ready replacement plan");
-      const makeWrite = prepared.plan.operations.find(
-        (operation) => operation.kind === "write-file" && operation.path === "Makefile",
-      );
-      expect(makeWrite?.kind).toBe("write-file");
-      const planned = makeWrite?.kind === "write-file" ? makeWrite.bytes.toString() : "";
-      expect(planned).toContain("custom:\n\t@echo keep\n");
-      expect(planned).not.toContain("@echo foreign");
-      expect(planned).not.toContain("check: fmt test");
-      expect(planned).toContain("check: ai-harness-go-check");
-      expect(planned).toContain("verify: ai-harness-go-verify");
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(originalMakefile);
-
-      expect((await runtime.application.apply(prepared.plan)).kind).toBe("applied");
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(planned);
-    } finally {
-      await Promise.all([runtime.dispose(), repository.cleanup()]);
-    }
-  });
-
-  it("keeps unsupported double-colon Make targets blocked under replacement", async () => {
-    const originalMakefile = "check:: first\n\t@echo foreign\n";
-    const repository = await createTempRepository({
-      "go.mod": "module example.com/double-colon\n\ngo 1.24\n",
-      Makefile: originalMakefile,
-    });
-    await exec("git", ["init", "--quiet", repository.root]);
-    const runtime = await createDefaultApplication({ executableProbe: probe });
-    try {
-      const scan = await runtime.application.scan(repository.root);
-      if (scan.kind !== "ready") throw new Error("Expected double-colon fixture scan to be ready");
-      const prepared = await runtime.application.preparePlan(
-        scan,
-        [{ ref: componentRef("skill:configure-go-quality") }],
-        [codex],
-        "reconcile",
-        {
-          conflictResolutions: [{
-            code: "quality.make.target-collision",
-            action: "replace",
-          }],
-        },
-      );
-
-      expect(prepared.plan?.kind).toBe("blocked");
-      const collision = prepared.plan?.diagnostics.find(
-        (diagnostic) => diagnostic.code === "quality.make.target-collision",
-      );
-      expect(collision).toMatchObject({
-        evidence: ['target "check" at line 1: check:: first'],
-        action: "Rename the unsupported Make declaration before planning again.",
-      });
-      expect(collision?.resolutions).toBeUndefined();
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(originalMakefile);
-    } finally {
-      await Promise.all([runtime.dispose(), repository.cleanup()]);
-    }
-  });
-
-  it("preserves an unrelated Makefile exactly across install and remove", async () => {
-    const originalMakefile = "custom:\n\t@echo keep-me\n";
-    const repository = await createTempRepository({
-      "go.mod": "module example.com/preserved-make\n\ngo 1.24\n",
-      Makefile: originalMakefile,
-    });
-    await exec("git", ["init", "--quiet", repository.root]);
-    const runtime = await createDefaultApplication({ executableProbe: probe });
-    try {
-      const baseline = await runtime.application.scan(repository.root);
-      if (baseline.kind !== "ready") {
-        throw new Error("Expected Make preservation fixture scan to be ready");
-      }
-      const prepared = await runtime.application.prepareInstall(
-        baseline,
-        [componentRef("skill:configure-go-quality")],
-        [codex],
-      );
-      if (prepared.plan?.kind !== "ready") {
-        throw new Error("Expected non-colliding Makefile plan to be ready");
-      }
-      expect((await runtime.application.apply(prepared.plan)).kind).toBe("applied");
-      const installed = await readFile(`${repository.root}/Makefile`, "utf8");
-      expect(installed).toContain(originalMakefile);
-      expect(installed).toContain('# ai-harness:managed:start id="verification.go-quality"');
-
-      const scan = await runtime.application.scan(repository.root);
-      const removal = await runtime.application.prepareRemove(scan, { all: true });
-      if (removal.plan?.kind !== "ready") {
-        throw new Error("Expected Make preservation removal plan to be ready");
-      }
-      expect((await runtime.application.apply(removal.plan)).kind).toBe("applied");
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toBe(originalMakefile);
-    } finally {
-      await Promise.all([runtime.dispose(), repository.cleanup()]);
-    }
-  });
-
-  it("blocks quality setup when Make is unavailable", async () => {
-    const repository = await createTempRepository({ "go.mod": "module example.com/no-make\n" });
-    await exec("git", ["init", "--quiet", repository.root]);
-    const missingMakeProbe: ExecutableProbe = {
-      async probe(executable) {
-        return executable === "make"
-          ? { detected: false, path: null, version: null, diagnostics: [] }
-          : { detected: true, path: "/test/bin/codex", version: "test", diagnostics: [] };
-      },
-    };
-    const runtime = await createDefaultApplication({ executableProbe: missingMakeProbe });
-    try {
-      const scan = await runtime.application.scan(repository.root);
-      if (scan.kind !== "ready") {
-        throw new Error("Expected missing Make fixture scan to be ready");
-      }
-      const prepared = await runtime.application.prepareInstall(
-        scan,
-        [componentRef("skill:configure-go-quality")],
-        [codex],
-      );
-
-      expect(prepared.plan?.kind).toBe("blocked");
-      expect(prepared.plan?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-        "quality.make.missing",
-      );
     } finally {
       await Promise.all([runtime.dispose(), repository.cleanup()]);
     }

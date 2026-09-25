@@ -51,7 +51,8 @@ export async function resolveInstructionTopology(
     if (diagnostic !== null) return blocked(diagnostic);
     return ready(agentsPath, "alias");
   }
-  if (claude === undefined) return ready(agentsPath, "managed");
+  // Claude Code reads AGENTS.md natively when no CLAUDE.md exists, so none is created.
+  if (claude === undefined) return ready(agentsPath, "not-required");
   if (claude.kind !== "file") {
     return blocked(unsafeTopologyDiagnostic(claudePath, claude.kind));
   }
@@ -146,7 +147,7 @@ function unsafeTopologyDiagnostic(
     location: Object.freeze({ path }),
     message: "A canonical instruction path has an unsafe filesystem topology.",
     evidence: Object.freeze([`kind:${kind}`, ...extraEvidence]),
-    impact: "AI Harness cannot determine one project-local instruction container safely.",
+    impact: "Railguard cannot determine one project-local instruction container safely.",
     action: "Use regular AGENTS.md/CLAUDE.md files or one healthy symlink between them.",
   });
 }
@@ -160,7 +161,7 @@ function unreadableTopologyDiagnostic(path: RelativePosixPath, error: unknown): 
     location: Object.freeze({ path }),
     message: "The Claude instruction file could not be inspected safely.",
     evidence: Object.freeze([error instanceof Error ? error.message : String(error)]),
-    impact: "AI Harness cannot determine whether Claude already imports AGENTS.md.",
+    impact: "Railguard cannot determine whether Claude already imports AGENTS.md.",
     action: "Make CLAUDE.md a readable UTF-8 file no larger than 1 MiB.",
   });
 }

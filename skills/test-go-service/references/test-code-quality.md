@@ -11,12 +11,8 @@ Clean lint does not prove sensitivity, and a mutation score does not make test c
 
 ## Use the configured aggregator
 
-- Run repository-pinned `golangci-lint` with test analysis enabled.
-- Consume `staticcheck`, `gosec`, and `gocritic` through that aggregator; do not duplicate standalone binaries over the same version and scope.
-- Enable `thelper` for required `t.Helper()` and `usetesting` for testing primitives covering temporary paths, environment, and lifecycle.
-- Add `testifylint` only with Testify. Add `tparallel` or `paralleltest` only after agreeing on parallelism and proving isolation.
-- Keep `govulncheck` separate. Use `-test` only as an explicit additional scope for vulnerabilities reachable from test binaries.
+`golangci-lint` (via `railguard check`/`verify`) covers `staticcheck`, `gosec`, and `gocritic` over test code too — do not run standalone binaries over the same scope. Test-specific analyzers worth enabling: `thelper` for required `t.Helper()`, `usetesting` for temp paths/environment/lifecycle primitives, `testifylint` with Testify, and `tparallel`/`paralleltest` only after agreeing on parallelism and proving isolation. An absent analyzer is `unavailable`, not a pass; a missing pin is a `configure-go-quality` gap.
 
-Name each entry point by observable behavior and condition. In tables, distinguish contractual variations and use role-based fields such as `wantOutcome` and `wantErr`. Give helpers and doubles responsibility-based names such as `recordingStockUpdater` or `failingReceiver`; use Stub, Fake, or Spy only when accurate. Apply [go-test-style.md](go-test-style.md); comments and GoDoc remain optional unless they add contract information or repository policy adopts them.
+Name each entry point by observable behavior and condition. In tables, use role-based fields such as `wantOutcome`/`wantErr`. Give helpers and doubles responsibility-based names such as `recordingStockUpdater` or `failingReceiver`; use Stub, Fake, or Spy only when accurate (see [go-test-style.md](go-test-style.md)).
 
-Report command, version, `_test.go` scope, exit code, and effective linters. An absent analyzer is `unavailable`, not `pass`. Consolidate overlapping diagnostics under one cause and fix behavior or design rather than merely suppressing the message.
+Consolidate overlapping diagnostics under one cause and fix behavior or design rather than suppressing the message.

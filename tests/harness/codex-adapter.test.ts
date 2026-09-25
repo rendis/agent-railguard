@@ -53,6 +53,7 @@ describe("CodexAdapter", () => {
         ],
         surfaces: [
           { role: "agents", path: ".codex/agents", kind: "absent" },
+          { role: "hooks", path: ".codex/hooks.json", kind: "absent" },
           { role: "instructions", path: "AGENTS.md", kind: "file" },
           { role: "mcp", path: ".codex/config.toml", kind: "absent" },
           { role: "skills", path: ".agents/skills", kind: "directory" },
@@ -129,7 +130,7 @@ describe("CodexAdapter", () => {
 
 async function loadCatalog(): Promise<CatalogSnapshot> {
   const result = await new FilesystemCatalog({
-    catalogFile: resolve("ai-harness.yaml"),
+    catalogFile: resolve("railguard.yaml"),
     supportedLanguages: [
       languageId("go"),
       languageId("python"),

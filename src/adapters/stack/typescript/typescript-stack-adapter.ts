@@ -132,13 +132,13 @@ function ambiguousLockfiles(
 ): Diagnostic {
   return Object.freeze({
     code: "stack.typescript.lockfiles-ambiguous",
-    severity: "warning",
+    severity: "info",
     phase: "assessment",
     subjects: Object.freeze([]),
     location: Object.freeze({ path }),
     message: "More than one package-manager lockfile is present at this TypeScript root.",
     evidence: Object.freeze([...lockfiles]),
-    impact: "AI Harness reports the ambiguity and does not select or run a package manager.",
+    impact: "Railguard reports the ambiguity and does not select or run a package manager.",
     action: "Choose the intended package manager in the project if deterministic verification later requires it.",
   });
 }

@@ -2,18 +2,9 @@
 
 ## Capture evidence
 
-For each run, record:
+For each run, record: timestamp and system version; scenario and seed; setup and readiness state; commands and exit codes; redacted logs from relevant processes; permitted requests, responses, or events; screenshots, video, traces, or reports when the surface produces them; cleanup state and result.
 
-- timestamp and system version;
-- scenario and seed;
-- setup and readiness state;
-- commands and exit codes;
-- redacted logs from relevant processes;
-- permitted requests, responses, or events;
-- screenshots, video, traces, or reports when the surface produces them;
-- cleanup state and result.
-
-Keep volatile artifacts in the runner's conventional location or under a temporary or ignored directory; version only fixtures or stable evidence that is an explicit part of the contract.
+Keep volatile artifacts in the runner's conventional location or under a temporary/ignored directory; version only fixtures or stable evidence that is an explicit part of the contract.
 
 ## Diagnose by phase
 
@@ -23,11 +14,9 @@ Keep volatile artifacts in the runner's conventional location or under a tempora
 4. Assertion: wrong condition, unobservable output, or eventual consistency.
 5. Cleanup: open resource, shared data, or orphaned process.
 
-Report the exact phase and preserve the first useful cause.
+Report the exact phase and preserve the first useful cause. Only a reached public action with an incorrect observable outcome is a functional `FAIL`. Prerequisite, dependency, credentials, topology, readiness, environmental timeout, and cleanup inability are `BLOCKED_SETUP` — neither a product defect nor a pass. A functional failure returns to focused TDD through the development owner; a blocker returns to the environment or configuration owner with diagnostics.
 
-Only a reached public action with an incorrect observable outcome is a functional `FAIL`. Prerequisite, dependency, credentials, topology, readiness, environmental timeout, and cleanup inability are `BLOCKED_SETUP`; they neither prove a product defect nor pass. A functional failure returns to focused TDD through the development owner, while a blocker returns to the environment or configuration owner with diagnostics.
-
-If an execution API or response schema requires a lower-case status, map the observed phase verdict without interpretation: `PASS` to `completed`, `FAIL` to `failed`, and `BLOCKED_SETUP` to `blocked_setup`. Use a quality-readiness status such as `ready_with_findings` only when the task is actually classifying a configured quality surface, never for an unavailable E2E prerequisite.
+If a schema requires a lower-case status, map the phase verdict without interpretation: `PASS`→`completed`, `FAIL`→`failed`, `BLOCKED_SETUP`→`blocked_setup`. Use a quality-readiness status such as `ready_with_findings` only when actually classifying a configured quality surface, never for an unavailable E2E prerequisite.
 
 ## Control flakiness
 

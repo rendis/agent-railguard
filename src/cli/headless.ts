@@ -58,7 +58,7 @@ export type HeadlessRequest =
     };
 
 export interface CommandResultEnvelope {
-  readonly schema: "ai-harness/command-result/v1";
+  readonly schema: "railguard/command-result/v1";
   readonly type: "result";
   readonly command: CommandName;
   readonly operation_id: string;
@@ -166,7 +166,7 @@ export function buildCommandResult(
 ): CommandResultEnvelope {
   const verdict = overrides.verdict ?? verdictForSnapshot(snapshot);
   return Object.freeze({
-    schema: "ai-harness/command-result/v1",
+    schema: "railguard/command-result/v1",
     type: "result",
     command,
     operation_id: snapshot.operationId,

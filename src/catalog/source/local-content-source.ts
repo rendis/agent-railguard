@@ -32,10 +32,10 @@ export class LocalContentSource implements ContentSource {
       if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
         throw new TypeError(`Local content source is not a regular directory: ${this.#root}`);
       }
-      const catalogFile = join(root, "ai-harness.yaml");
+      const catalogFile = join(root, "railguard.yaml");
       const catalogMetadata = await lstat(catalogFile);
       if (!catalogMetadata.isFile() || catalogMetadata.isSymbolicLink()) {
-        throw new TypeError(`Local content source must contain a regular ai-harness.yaml: ${root}`);
+        throw new TypeError(`Local content source must contain a regular railguard.yaml: ${root}`);
       }
       const realCatalog = await realpath(catalogFile);
       if (!isWithin(root, realCatalog)) {
@@ -50,7 +50,6 @@ export class LocalContentSource implements ContentSource {
         kind: "local" as const,
         root,
         catalogFile: realCatalog,
-        revision: null,
         identity: `local:${root}`,
         location: root,
       });

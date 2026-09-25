@@ -1,5 +1,6 @@
 import type {
   CatalogAgentComponent,
+  CatalogAgentHookComponent,
   CatalogComponent,
   CatalogMcpIntegrationComponent,
   CatalogSnapshot,
@@ -9,6 +10,7 @@ import { compareUtf8 } from "../../../domain/shared/types.js";
 
 export interface NativeComponents {
   readonly agents: readonly CatalogAgentComponent[];
+  readonly agentHooks: readonly CatalogAgentHookComponent[];
   readonly mcps: readonly CatalogMcpIntegrationComponent[];
 }
 
@@ -24,6 +26,11 @@ export function nativeComponents(
     agents: Object.freeze(
       resolved.filter(
         (component): component is CatalogAgentComponent => component.kind === "agent",
+      ),
+    ),
+    agentHooks: Object.freeze(
+      resolved.filter(
+        (component): component is CatalogAgentHookComponent => component.kind === "agent-hook",
       ),
     ),
     mcps: Object.freeze(

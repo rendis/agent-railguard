@@ -24,8 +24,9 @@ export interface ReviewComponent {
 
 export interface ReviewChange {
   readonly action: "create" | "replace" | "remove";
-  readonly kind: "directory" | "file" | "symlink" | "managed-section" | "git-config";
+  readonly kind: "directory" | "file" | "symlink" | "managed-section" | "json-member" | "git-config";
   readonly path: string;
+  /** Managed section id, or the dotted key of a JSON member. */
   readonly section: string | null;
   readonly owner: string;
 }
@@ -102,25 +103,13 @@ export function buildReviewModel(input: {
     hooks: Object.freeze(
       resolvedCatalog
         .filter((component) => component.kind === "git-gate")
-        .flatMap((component) => {
-          const configured = input.plan.desiredAfter?.state.selections.find(
-            (selection) => selection.ref === component.ref,
-          )?.inputs.scopes;
-          const defaults = component.inputs.find((entry) => entry.id === "scopes")?.default;
-          const scopes = configured ?? defaults ?? ["*"];
-          const commands = scopes.includes("*")
-            ? [`make ${component.operation}`]
-            : scopes.map(
-                (scope) => `make ${component.operation} SCOPE=${shellSingleQuote(scope)}`,
-              );
-          return commands.map((command) =>
-            Object.freeze({
-              component: component.ref,
-              event: component.event,
-              command,
-            }),
-          );
-        })
+        .map((component) =>
+          Object.freeze({
+            component: component.ref,
+            event: component.event,
+            command: `railguard ${component.operation} --changed`,
+          }),
+        )
         .sort((left, right) => compareUtf8(left.event, right.event)),
     ),
     runtimes: Object.freeze(
@@ -232,9 +221,13 @@ function reviewChange(operation: TransactionOperation): ReviewChange {
         : operation.before.kind === "absent"
           ? "create"
           : "replace",
-    kind: operation.target.kind === "managed-section" ? "managed-section" : "file",
+    kind: operation.target.kind,
     path: operation.path,
-    section: operation.target.kind === "managed-section" ? operation.target.sectionId : null,
+    section: operation.target.kind === "managed-section"
+      ? operation.target.sectionId
+      : operation.target.kind === "json-member"
+        ? operation.target.pointer.join(".")
+        : null,
     owner: operation.unitId,
   });
 }

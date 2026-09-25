@@ -12,7 +12,7 @@ describe("managed section contract", () => {
     const envelope = canonicalManagedEnvelope("skills.mapping", "one\r\ntwo\n", "markdown");
 
     expect(envelope).toBe(
-      '<!-- ai-harness:managed:start id="skills.mapping" -->\none\ntwo\n<!-- ai-harness:managed:end id="skills.mapping" -->\n',
+      '<!-- railguard:managed:start id="skills.mapping" -->\none\ntwo\n<!-- railguard:managed:end id="skills.mapping" -->\n',
     );
   });
 
@@ -70,14 +70,29 @@ describe("managed section contract", () => {
     }
   });
 
+  it("keeps owning a whole-file block after another tool adds content before it", () => {
+    const block = canonicalManagedEnvelope("claude.agents-import", "@AGENTS.md", "markdown");
+    const source = `<!-- other-tool:managed:start -->\nForeign\n<!-- other-tool:managed:end -->\n\n${block}`;
+
+    const inspection = inspectManagedSection(source, "claude.agents-import", "markdown", "whole-file");
+    const removal = removeManagedSection(source, "claude.agents-import", "markdown", "whole-file");
+
+    expect(inspection).toMatchObject({ kind: "present", digest: sha256(block) });
+    expect(removal).toMatchObject({
+      kind: "ready",
+      removed: true,
+      text: "<!-- other-tool:managed:start -->\nForeign\n<!-- other-tool:managed:end -->\n\n",
+    });
+  });
+
   it("rejects duplicate, nested, mixed-style, and malformed markers", () => {
     const duplicate = `${canonicalManagedEnvelope("skills.mapping", "one", "markdown")}${canonicalManagedEnvelope("skills.mapping", "two", "markdown")}`;
     expect(inspectManagedSection(duplicate, "skills.mapping", "markdown").kind).toBe("invalid");
 
-    const mixed = '# ai-harness:managed:start id="skills.mapping"\n<!-- ai-harness:managed:end id="skills.mapping" -->\n';
+    const mixed = '# railguard:managed:start id="skills.mapping"\n<!-- railguard:managed:end id="skills.mapping" -->\n';
     expect(inspectManagedSection(mixed, "skills.mapping", "hash").kind).toBe("invalid");
 
-    const malformed = '# ai-harness:managed:start id="skills.mapping" -->\n';
+    const malformed = '# railguard:managed:start id="skills.mapping" -->\n';
     expect(inspectManagedSection(malformed, "skills.mapping", "hash").kind).toBe("invalid");
   });
 });

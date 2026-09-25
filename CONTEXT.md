@@ -1,6 +1,6 @@
-# AI Harness Marketplace
+# Agent Railguard
 
-AI Harness Marketplace prepara un repositorio consumidor con capacidades reutilizables
+Agent Railguard prepara un repositorio consumidor con capacidades reutilizables
 para los AI coding harnesses que el equipo ya utiliza. Este glosario separa la intención
 portable del producto de la materialización particular de cada harness.
 
@@ -12,7 +12,7 @@ skills, agentes, herramientas y configuración del usuario.
 _Avoid_: Agent, marketplace
 
 **Project scope**:
-Ámbito del repositorio consumidor en el que AI Harness administra todos sus
+Ámbito del repositorio consumidor en el que Railguard administra todos sus
 componentes. Excluye la configuración personal o global de los harnesses.
 _Avoid_: User scope, global scope
 
@@ -23,13 +23,13 @@ varias unidades; no equivale al repositorio completo ni a un harness target.
 _Avoid_: Main language, workspace cuando no se ha demostrado
 
 **Component**:
-Unidad versionada del catálogo que AI Harness puede seleccionar, relacionar y
+Unidad versionada del catálogo que Railguard puede seleccionar, relacionar y
 administrar. Cada componente tiene un tipo explícito y no cambia de significado
 según el harness.
 _Avoid_: Thing, resource
 
 **Component definition**:
-Entrada tipada dentro de `ai-harness.yaml` que conserva sólo las decisiones de
+Entrada tipada dentro de `railguard.yaml` que conserva sólo las decisiones de
 distribución no derivables de un componente. Cada tipo define sus hechos derivados;
 para una skill no reemplaza ni duplica `SKILL.md`.
 _Avoid_: Component manifest, SKILL.md frontmatter, lock state
@@ -67,7 +67,7 @@ por grupo de componentes sin apropiarse del archivo de destino completo.
 _Avoid_: Prompt, managed file
 
 **Harness hook**:
-Componente ejecutado en un evento del ciclo de vida de un AI harness, como antes de
+Componente ejecutado en un evento del ciclo de vida de un Railguard, como antes de
 una llamada de herramienta o al terminar una sesión del agente.
 _Avoid_: Git gate, hook
 
@@ -141,7 +141,7 @@ validaciones; sólo el motor de mutaciones puede ejecutarla.
 _Avoid_: File write, side effect
 
 **Managed section**:
-Envelope delimitado que AI Harness posee de forma autoritativa dentro de un archivo
+Envelope delimitado que Railguard posee de forma autoritativa dentro de un archivo
 del consumidor. Incluye markers, body y el separador estructural introducido; puede
 reescribirse sin atribuir ownership al resto del archivo.
 _Avoid_: Generated file
@@ -261,7 +261,7 @@ _Avoid_: Installed, recommendation
 
 **Diagnostic**:
 Explicación clasificada con código estable, evidencia, impacto y acción segura sobre
-una condición observada por AI Harness.
+una condición observada por Railguard.
 _Avoid_: Raw exception, log line
 
 **Plan**:
@@ -285,7 +285,7 @@ certificación, outcomes y diagnósticos sin afirmar el estado actual futuro del
 _Avoid_: Status, log, lock state
 
 **Certified runtime baseline**:
-Líneas y pisos de versión que AI Harness acepta para instalar y ejecutar una release,
+Líneas y pisos de versión que Railguard acepta para instalar y ejecutar una release,
 respaldados por una matriz de compatibilidad explícita. No describe las herramientas
 exactas que produjeron sus bytes.
 _Avoid_: Build toolchain identity, latest

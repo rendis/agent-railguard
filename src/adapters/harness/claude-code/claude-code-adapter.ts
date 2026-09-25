@@ -15,8 +15,10 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentStopScript,
   componentId,
   nativeFileUnit,
+  nativeJsonMemberUnit,
   nativeProjectionIdentity,
   normalizedPrompt,
   stablePrettyJson,
@@ -43,6 +45,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         { role: "skills", path: ".claude/skills", expected: "directory" },
         { role: "agents", path: ".claude/agents", expected: "directory" },
         { role: "mcp", path: ".mcp.json", expected: "file" },
+        { role: "hooks", path: ".claude/settings.json", expected: "file" },
       ],
     });
   }
@@ -73,6 +76,28 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
             ),
           }),
           sources: components.mcps.map((mcp) => mcp.ref),
+        }),
+      );
+    }
+    if (components.agentHooks.length > 0) {
+      units.push(
+        nativeJsonMemberUnit({
+          target: this.id,
+          role: "hook",
+          path: ".claude/settings.json",
+          pointer: ["hooks", "Stop"],
+          value: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: `"$CLAUDE_PROJECT_DIR"/${agentStopScript} claude-code`,
+                  timeout: 900,
+                },
+              ],
+            },
+          ],
+          sources: components.agentHooks.map((hook) => hook.ref),
         }),
       );
     }

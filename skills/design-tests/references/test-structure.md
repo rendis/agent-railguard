@@ -2,30 +2,24 @@
 
 ## Make intent discoverable
 
-Name the test by observable behavior and relevant condition, using the repository and framework conventions. Prefer domain vocabulary over implementation names. A reader should identify what rule is protected and what result matters without opening the production function.
-
-Use prose only when names and native metadata cannot carry the behavior, risk, or expected outcome, or when repository policy requires a documentation contract. Do not make functional tests inspect comments, and do not require language-specific documentation universally.
+Name the test after the observable behavior and condition, in domain vocabulary and the repository's own conventions — a reader should tell what's protected and what matters without opening the production code. Use prose only when names and native metadata can't carry that, or repository policy requires it; never make a functional test parse comments.
 
 ## Separate context, action, and outcome
 
-Organize every proof into these semantic phases:
-
-1. Context: establish only state and collaborators required by the behavior.
-2. Action: perform the primary stimulus once at the level being tested.
+1. Context: set up only the state and collaborators the behavior needs.
+2. Action: perform the primary stimulus once, at the level under test.
 3. Outcome: assert the public result and contractual effects.
 
-Given/When/Then and Arrange/Act/Assert are equivalent expressions of this separation. Use framework-native fixtures, subtests, tables, hooks, or scenarios when they make the phases clearer. Literal labels before every line are unnecessary; connector words are optional; setup shared across cases must remain visible and deterministic.
+Given/When/Then and Arrange/Act/Assert both express this split. Use the framework's native fixtures, subtests, tables, or scenarios; labels and connector words are optional, but setup shared across cases must stay visible and deterministic.
 
 ## Keep one coherent proof
 
-One test may contain several inseparable assertions when together they describe one guarantee. Split cases when they have different causes, actions, defect classes, or failure diagnosis. Data-driven cases are appropriate when every row proves the same rule; do not hide distinct workflows inside an opaque table.
-
-Place expensive or technical matrices at the lowest faithful level. Reserve end-to-end scenarios for public journeys and keep ports, selectors, sleeps, containers, and internal fixtures out of business-readable scenario text.
+A test may carry several assertions when together they describe one guarantee. Split cases with different causes, actions, defect classes, or failure diagnoses. Data-driven cases work when every row proves the same rule — don't hide distinct workflows in one opaque table. Put expensive matrices at the lowest faithful level, and keep end-to-end scenarios readable as business journeys, free of ports, selectors, sleeps, and internal fixtures.
 
 ## Control data and doubles
 
-- Use small representative fixtures with deterministic identities and explicit boundary values.
-- Keep scenarios independent of execution order and ambient developer state.
-- Replace fixed sleeps with observable conditions under deadlines.
-- Prefer fakes or controlled real boundaries when their behavior matters; use mocks for contractual interactions, not to mirror every call.
-- Keep assertions on outputs and effects owned by the system under test; collaborator internals are not the product contract.
+- Use small, deterministic fixtures with explicit boundary values.
+- Keep scenarios independent of order and ambient state.
+- Replace fixed sleeps with observable conditions under a deadline.
+- Prefer fakes or a controlled real boundary when behavior matters; use mocks only for contractual interactions.
+- Assert outputs and effects the system under test owns — collaborator internals aren't the contract.

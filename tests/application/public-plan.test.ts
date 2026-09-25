@@ -22,7 +22,7 @@ afterEach(async () => {
 describe("public plan contract", () => {
   it("exports only reviewable intent and reconstructs the exact opaque plan", async () => {
     const repository = await goRepository();
-    const runtime = await createDefaultApplication({ catalogFile: resolve("ai-harness.yaml") });
+    const runtime = await createDefaultApplication({ catalogFile: resolve("railguard.yaml") });
     cleanups.push(repository.cleanup, runtime.dispose);
 
     const scan = await runtime.application.scan(repository.root);
@@ -50,11 +50,11 @@ describe("public plan contract", () => {
     const encoded = JSON.stringify(exported);
 
     expect(exported).toMatchObject({
-      schema: "ai-harness/plan/v1",
+      schema: "railguard/plan/v1",
       plan_id: preparation.plan.id,
       mode: "reconcile",
       desired_after: {
-        schema: "ai-harness/project/v1",
+        schema: "railguard/project/v1",
         targets: ["codex"],
         selections: [
           {
@@ -81,7 +81,7 @@ describe("public plan contract", () => {
   it("rejects unknown fields and stale repository evidence without producing a plan", async () => {
     expect(() =>
       decodePublicPlan({
-        schema: "ai-harness/plan/v1",
+        schema: "railguard/plan/v1",
         plan_id: `sha256:${"0".repeat(64)}`,
         mode: "remove",
         basis: {
@@ -99,7 +99,7 @@ describe("public plan contract", () => {
     ).toThrow(/schema/i);
 
     const repository = await goRepository();
-    const runtime = await createDefaultApplication({ catalogFile: resolve("ai-harness.yaml") });
+    const runtime = await createDefaultApplication({ catalogFile: resolve("railguard.yaml") });
     cleanups.push(repository.cleanup, runtime.dispose);
     const scan = await runtime.application.scan(repository.root);
     if (scan.kind !== "ready") throw new Error("Expected a ready scan");

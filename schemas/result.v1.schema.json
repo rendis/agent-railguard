@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:example:ai-harness:schema:command-result:v1",
-  "title": "AI Harness command result v1",
+  "$id": "urn:railguard:schema:command-result:v1",
+  "title": "Railguard command result v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -20,7 +20,7 @@
     "diagnostics"
   ],
   "properties": {
-    "schema": { "const": "ai-harness/command-result/v1" },
+    "schema": { "const": "railguard/command-result/v1" },
     "type": { "const": "result" },
     "command": {
       "enum": [
@@ -83,7 +83,7 @@
     },
     "plan": {
       "oneOf": [
-        { "$ref": "urn:example:ai-harness:schema:public-plan:v1" },
+        { "$ref": "urn:railguard:schema:public-plan:v1" },
         { "type": "null" }
       ]
     },
@@ -282,20 +282,6 @@
             { "type": "string", "minLength": 1 },
             { "type": "null" }
           ]
-        },
-        "resolutions": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["action", "label", "destructive"],
-            "properties": {
-              "action": { "const": "replace" },
-              "label": { "type": "string", "minLength": 1 },
-              "destructive": { "type": "boolean" }
-            }
-          }
         }
       }
     },
@@ -320,6 +306,7 @@
             "mcp-integration",
             "verification-profile",
             "git-gate",
+            "agent-hook",
             "instruction-fragment",
             "pack",
             "agent"
@@ -333,6 +320,7 @@
             "passive",
             "project-write",
             "local-git-execution",
+            "local-agent-execution",
             "third-party-network",
             "agent-instruction"
           ]
@@ -396,7 +384,7 @@
       "additionalProperties": false,
       "required": ["id", "status", "message"],
       "properties": {
-        "id": { "enum": ["catalog", "recovery", "repository", "materialization"] },
+        "id": { "enum": ["catalog", "repository", "materialization"] },
         "status": { "enum": ["passed", "warning", "failed"] },
         "message": { "type": "string", "minLength": 1 }
       }

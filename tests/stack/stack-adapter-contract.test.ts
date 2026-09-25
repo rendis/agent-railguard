@@ -95,7 +95,7 @@ describe("Stack adapter contract", () => {
       expect(result.diagnostics).toContainEqual(
         expect.objectContaining({
           code: "stack.typescript.lockfiles-ambiguous",
-          severity: "warning",
+          severity: "info",
         }),
       );
     } finally {

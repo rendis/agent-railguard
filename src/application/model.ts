@@ -7,7 +7,6 @@ import type {
   RepositoryAssessmentResult,
   RepositorySnapshot,
 } from "../domain/repository/model.js";
-import type { ProjectPlanningContext } from "../domain/project/model.js";
 import type { ResolutionResult } from "../domain/resolution/model.js";
 import type {
   ComponentRef,
@@ -20,7 +19,6 @@ import type {
   DurableProjectPlan,
   ReadyDesiredState,
   ReadyPortableLock,
-  RecoveryResult,
 } from "../domain/transaction/model.js";
 import type { VerificationResult } from "../domain/verification/model.js";
 import type {
@@ -33,7 +31,6 @@ export interface ApplicationEvent {
     | "repository-gate"
     | "catalog"
     | "doctor"
-    | "recovery"
     | "scan"
     | "recommend"
     | "resolve"
@@ -61,7 +58,6 @@ export type ReadyScanResult = Readonly<{
   observed: ObservedProjectState | null;
   resolution: ResolutionResult | null;
   reconciliation: ReconciliationResult;
-  recovery: RecoveryResult;
   diagnostics: readonly Diagnostic[];
 }>;
 
@@ -70,7 +66,6 @@ export type ScanResult =
   | {
       readonly kind: "blocked";
       readonly snapshot: RepositorySnapshot;
-      readonly recovery: RecoveryResult | null;
       readonly diagnostics: readonly [Diagnostic, ...Diagnostic[]];
     };
 
@@ -96,7 +91,7 @@ export interface ComponentSelectionDraft {
 }
 
 export interface DoctorCheck {
-  readonly id: "catalog" | "recovery" | "repository" | "materialization";
+  readonly id: "catalog" | "repository" | "materialization";
   readonly status: "passed" | "warning" | "failed";
   readonly message: string;
 }
@@ -108,7 +103,7 @@ export interface DoctorResult {
   readonly diagnostics: readonly Diagnostic[];
 }
 
-export interface AiHarnessCases {
+export interface RailguardCases {
   catalog(): Promise<CatalogLoadResult>;
   scan(root: string): Promise<ScanResult>;
   recommendations(scan: ScanResult): Promise<RecommendationSet>;
@@ -127,7 +122,6 @@ export interface AiHarnessCases {
     selections: readonly ComponentSelectionDraft[],
     targets: readonly HarnessTargetId[],
     mode: "reconcile" | "repair" | "remove",
-    context?: ProjectPlanningContext,
   ): Promise<InstallPreparation>;
   prepareSync(scan: ScanResult): Promise<InstallPreparation>;
   prepareRepair(scan: ScanResult): Promise<InstallPreparation>;

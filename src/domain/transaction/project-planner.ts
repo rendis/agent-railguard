@@ -6,7 +6,16 @@ import {
   type ManagedSectionPlacement,
 } from "../managed-section/managed-section.js";
 import type { ManagedArtifactOwnership } from "../ownership/model.js";
-import type { ExactTextEdit, GitConfigPort, GitConfigValue } from "../planning/model.js";
+import {
+  getJsonMember,
+  jsonMemberDigest,
+  parseJsonContainer,
+  removeJsonMember,
+  renderJsonContainer,
+  setJsonMember,
+  type JsonObject,
+} from "../managed-json/managed-json.js";
+import type { GitConfigPort, GitConfigValue } from "../planning/model.js";
 import type { ProjectedUnit } from "../projection/model.js";
 import type { RepositoryEntry, RepositorySnapshot } from "../repository/model.js";
 import {
@@ -34,8 +43,8 @@ import type {
 } from "./model.js";
 
 const maximumManagedContainerBytes = 4 * 1024 * 1024;
-const desiredPath = relativePosixPath(".ai-harness/project.yaml");
-const lockPath = relativePosixPath(".ai-harness/lock.json");
+const desiredPath = relativePosixPath(".railguard/project.yaml");
+const lockPath = relativePosixPath(".railguard/lock.json");
 
 export class DurableProjectPlanner implements DurableProjectPlanning {
   public constructor(private readonly gitConfig: GitConfigPort) {}
@@ -208,7 +217,7 @@ async function derivePlacements(
             path,
             [errorMessage(error)],
             "A managed section container is not bounded UTF-8.",
-            "AI Harness cannot preserve external content safely.",
+            "Railguard cannot preserve external content safely.",
           ),
         );
         continue;
@@ -287,7 +296,7 @@ async function derivePlacements(
             intent.path,
             [intent.sectionId],
             "A matching managed marker exists without portable ownership.",
-            "AI Harness will not adopt or overwrite the unowned block.",
+            "Railguard will not adopt or overwrite the unowned block.",
           ),
         );
         continue;
@@ -379,21 +388,27 @@ async function planArtifacts(
   for (const path of [...paths].sort(compareUtf8)) {
     const previous = previousArtifacts.filter((artifact) => artifact.path === path);
     const next = nextArtifacts.filter((artifact) => artifact.path === path);
-    const wholeArtifacts = [...previous, ...next].filter((artifact) => artifact.kind !== "managed-section");
-    const sections = [...previous, ...next].filter((artifact) => artifact.kind === "managed-section");
-    if (wholeArtifacts.length > 0 && sections.length > 0) {
+    const all = [...previous, ...next];
+    const containerKinds = new Set(
+      all.map((artifact) =>
+        artifact.kind === "managed-section" || artifact.kind === "json-member" ? artifact.kind : "whole",
+      ),
+    );
+    if (containerKinds.size > 1) {
       diagnostics.push(
         planningDiagnostic(
           "planning.path.ownership-conflict",
           path,
-          [...wholeArtifacts, ...sections].map((artifact) => artifact.ownership_id),
-          "A path mixes whole-file and managed-section ownership.",
+          all.map((artifact) => artifact.ownership_id),
+          "A path mixes whole-file, managed-section or JSON member ownership.",
           "No deterministic ownership boundary exists for this path.",
         ),
       );
       continue;
     }
-    if (wholeArtifacts.length > 0) {
+    if (containerKinds.has("json-member")) {
+      await planJsonContainer(request.snapshot, path, previous, next, projectedArtifacts, operations, diagnostics);
+    } else if (containerKinds.has("whole")) {
       planWholeArtifact(request.snapshot, path, previous, next, projectedArtifacts, operations, diagnostics);
     } else {
       await planSectionContainer(
@@ -418,8 +433,8 @@ function planWholeArtifact(
   operations: TransactionOperation[],
   diagnostics: Diagnostic[],
 ): void {
-  const oldArtifacts = previous.filter((artifact) => artifact.kind !== "managed-section");
-  const newArtifacts = next.filter((artifact) => artifact.kind !== "managed-section");
+  const oldArtifacts = previous.filter((artifact) => artifact.kind === "file" || artifact.kind === "symlink");
+  const newArtifacts = next.filter((artifact) => artifact.kind === "file" || artifact.kind === "symlink");
   if (oldArtifacts.length > 1 || newArtifacts.length > 1) {
     diagnostics.push(
       planningDiagnostic(
@@ -446,7 +461,7 @@ function planWholeArtifact(
         path,
         [oldFile.ownership_id, newFile.ownership_id],
         "A whole-file destination changed ownership identity.",
-        "AI Harness will not transfer exclusive ownership implicitly.",
+        "Railguard will not transfer exclusive ownership implicitly.",
       ),
     );
     return;
@@ -459,7 +474,7 @@ function planWholeArtifact(
           path,
           [newFile.ownership_id],
           "A projected whole-file destination already exists without ownership.",
-          "AI Harness will not adopt or overwrite the foreign file.",
+          "Railguard will not adopt or overwrite the foreign file.",
         ),
       );
       return;
@@ -574,27 +589,13 @@ async function planSectionContainer(
           path,
           [errorMessage(error)],
           "A managed section container is not bounded UTF-8.",
-          "AI Harness cannot preserve external content safely.",
+          "Railguard cannot preserve external content safely.",
         ),
       );
       return;
     }
   }
-  const edited = applyExactContainerEdits(source, next, projected);
-  if (edited.kind === "invalid") {
-    diagnostics.push(
-      planningDiagnostic(
-        "planning.container-edit.invalid",
-        path,
-        edited.evidence,
-        "A confirmed container edit no longer matches the planned source.",
-        "Regenerate the plan and review the replacement against the current file.",
-      ),
-    );
-    return;
-  }
-  source = edited.text;
-  let desired = source;
+  let desired: string = source;
   const nextIds = new Set(next.map((artifact) => artifact.ownership_id));
   for (const artifact of [...previous]
     .filter((candidate) => candidate.kind === "managed-section" && !nextIds.has(candidate.ownership_id))
@@ -659,6 +660,8 @@ async function planSectionContainer(
   }
   const desiredBytes = new ReadonlyBytes(Buffer.from(desired, "utf8"));
   if (entry?.kind === "file" && entry.digest === desiredBytes.digest()) return;
+  // A container that is already gone and would stay empty needs no operation.
+  if (entry === undefined && desired.length === 0) return;
   const mechanicalId = `container.${sha256(path).slice("sha256:".length, "sha256:".length + 16)}`;
   const representative = next.find((artifact) => artifact.kind === "managed-section") ??
     previous.find((artifact) => artifact.kind === "managed-section");
@@ -707,67 +710,142 @@ async function planSectionContainer(
   );
 }
 
-function applyExactContainerEdits(
-  source: string,
+/**
+ * Rewrites a JSON object file so that only the owned members change: members no longer owned are
+ * removed, owned members are set, and a member that exists without ownership blocks the plan.
+ * A file left as an empty object is removed.
+ */
+async function planJsonContainer(
+  snapshot: RepositorySnapshot,
+  path: RelativePosixPath,
+  previous: readonly ManagedArtifactOwnership[],
   next: readonly ManagedArtifactOwnership[],
   projected: ReadonlyMap<string, Extract<ProjectedUnit, { readonly kind: "artifact" }>>,
-):
-  | { readonly kind: "ready"; readonly text: string }
-  | { readonly kind: "invalid"; readonly evidence: readonly string[] } {
-  const edits = next.flatMap((artifact) => {
-    if (artifact.kind !== "managed-section") return [];
-    const unit = projected.get(artifact.ownership_id);
-    return unit?.intent.kind === "managed-section"
-      ? [...(unit.intent.containerEdits ?? [])]
-      : [];
-  });
-  if (edits.length === 0) return Object.freeze({ kind: "ready", text: source });
-
-  const unique = new Map<string, ExactTextEdit>();
-  for (const edit of edits) {
-    const key = `${edit.start}\0${edit.end}\0${edit.expected}\0${edit.replacement}`;
-    unique.set(key, edit);
+  operations: TransactionOperation[],
+  diagnostics: Diagnostic[],
+): Promise<void> {
+  const entry = snapshot.entries.find((candidate) => candidate.path === path);
+  if (entry !== undefined && entry.kind !== "file") {
+    diagnostics.push(unsafePathDiagnostic(path, entry.kind));
+    return;
   }
-  const ordered = [...unique.values()].sort((left, right) =>
-    left.start - right.start || left.end - right.end,
+  let source = "";
+  if (entry?.kind === "file") {
+    try {
+      const read = await snapshot.read(path, maximumManagedContainerBytes);
+      source = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes.copy());
+    } catch (error) {
+      diagnostics.push(jsonContainerDiagnostic(path, [errorMessage(error)]));
+      return;
+    }
+  }
+  const parsed = parseJsonContainer(source);
+  if (parsed.kind === "invalid") {
+    diagnostics.push(jsonContainerDiagnostic(path, parsed.evidence));
+    return;
+  }
+  let desired: JsonObject = parsed.value;
+  const owned = new Set(previous.map((artifact) => artifact.ownership_id));
+  const nextIds = new Set(next.map((artifact) => artifact.ownership_id));
+  for (const artifact of previous) {
+    if (artifact.kind !== "json-member" || nextIds.has(artifact.ownership_id)) continue;
+    desired = removeJsonMember(desired, artifact.pointer);
+  }
+  for (const artifact of [...next].sort((left, right) => compareUtf8(left.ownership_id, right.ownership_id))) {
+    if (artifact.kind !== "json-member") continue;
+    const projectedUnit = projected.get(artifact.ownership_id);
+    if (projectedUnit?.intent.kind !== "json-member") {
+      diagnostics.push(
+        planningDiagnostic(
+          "planning.projection.lock-mismatch",
+          path,
+          [artifact.ownership_id],
+          "The portable lock has no matching JSON member projection.",
+          "Regenerate the projection and lock from one catalog snapshot.",
+        ),
+      );
+      return;
+    }
+    const current = getJsonMember(desired, artifact.pointer);
+    if (!owned.has(artifact.ownership_id) && current !== undefined) {
+      diagnostics.push(
+        planningDiagnostic(
+          "planning.json-member.foreign",
+          path,
+          [artifact.pointer.join(".")],
+          `${artifact.pointer.join(".")} already exists in ${path} without Railguard ownership.`,
+          "Railguard will not adopt or overwrite a foreign configuration entry; merge it manually or remove it.",
+        ),
+      );
+      continue;
+    }
+    const updated = setJsonMember(desired, artifact.pointer, projectedUnit.intent.value);
+    if (updated.kind === "invalid") {
+      diagnostics.push(jsonContainerDiagnostic(path, updated.evidence));
+      return;
+    }
+    desired = updated.value;
+    if (jsonMemberDigest(artifact.pointer, getJsonMember(desired, artifact.pointer)) !== artifact.content_digest) {
+      diagnostics.push(
+        planningDiagnostic(
+          "planning.projection.lock-mismatch",
+          path,
+          [artifact.ownership_id],
+          "Rendered JSON member does not match its portable lock digest.",
+          "Regenerate the projection and lock from the same snapshot.",
+        ),
+      );
+      return;
+    }
+  }
+  const representative = next.find((artifact) => artifact.kind === "json-member") ??
+    previous.find((artifact) => artifact.kind === "json-member");
+  if (representative?.kind !== "json-member") return;
+  const unitId = `container.${sha256(path).slice("sha256:".length, "sha256:".length + 16)}`;
+  const target = Object.freeze({ kind: "json-member" as const, path, pointer: representative.pointer });
+  if (Object.keys(desired).length === 0) {
+    if (entry?.kind === "file") {
+      operations.push(
+        Object.freeze({
+          kind: "remove-file",
+          unitId,
+          path,
+          target,
+          before: Object.freeze({ kind: "file", digest: entry.digest, mode: entry.mode }),
+        }),
+      );
+    }
+    return;
+  }
+  const bytes = new ReadonlyBytes(Buffer.from(renderJsonContainer(desired), "utf8"));
+  if (entry?.kind === "file" && entry.digest === bytes.digest()) return;
+  const projectedMode = next
+    .map((artifact) => projected.get(artifact.ownership_id)?.intent)
+    .find((intent) => intent?.kind === "json-member");
+  operations.push(
+    Object.freeze({
+      kind: "write-file",
+      unitId,
+      path,
+      target,
+      bytes,
+      mode: entry?.kind === "file" ? entry.mode : projectedMode?.kind === "json-member" ? projectedMode.mode : 0o644,
+      before:
+        entry?.kind === "file"
+          ? Object.freeze({ kind: "file", digest: entry.digest, mode: entry.mode })
+          : Object.freeze({ kind: "absent" }),
+    }),
   );
-  for (let index = 0; index < ordered.length; index += 1) {
-    const edit = ordered[index]!;
-    if (
-      !Number.isSafeInteger(edit.start) ||
-      !Number.isSafeInteger(edit.end) ||
-      edit.start < 0 ||
-      edit.end <= edit.start ||
-      edit.end > source.length ||
-      edit.expected.length !== edit.end - edit.start
-    ) {
-      return Object.freeze({
-        kind: "invalid",
-        evidence: Object.freeze([`invalid range ${edit.start}:${edit.end}`]),
-      });
-    }
-    const previous = ordered[index - 1];
-    if (previous !== undefined && edit.start < previous.end) {
-      return Object.freeze({
-        kind: "invalid",
-        evidence: Object.freeze([
-          `overlapping ranges ${previous.start}:${previous.end} and ${edit.start}:${edit.end}`,
-        ]),
-      });
-    }
-    if (source.slice(edit.start, edit.end) !== edit.expected) {
-      return Object.freeze({
-        kind: "invalid",
-        evidence: Object.freeze([`stale range ${edit.start}:${edit.end}`]),
-      });
-    }
-  }
+}
 
-  let text = source;
-  for (const edit of [...ordered].reverse()) {
-    text = `${text.slice(0, edit.start)}${edit.replacement}${text.slice(edit.end)}`;
-  }
-  return Object.freeze({ kind: "ready", text });
+function jsonContainerDiagnostic(path: RelativePosixPath, evidence: readonly string[]): Diagnostic {
+  return planningDiagnostic(
+    "planning.json-member.container-invalid",
+    path,
+    evidence,
+    `${path} is not a JSON object Railguard can update safely.`,
+    "Fix the JSON file, then plan again.",
+  );
 }
 
 async function planLocalEffects(
@@ -793,7 +871,7 @@ async function planLocalEffects(
           relativePosixPath(".git/config"),
           [errorMessage(error)],
           "Repository-local Git config could not be read.",
-          "AI Harness cannot establish a precondition for the local effect.",
+          "Railguard cannot establish a precondition for the local effect.",
         ),
       );
       continue;
@@ -805,7 +883,7 @@ async function planLocalEffects(
             "planning.git-config.foreign",
             relativePosixPath(".git/config"),
             [current.value],
-            "core.hooksPath already has a value without AI Harness ownership.",
+            "core.hooksPath already has a value without Railguard ownership.",
             "The existing local Git policy is preserved.",
           ),
         );
@@ -860,7 +938,7 @@ function gitConfigDriftDiagnostic(current: string, expected: string): Diagnostic
     "planning.git-config.drift",
     relativePosixPath(".git/config"),
     [current, expected],
-    "The managed core.hooksPath value was changed outside AI Harness.",
+    "The managed core.hooksPath value was changed outside Railguard.",
     "Removal or ordinary reconciliation would overwrite local Git policy.",
   );
 }
@@ -886,7 +964,7 @@ function planStateFile(
         path,
         [entry.digest],
         "A project state path exists without a validated durable state.",
-        "AI Harness will not overwrite unknown control data.",
+        "Railguard will not overwrite unknown control data.",
       ),
     );
     return;
@@ -937,7 +1015,7 @@ function planStateFileRemoval(
         path,
         [beforeBytes.digest()],
         "A validated project state file is missing before full uninstall.",
-        "AI Harness cannot prove a complete control-state removal.",
+        "Railguard cannot prove a complete control-state removal.",
       ),
     );
     return;
@@ -1105,7 +1183,7 @@ function invalidMarkersDiagnostic(path: RelativePosixPath, evidence: readonly st
     path,
     evidence,
     "Managed markers are duplicate, incomplete, malformed, nested, or misplaced.",
-    "AI Harness cannot identify a unique owned envelope.",
+    "Railguard cannot identify a unique owned envelope.",
   );
 }
 

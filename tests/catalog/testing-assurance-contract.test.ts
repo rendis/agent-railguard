@@ -14,21 +14,21 @@ describe("testing assurance contract", () => {
 
     for (const field of [
       "behavior/risk",
-      "authority",
+      "reason",
       "plausible defect",
-      "proof/seam",
+      "seam",
       "evidence state",
     ]) {
       expect(behavioralProof).toContain(`\`${field}\``);
     }
-    expect(designSkill).toContain("`planned` is a valid design handoff");
-    const contractIndex = tddSkill.indexOf("task-local behavior inventory");
+    expect(designSkill).toContain("`planned` is a normal handoff to `tdd`");
+    const contractIndex = tddSkill.indexOf("**Inventory.**");
     const redIndex = tddSkill.indexOf("**RED.**");
     expect(contractIndex).toBeGreaterThan(-1);
     expect(contractIndex).toBeLessThan(redIndex);
     expect(tddSkill).toContain("**Reconcile.**");
-    expect(tddSkill).toContain("implementation-created decisions");
-    expect(tddSkill).toContain("A coverage percentage cannot close the slice");
+    expect(tddSkill).toContain("any decision the implementation revealed");
+    expect(tddSkill).toContain("railguard verify --changed");
   });
 
   it("keeps Go coverage facts separate from contextual gap closure", async () => {
@@ -50,7 +50,7 @@ describe("testing assurance contract", () => {
     expect(gapAnalysis).toContain("authorized changed or audited production scope");
     expect(gapAnalysis).toContain("mechanical regression floor");
     expect(criticalAssurance).toContain("three coverage tiers");
-    expect(parser).toContain("ai-harness/go-coverage-gaps/v1");
+    expect(parser).toContain("railguard/go-coverage-gaps/v1");
     expect(parser).not.toMatch(/85|threshold/i);
   });
 
@@ -70,7 +70,7 @@ describe("testing assurance contract", () => {
     expect(deterministicGate).toContain("does not classify uncovered behavior");
     expect(qualityProfiles).toContain("semantic test completeness");
     expect(reviewSkill).toContain("load `test-go-service`");
-    expect(reviewSkill).toContain("candidate changes Go production");
+    expect(reviewSkill).toContain("the change touches Go production");
     expect(reviewWorkflow).toContain("passing percentage");
     expect(qualityModel).toContain("unclassified in-scope block");
     expect(delivery).toContain("zero unclassified gaps");
@@ -81,7 +81,7 @@ describe("testing assurance contract", () => {
 
   it("installs the Go gap-analysis contract without selecting optional assurance profiles", async () => {
     const result = await new FilesystemCatalog({
-      catalogFile: resolve("ai-harness.yaml"),
+      catalogFile: resolve("railguard.yaml"),
       supportedLanguages: [
         languageId("go"),
         languageId("python"),
@@ -110,9 +110,10 @@ describe("testing assurance contract", () => {
     const baseline = result.catalog.components.find(
       (component) => component.ref === componentRef("verification-profile:go-quality"),
     );
-    expect(baseline?.kind === "verification-profile" ? baseline.make : null).toMatchObject({
-      targets: ["ai-harness-go-check", "ai-harness-go-verify"],
-      operations: { check: "ai-harness-go-check", verify: "ai-harness-go-verify" },
-    });
+    expect(baseline?.kind === "verification-profile" ? baseline.checks.map((check) => check.id) : null)
+      .toEqual(["format", "vet", "test", "race"]);
+    expect(baseline?.kind === "verification-profile"
+      ? baseline.checks.map((check) => check.stage)
+      : null).toEqual(["check", "check", "check", "verify"]);
   });
 });

@@ -173,7 +173,7 @@ function catalog(version = "0.1.0", digest = contentDigest): CatalogSnapshot {
 
 function desired(): DesiredState {
   return Object.freeze({
-    schema: "ai-harness/project/v1",
+    schema: "railguard/project/v1",
     targets: Object.freeze([target]),
     selections: Object.freeze([Object.freeze({ ref, inputs: Object.freeze({}) })]),
   });
@@ -181,7 +181,7 @@ function desired(): DesiredState {
 
 function lock(): LockState {
   return Object.freeze({
-    schema: "ai-harness/lock/v1",
+    schema: "railguard/lock/v1",
     desired_digest: desiredDigest,
     catalog: Object.freeze({ revision: semVer("0.1.0"), digest: sha256("catalog:0.1.0") }),
     targets: Object.freeze([

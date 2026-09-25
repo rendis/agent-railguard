@@ -241,7 +241,12 @@ func validateSetup(config configuration) (string, error) {
 	if info, err := os.Stat(config.patch); err != nil || !info.Mode().IsRegular() {
 		return "", errors.New("patch must be a readable regular file")
 	}
-	marker, err := os.ReadFile(filepath.Join(checkout, disposableMarkerName))
+	directory, err := os.OpenRoot(checkout)
+	if err != nil {
+		return "", fmt.Errorf("open checkout: %w", err)
+	}
+	defer directory.Close()
+	marker, err := directory.ReadFile(disposableMarkerName)
 	if err != nil {
 		return "", errors.New("disposable checkout marker is missing")
 	}
@@ -311,14 +316,15 @@ func treeHash(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	directory, err := os.OpenRoot(root)
+	if err != nil {
+		return "", err
+	}
+	defer directory.Close()
 	var paths []string
-	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = fs.WalkDir(directory.FS(), ".", func(relative string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
 		}
 		if relative == ".git" {
 			if entry.IsDir() {
@@ -347,7 +353,7 @@ func treeHash(root string) (string, error) {
 	}
 	writer := sha256.New()
 	for _, relative := range paths {
-		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
+		data, err := directory.ReadFile(filepath.FromSlash(relative))
 		if err != nil {
 			return "", err
 		}

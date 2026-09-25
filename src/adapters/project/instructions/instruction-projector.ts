@@ -165,7 +165,7 @@ function belongsToGroup(
     case "skills": return component.kind === "skill";
     case "mcps": return component.kind === "mcp-integration";
     case "agents": return component.kind === "agent";
-    case "automation": return component.kind === "git-gate";
+    case "automation": return component.kind === "git-gate" || component.kind === "agent-hook";
     case "quality": return component.kind === "verification-profile";
   }
 }
@@ -230,8 +230,10 @@ function mappingGuidance(
       return component.description;
     case "git-gate": {
       const timing = component.event === "pre-commit" ? "Before committing" : "Before pushing";
-      return `${timing}, run \`make ${component.operation}\`.`;
+      return `${timing}, \`railguard ${component.operation} --changed\` runs automatically; run it yourself to reproduce a failure.`;
     }
+    case "agent-hook":
+      return `When you finish a turn, \`railguard ${component.operation} --changed\` runs and any failure comes back to you; fix it instead of weakening tests or checks.`;
     default:
       return component.description;
   }

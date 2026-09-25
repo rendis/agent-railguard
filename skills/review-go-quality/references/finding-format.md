@@ -11,14 +11,7 @@ Calibrate by impact and likelihood, not diff size.
 
 ## Structure
 
-Every finding must include:
-
-1. `[Severity]` with an imperative, specific title.
-2. Location: exact minimal file and line.
-3. Evidence: observed path, input, command, or contract.
-4. Impact: what fails and for whom.
-5. Recommendation: minimum change that resolves the cause.
-6. Verification: test or command that proves the correction.
+Every finding needs: `[Severity]` with an imperative, specific title; location (exact minimal file and line); evidence (observed path, input, command, or contract); impact (what fails and for whom); a recommendation (the minimum change that resolves the cause); and verification (the test or command that proves the correction).
 
 Example:
 
@@ -31,12 +24,11 @@ Example:
 
 ## Rules
 
-- One finding covers one cause.
-- Cite only necessary lines.
+- One finding covers one cause; cite only the necessary lines.
 - Support every claim with executable or contractual evidence.
 - Include pre-existing debt only when the reviewed change activates it or the scope is a baseline.
-- Do not report an already disclosed external prerequisite as a candidate finding when the claimed blocked or unavailable state is accurate and independently reproduced.
-- Present dimensions and metrics separately without an aggregate score.
+- Do not report an already disclosed external prerequisite as a finding when the claimed blocked or unavailable state is accurate and independently reproduced.
+- Present dimensions and metrics separately, without an aggregate score.
 - If no findings exist, respond "No actionable findings were found" and list unassessed checks.
 
-For a baseline, first separate scope and comparison point, check states, and metric distributions or outliers without calling them defects. Keep `not evaluated` and `unavailable` distinct from `pass`.
+For a baseline, first separate scope and comparison point, then report states and metric distributions or outliers without calling them defects; keep `not evaluated` and `unavailable` distinct from `pass` per [toolchain-and-deprecations.md](toolchain-and-deprecations.md).

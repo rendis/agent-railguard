@@ -61,11 +61,15 @@ export interface CatalogVerificationProfileComponent extends CatalogComponentBas
   readonly payload: null;
   readonly executables: readonly string[];
   readonly inputs: readonly CatalogInputDefinition[];
-  readonly make: {
-    readonly targets: readonly string[];
-    readonly operations: Readonly<Record<string, string>>;
-    readonly body: string;
-  };
+  readonly checks: readonly CatalogCheck[];
+}
+
+/** One deterministic check a verification profile contributes to `railguard check|verify`. */
+export interface CatalogCheck {
+  readonly id: string;
+  readonly kind: string;
+  readonly stage: "check" | "verify";
+  readonly params: Readonly<Record<string, string | number | boolean>>;
 }
 
 export interface CatalogInputDefinition {
@@ -73,8 +77,6 @@ export interface CatalogInputDefinition {
   readonly type: "string-list";
   readonly default: readonly string[];
   readonly itemPattern: string;
-  readonly makeVariable: string | null;
-  readonly source: "literal" | "project-units";
 }
 
 export interface CatalogGitGateComponent extends CatalogComponentBase {
@@ -82,8 +84,16 @@ export interface CatalogGitGateComponent extends CatalogComponentBase {
   readonly trust: "local-git-execution";
   readonly payload: null;
   readonly event: "pre-commit" | "pre-push";
-  readonly operation: string;
-  readonly inputs: readonly CatalogInputDefinition[];
+  readonly operation: "check" | "verify";
+}
+
+/** A coding-agent lifecycle hook that runs a verification operation on the change. */
+export interface CatalogAgentHookComponent extends CatalogComponentBase {
+  readonly kind: "agent-hook";
+  readonly trust: "local-agent-execution";
+  readonly payload: null;
+  readonly event: "stop";
+  readonly operation: "check" | "verify";
 }
 
 export interface CatalogMcpIntegrationComponent extends CatalogComponentBase {
@@ -140,6 +150,7 @@ export type CatalogComponent =
   | CatalogMcpIntegrationComponent
   | CatalogVerificationProfileComponent
   | CatalogGitGateComponent
+  | CatalogAgentHookComponent
   | CatalogInstructionFragmentComponent
   | CatalogPackComponent
   | CatalogAgentComponent;

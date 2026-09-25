@@ -22,7 +22,7 @@ export function nativeProjectionIdentity(target: HarnessTargetId): ProjectionIde
 
 export function nativeFileUnit(input: {
   readonly target: HarnessTargetId;
-  readonly role: "agent" | "mcp";
+  readonly role: "agent" | "mcp" | "hook";
   readonly path: string;
   readonly text: string;
   readonly sources: readonly ComponentRef[];
@@ -70,6 +70,34 @@ export function nativeSectionUnit(input: {
     }),
   });
 }
+
+/** A harness configuration entry owned inside a shared JSON file such as `.claude/settings.json`. */
+export function nativeJsonMemberUnit(input: {
+  readonly target: HarnessTargetId;
+  readonly role: "hook";
+  readonly path: string;
+  readonly pointer: readonly string[];
+  readonly value: unknown;
+  readonly sources: readonly ComponentRef[];
+}): ProjectedUnit {
+  const suffix = sha256(`${input.path}\0${input.pointer.join("\0")}`).slice("sha256:".length, "sha256:".length + 12);
+  return Object.freeze({
+    kind: "artifact",
+    ownershipId: `${input.target}.${input.role}.json.${suffix}`,
+    sources: Object.freeze([...input.sources].sort(compareUtf8)),
+    intent: Object.freeze({
+      kind: "json-member" as const,
+      owner: `${input.target}:${input.role}`,
+      path: relativePosixPath(input.path),
+      pointer: Object.freeze([...input.pointer]),
+      value: input.value,
+      mode: 0o644,
+    }),
+  });
+}
+
+/** Path of the managed script every harness hook calls; see the quality projector. */
+export const agentStopScript = ".railguard/agent-hooks/stop";
 
 export function stablePrettyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;

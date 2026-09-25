@@ -15,11 +15,13 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentStopScript,
   componentId,
   nativeFileUnit,
   nativeProjectionIdentity,
   nativeSectionUnit,
   normalizedPrompt,
+  stablePrettyJson,
 } from "../shared/native-units.js";
 
 export class CodexAdapter implements HarnessAdapter {
@@ -41,6 +43,7 @@ export class CodexAdapter implements HarnessAdapter {
         { role: "skills", path: ".agents/skills", expected: "directory" },
         { role: "agents", path: ".codex/agents", expected: "directory" },
         { role: "mcp", path: ".codex/config.toml", expected: "file" },
+        { role: "hooks", path: ".codex/hooks.json", expected: "file" },
       ],
     });
   }
@@ -66,6 +69,31 @@ export class CodexAdapter implements HarnessAdapter {
           source: mcp.ref,
         }),
       ),
+      ...(components.agentHooks.length === 0
+        ? []
+        : [
+            nativeFileUnit({
+              target: this.id,
+              role: "hook",
+              path: ".codex/hooks.json",
+              text: stablePrettyJson({
+                hooks: {
+                  Stop: [
+                    {
+                      hooks: [
+                        {
+                          type: "command",
+                          command: `"$(git rev-parse --show-toplevel)/${agentStopScript}" codex`,
+                          timeout: 900,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              }),
+              sources: components.agentHooks.map((hook) => hook.ref),
+            }),
+          ]),
     ].sort((left, right) => compareUtf8(left.ownershipId, right.ownershipId));
     return Object.freeze({
       identity: nativeProjectionIdentity(this.id),

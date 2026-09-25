@@ -17,7 +17,7 @@ beforeAll(async () => {
 describe.sequential("production CLI contract", () => {
   it("exposes help/version and never opens a hidden prompt without a TTY", async () => {
     expect((await cli(["--version"])).stdout.trim()).toBe("0.1.0");
-    expect((await cli(["--help"])).stdout).toContain("ai-harness [options] [command]");
+    expect((await cli(["--help"])).stdout).toContain("railguard [options] [command]");
     const noCommand = await cli([]);
     expect(noCommand.code).toBe(2);
     expect(noCommand.stderr).toContain("requires a subcommand");
@@ -48,9 +48,8 @@ describe.sequential("production CLI contract", () => {
     expect(syncHelp).toContain("--plan-only");
     expect(syncHelp).toContain("--yes");
 
-    const updateHelp = (await cli(["update", "--help"])).stdout;
-    expect(updateHelp).toContain("global engine");
-    expect(updateHelp).toContain("does not load or modify project content");
+    expect(rootHelp).toContain("Re-run the install script");
+    expect(rootHelp).not.toMatch(/^\s+update\b/m);
 
     const mcpHelp = (await cli(["mcp", "--help"])).stdout;
     expect(mcpHelp).toContain("never read or");
@@ -94,12 +93,11 @@ describe.sequential("production CLI contract", () => {
     expect(components.some(({ ref }) => ref.startsWith("instruction-fragment:"))).toBe(false);
   });
 
-  it("blocks catalog work instead of falling back when an explicit remote manifest is unavailable", async () => {
-    const result = await cli(["catalog", "list", "--format", "json"], {
-      AI_HARNESS_CONTENT_MANIFEST_URL: "file:///definitely/missing/content-manifest.json",
-      AI_HARNESS_ALLOW_FILE_CONTENT: "1",
-      AI_HARNESS_CONTENT_CACHE: join(tmpdir(), "ai-harness-cache-must-not-fallback"),
-    });
+  it("blocks catalog work instead of falling back when an explicit source is unavailable", async () => {
+    const result = await cli([
+      "--source", join(tmpdir(), "railguard-definitely-missing-source"),
+      "catalog", "list", "--format", "json",
+    ]);
 
     expect(result.code).toBe(5);
     expect(JSON.parse(result.stdout)).toMatchObject({
@@ -108,10 +106,10 @@ describe.sequential("production CLI contract", () => {
     });
   });
 
-  it("updates project content from a new remote manifest without changing the engine", async () => {
+  it("syncs project content from a newer source without changing the engine", async () => {
     const repository = await goRepository("content-update");
-    const sourceA = await publishedCatalogSource("0.1.0");
-    const sourceB = await publishedCatalogSource("0.2.0");
+    const sourceA = await localCatalogSource("0.1.0");
+    const sourceB = await localCatalogSource("0.2.0");
     try {
       const installed = await cli([
         "init",
@@ -120,14 +118,16 @@ describe.sequential("production CLI contract", () => {
         "--yes",
         "--cwd", repository.root,
         "--format", "json",
-      ], sourceA.environment);
+        "--source", sourceA,
+      ]);
       expect(installed.code).toBe(0);
       expect(JSON.parse(installed.stdout).verdict).toBe("SUCCEEDED");
 
       const available = await cli([
         "sync", "--check",
         "--cwd", repository.root, "--format", "json",
-      ], sourceB.environment);
+        "--source", sourceB,
+      ]);
       expect(available.code).toBe(6);
       expect(JSON.parse(available.stdout)).toMatchObject({
         verdict: "CHANGES_AVAILABLE",
@@ -137,22 +137,24 @@ describe.sequential("production CLI contract", () => {
       const updated = await cli([
         "sync", "--yes",
         "--cwd", repository.root, "--format", "json",
-      ], sourceB.environment);
+        "--source", sourceB,
+      ]);
       expect(updated.code).toBe(0);
       expect(JSON.parse(updated.stdout).verdict).toBe("SUCCEEDED");
 
       const current = await cli([
         "sync", "--check",
         "--cwd", repository.root, "--format", "json",
-      ], sourceB.environment);
+        "--source", sourceB,
+      ]);
       expect(current.code).toBe(0);
       expect(JSON.parse(current.stdout).verdict).toBe("NO_CHANGES");
       expect((await cli(["--version"])).stdout.trim()).toBe("0.1.0");
     } finally {
       await Promise.all([
         repository.cleanup(),
-        rm(sourceA.root, { recursive: true, force: true }),
-        rm(sourceB.root, { recursive: true, force: true }),
+        rm(sourceA, { recursive: true, force: true }),
+        rm(sourceB, { recursive: true, force: true }),
       ]);
     }
   }, 60_000);
@@ -164,7 +166,7 @@ describe.sequential("production CLI contract", () => {
       expect(json.code).toBe(0);
       expect(json.stdout.trimEnd().split("\n")).toHaveLength(1);
       expect(JSON.parse(json.stdout)).toMatchObject({
-        schema: "ai-harness/command-result/v1",
+        schema: "railguard/command-result/v1",
         command: "scan",
         verdict: "READY",
         repository: { languages: ["go"], management: "uninitialized" },
@@ -186,7 +188,7 @@ describe.sequential("production CLI contract", () => {
 
   it("runs plan export, fresh apply, status, idempotent sync and exact remove", async () => {
     const repository = await goRepository("lifecycle");
-    const outputDirectory = await mkdtemp(join(tmpdir(), "ai-harness-cli-plan-"));
+    const outputDirectory = await mkdtemp(join(tmpdir(), "railguard-cli-plan-"));
     const planPath = join(outputDirectory, "plan.json");
     try {
       const planned = await cli([
@@ -204,7 +206,7 @@ describe.sequential("production CLI contract", () => {
       ]);
       expect(planned.code).toBe(0);
       const plan = JSON.parse(await readFile(planPath, "utf8"));
-      expect(plan).toMatchObject({ schema: "ai-harness/plan/v1", mode: "reconcile" });
+      expect(plan).toMatchObject({ schema: "railguard/plan/v1", mode: "reconcile" });
       expect((await stat(planPath)).mode & 0o777).toBe(0o600);
 
       const applied = await cli([
@@ -299,9 +301,12 @@ describe.sequential("production CLI contract", () => {
         "json",
       ]);
       expect(installed.code).toBe(0);
-      expect(await readFile(join(repository.root, "Makefile"), "utf8")).toContain(
-        "AI_HARNESS_GO_TEST_PACKAGES := ./cmd/... ./internal/...",
+      expect(await readFile(join(repository.root, ".railguard/project.yaml"), "utf8")).toContain(
+        "./cmd/...",
       );
+      await expect(readFile(join(repository.root, "Makefile"), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
 
       const already = await cli([
         "init",
@@ -320,7 +325,7 @@ describe.sequential("production CLI contract", () => {
     }
   }, 45_000);
 
-  it("supports catalog, doctor, repair and a non-mutating update check", async () => {
+  it("supports catalog, doctor and repair queries", async () => {
     const repository = await goRepository("queries");
     try {
       const catalog = await cli(["catalog", "list", "--type", "mcp", "--format", "json"]);
@@ -358,21 +363,6 @@ describe.sequential("production CLI contract", () => {
       expect(repair.code).toBe(5);
       expect(JSON.parse(repair.stdout).verdict).toBe("BLOCKED");
 
-      const update = await cli(["update", "--check", "--format", "json"]);
-      expect(JSON.parse(update.stdout)).toMatchObject({
-        verdict: "READY",
-        data: { kind: "update", status: "unknown", current_version: "0.1.0" },
-      });
-      const engineOnly = await cli([
-        "--source", join(repository.root, "missing-content-source"),
-        "update", "--check", "--format", "json",
-      ]);
-      expect(engineOnly.code).toBe(0);
-      expect(JSON.parse(engineOnly.stdout)).toMatchObject({
-        command: "update",
-        verdict: "READY",
-        data: { kind: "update", status: "unknown" },
-      });
     } finally {
       await repository.cleanup();
     }
@@ -438,7 +428,7 @@ describe.sequential("production CLI contract", () => {
 
   it("rejects a stale exported plan without mutating", async () => {
     const repository = await goRepository("stale");
-    const outputDirectory = await mkdtemp(join(tmpdir(), "ai-harness-cli-stale-"));
+    const outputDirectory = await mkdtemp(join(tmpdir(), "railguard-cli-stale-"));
     const planPath = join(outputDirectory, "plan.json");
     try {
       const planned = await cli([
@@ -474,7 +464,7 @@ describe.sequential("production CLI contract", () => {
           expect.objectContaining({ code: "plan-import.repository-fingerprint-changed" }),
         ],
       });
-      await expect(readFile(join(repository.root, ".ai-harness/project.yaml"), "utf8"))
+      await expect(readFile(join(repository.root, ".railguard/project.yaml"), "utf8"))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await Promise.all([
@@ -548,11 +538,11 @@ async function goRepository(name: string) {
 }
 
 async function localCatalogSource(version: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "ai-harness-cli-source-"));
+  const root = await mkdtemp(join(tmpdir(), "railguard-cli-source-"));
   await mkdir(join(root, "skills"), { recursive: true });
   await cp(resolve("skills/tdd"), join(root, "skills/tdd"), { recursive: true });
-  await writeFile(join(root, "ai-harness.yaml"), [
-    "schema: ai-harness/v1",
+  await writeFile(join(root, "railguard.yaml"), [
+    "schema: railguard/v1",
     `version: ${version}`,
     "catalog:",
     "  skills:",
@@ -569,65 +559,4 @@ async function localCatalogSource(version: string): Promise<string> {
     "",
   ].join("\n"), "utf8");
   return root;
-}
-
-async function publishedCatalogSource(version: string) {
-  const authoring = await localCatalogSource(version);
-  const root = await mkdtemp(join(tmpdir(), "ai-harness-cli-publication-"));
-  const content = join(root, "content");
-  await cp(authoring, content, { recursive: true });
-  await rm(authoring, { recursive: true, force: true });
-  const files = await fileInventory(content);
-  const manifestPath = join(root, "content-manifest.json");
-  await writeFile(manifestPath, `${JSON.stringify({
-    schema: "ai-harness/content-manifest/v1",
-    revision: version,
-    source: {
-      commit: "0123456789abcdef0123456789abcdef01234567",
-      tree: "89abcdef0123456789abcdef0123456789abcdef",
-      input_digest: sha256(`cli-publication:${version}`),
-    },
-    files,
-    authentication: {
-      kind: "external-https-channel",
-      manifest_authentication: "CLI process contract fixture.",
-    },
-  }, null, 2)}\n`, "utf8");
-  return {
-    root,
-    environment: {
-      AI_HARNESS_CONTENT_MANIFEST_URL: new URL(`file://${manifestPath}`).href,
-      AI_HARNESS_ALLOW_FILE_CONTENT: "1",
-      AI_HARNESS_CONTENT_CACHE: join(root, "cache"),
-    },
-  };
-}
-
-async function fileInventory(root: string) {
-  const files: { path: string; mode: "100644" | "100755"; size: number; sha256: string }[] = [];
-  await walk(root, root, files);
-  return files.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
-}
-
-async function walk(
-  root: string,
-  directory: string,
-  files: { path: string; mode: "100644" | "100755"; size: number; sha256: string }[],
-): Promise<void> {
-  const handle = await opendir(directory);
-  for await (const entry of handle) {
-    const path = join(directory, entry.name);
-    const metadata = await lstat(path);
-    if (metadata.isDirectory()) {
-      await walk(root, path, files);
-    } else if (metadata.isFile()) {
-      const bytes = await readFile(path);
-      files.push({
-        path: relative(root, path).split(sep).join("/"),
-        mode: metadata.mode & 0o111 ? "100755" : "100644",
-        size: bytes.byteLength,
-        sha256: sha256(bytes),
-      });
-    }
-  }
 }

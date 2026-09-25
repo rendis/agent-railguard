@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-const reportSchema = "ai-harness/go-coverage-gaps/v1"
+const reportSchema = "railguard/go-coverage-gaps/v1"
 
 type coverageProfile struct {
 	Mode   string

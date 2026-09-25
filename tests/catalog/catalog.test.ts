@@ -15,7 +15,7 @@ const supportedLanguages = [
 describe("FilesystemCatalog", () => {
   it("loads the seven real skills as one immutable canonical snapshot", async () => {
     const catalog = new FilesystemCatalog({
-      catalogFile: resolve("ai-harness.yaml"),
+      catalogFile: resolve("railguard.yaml"),
       supportedLanguages,
     });
 
@@ -44,7 +44,7 @@ describe("FilesystemCatalog", () => {
     ]);
     expect(
       first.catalog.components.filter((component) => component.kind === "skill").flatMap((component) =>
-        component.payload.files.filter((file) => file.path.endsWith("ai-harness.yaml")),
+        component.payload.files.filter((file) => file.path.endsWith("railguard.yaml")),
       ),
     ).toEqual([]);
     expect(
@@ -64,7 +64,7 @@ describe("FilesystemCatalog", () => {
 
   it("loads the Go verification profile and optional Git gates as typed components", async () => {
     const result = await new FilesystemCatalog({
-      catalogFile: resolve("ai-harness.yaml"),
+      catalogFile: resolve("railguard.yaml"),
       supportedLanguages,
     }).load();
 
@@ -77,6 +77,7 @@ describe("FilesystemCatalog", () => {
         .filter((component) => component.ref.startsWith("verification-profile:"))
         .map((component) => component.ref),
     ).toEqual([
+      "verification-profile:go-architecture",
       "verification-profile:go-assurance",
       "verification-profile:go-e2e",
       "verification-profile:go-fuzz",
@@ -103,27 +104,23 @@ describe("FilesystemCatalog", () => {
     );
     expect(profile?.kind === "verification-profile" ? profile.inputs : []).toEqual([
       {
-        id: "module_roots",
-        type: "string-list",
-        default: ["."],
-        itemPattern: "^(?:\\.|[A-Za-z0-9_][A-Za-z0-9_-]*(?:/[A-Za-z0-9_][A-Za-z0-9_-]*)*)$",
-        makeVariable: "AI_HARNESS_GO_MODULE_ROOTS",
-        source: "project-units",
-      },
-      {
         id: "test_packages",
         type: "string-list",
         default: ["./..."],
         itemPattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$",
-        makeVariable: "AI_HARNESS_GO_TEST_PACKAGES",
-        source: "literal",
       },
+    ]);
+    expect(profile?.kind === "verification-profile" ? profile.checks : []).toEqual([
+      { id: "format", kind: "go-format", stage: "check", params: {} },
+      { id: "vet", kind: "go-vet", stage: "check", params: {} },
+      { id: "test", kind: "go-test", stage: "check", params: {} },
+      { id: "race", kind: "go-test", stage: "verify", params: { race: true } },
     ]);
   });
 
   it("loads every v0.1 component family from the single central catalog", async () => {
     const result = await new FilesystemCatalog({
-      catalogFile: resolve("ai-harness.yaml"),
+      catalogFile: resolve("railguard.yaml"),
       supportedLanguages,
     }).load();
 
@@ -139,6 +136,7 @@ describe("FilesystemCatalog", () => {
         "mcp-integration",
         "verification-profile",
         "git-gate",
+        "agent-hook",
         "instruction-fragment",
         "pack",
         "agent",
@@ -209,11 +207,11 @@ describe("FilesystemCatalog", () => {
 
   it("loads a remote HTTPS MCP with harness-native OAuth", async () => {
     const root = await createTempRepository({
-      "ai-harness.yaml": authoring([], remoteOauthMcpAuthoring()),
+      "railguard.yaml": authoring([], remoteOauthMcpAuthoring()),
     });
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
 
@@ -249,10 +247,10 @@ describe("FilesystemCatalog", () => {
           : "        type: oauth",
       replacement,
     );
-    const root = await createTempRepository({ "ai-harness.yaml": source });
+    const root = await createTempRepository({ "railguard.yaml": source });
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
       expect(result.kind).toBe("invalid");
@@ -266,12 +264,12 @@ describe("FilesystemCatalog", () => {
       (line) => !line.trimStart().startsWith("details:"),
     );
     const root = await createTempRepository({
-      "ai-harness.yaml": authoring(definition),
+      "railguard.yaml": authoring(definition),
       "skills/undocumented/SKILL.md": skill("undocumented"),
     });
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
 
@@ -287,15 +285,14 @@ describe("FilesystemCatalog", () => {
   });
 
   it("rejects a verification input pattern that cannot be compiled", async () => {
-    const source = qualityAuthoring(
-      ["check", "verify"],
-      "check",
-      "check:\n  @true\n\nverify:\n  @true",
-    ).replace('          item_pattern: "^\\\\./.*$"', '          item_pattern: "["');
-    const root = await createTempRepository({ "ai-harness.yaml": source });
+    const source = qualityAuthoring("check").replace(
+      '          item_pattern: "^\\\\./.*$"',
+      '          item_pattern: "["',
+    );
+    const root = await createTempRepository({ "railguard.yaml": source });
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
 
@@ -312,14 +309,14 @@ describe("FilesystemCatalog", () => {
 
   it("rejects two instruction mappings that claim the same component group", async () => {
     const root = await createTempRepository({
-      "ai-harness.yaml": instructionGroupAuthoring([
+      "railguard.yaml": instructionGroupAuthoring([
         ["first", "first.instructions", "mcps"],
         ["second", "second.instructions", "mcps"],
       ]),
     });
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
 
@@ -336,13 +333,13 @@ describe("FilesystemCatalog", () => {
 
   it("rejects a managed instruction section that does not match its group", async () => {
     const root = await createTempRepository({
-      "ai-harness.yaml": instructionGroupAuthoring([
+      "railguard.yaml": instructionGroupAuthoring([
         ["context7-usage", "mcp.context7.usage", "mcps"],
       ]),
     });
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
 
@@ -364,55 +361,14 @@ describe("FilesystemCatalog", () => {
       "        kind: catalog-index\n        group: mcps",
       "        kind: text\n        body: Per-provider instructions.",
     );
-    const root = await createTempRepository({ "ai-harness.yaml": source });
+    const root = await createTempRepository({ "railguard.yaml": source });
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
 
       expect(result.kind).toBe("invalid");
-    } finally {
-      await root.cleanup();
-    }
-  });
-
-  it.each([
-    {
-      name: "a public operation mapped to an undeclared private target",
-      source: qualityAuthoring(
-        ["check", "verify"],
-        "check",
-        "check:\n  @true\n\nverify:\n  @true",
-      ).replace("          check: check", "          check: undeclared"),
-      code: "catalog.verification-profile.operation-target-missing",
-    },
-    {
-      name: "a declared Make target without an implementation",
-      source: qualityAuthoring(["check", "verify"], "check", "check:\n  @true"),
-      code: "catalog.verification-profile.target-missing",
-    },
-    {
-      name: "a Git gate operation absent from its required profile",
-      source: qualityAuthoring(
-        ["check", "verify"],
-        "other",
-        "check:\n  @true\n\nverify:\n  @true",
-      ),
-      code: "catalog.git-gate.operation-missing",
-    },
-  ])("rejects $name", async ({ source, code }) => {
-    const root = await createTempRepository({ "ai-harness.yaml": source });
-    try {
-      const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
-        supportedLanguages,
-      }).load();
-
-      expect(result.kind).toBe("invalid");
-      if (result.kind === "invalid") {
-        expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain(code);
-      }
     } finally {
       await root.cleanup();
     }
@@ -420,20 +376,20 @@ describe("FilesystemCatalog", () => {
 
   it("includes the centralized catalog version in the snapshot identity", async () => {
     const firstRoot = await createTempRepository({
-      "ai-harness.yaml": authoring(skillDefinition("stable"), [], "0.1.0"),
+      "railguard.yaml": authoring(skillDefinition("stable"), [], "0.1.0"),
       "skills/stable/SKILL.md": skill("stable"),
     });
     const secondRoot = await createTempRepository({
-      "ai-harness.yaml": authoring(skillDefinition("stable"), [], "0.2.0"),
+      "railguard.yaml": authoring(skillDefinition("stable"), [], "0.2.0"),
       "skills/stable/SKILL.md": skill("stable"),
     });
     try {
       const first = await new FilesystemCatalog({
-        catalogFile: join(firstRoot.root, "ai-harness.yaml"),
+        catalogFile: join(firstRoot.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
       const second = await new FilesystemCatalog({
-        catalogFile: join(secondRoot.root, "ai-harness.yaml"),
+        catalogFile: join(secondRoot.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
 
@@ -475,12 +431,12 @@ describe("FilesystemCatalog", () => {
 
     for (const [index, source] of invalidAuthoring.entries()) {
       const root = await createTempRepository({
-        "ai-harness.yaml": source,
+        "railguard.yaml": source,
         "skills/bad/SKILL.md": skill("bad"),
       });
       try {
         const result = await new FilesystemCatalog({
-          catalogFile: join(root.root, "ai-harness.yaml"),
+          catalogFile: join(root.root, "railguard.yaml"),
           supportedLanguages,
         }).load();
         expect(result.kind, `case:${index}`).toBe("invalid");
@@ -499,7 +455,7 @@ describe("FilesystemCatalog", () => {
     {
       name: "missing relation target",
       files: {
-        "ai-harness.yaml": authoring([
+        "railguard.yaml": authoring([
           ...skillDefinition("source", [
             "      relations:",
             "        - kind: requires",
@@ -514,7 +470,7 @@ describe("FilesystemCatalog", () => {
     {
       name: "hard dependency cycle",
       files: {
-        "ai-harness.yaml": authoring([
+        "railguard.yaml": authoring([
           ...skillDefinition("a", [
             "      relations:",
             "        - kind: requires",
@@ -536,7 +492,7 @@ describe("FilesystemCatalog", () => {
     {
       name: "unknown language",
       files: {
-        "ai-harness.yaml": authoring([
+        "railguard.yaml": authoring([
           ...skillDefinition("unknown", [
             "      applies:",
             "        languages: [rust]",
@@ -549,7 +505,7 @@ describe("FilesystemCatalog", () => {
     {
       name: "identity mismatch",
       files: {
-        "ai-harness.yaml": authoring(skillDefinition("directory")),
+        "railguard.yaml": authoring(skillDefinition("directory")),
         "skills/directory/SKILL.md": skill("different"),
       },
       code: "catalog.skill.standard-invalid",
@@ -557,7 +513,7 @@ describe("FilesystemCatalog", () => {
     {
       name: "broken local markdown link",
       files: {
-        "ai-harness.yaml": authoring(skillDefinition("linked")),
+        "railguard.yaml": authoring(skillDefinition("linked")),
         "skills/linked/SKILL.md": `${skill("linked")}\n[missing](references/missing.md)\n`,
       },
       code: "catalog.payload.invalid",
@@ -565,7 +521,7 @@ describe("FilesystemCatalog", () => {
     {
       name: "oversized skill description",
       files: {
-        "ai-harness.yaml": authoring(skillDefinition("verbose")),
+        "railguard.yaml": authoring(skillDefinition("verbose")),
         "skills/verbose/SKILL.md": skill("verbose", "x".repeat(321)),
       },
       code: "catalog.skill.standard-invalid",
@@ -573,7 +529,7 @@ describe("FilesystemCatalog", () => {
     {
       name: "unreferenced skill reference",
       files: {
-        "ai-harness.yaml": authoring(skillDefinition("orphaned")),
+        "railguard.yaml": authoring(skillDefinition("orphaned")),
         "skills/orphaned/SKILL.md": skill("orphaned"),
         "skills/orphaned/references/orphan.md": "# Orphan\n",
       },
@@ -583,7 +539,7 @@ describe("FilesystemCatalog", () => {
     const root = await createTempRepository(files);
     try {
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
       expect(result.kind).toBe("invalid");
@@ -597,7 +553,7 @@ describe("FilesystemCatalog", () => {
 
   it("rejects a payload symlink without reading its target", async () => {
     const root = await createTempRepository({
-      "ai-harness.yaml": authoring(skillDefinition("linked")),
+      "railguard.yaml": authoring(skillDefinition("linked")),
       "skills/linked/SKILL.md": skill("linked"),
     });
     const outside = await createTempRepository({ "outside.md": "secret\n" });
@@ -607,7 +563,7 @@ describe("FilesystemCatalog", () => {
         join(root.root, "skills", "linked", "outside.md"),
       );
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
       expect(result.kind).toBe("invalid");
@@ -623,14 +579,14 @@ describe("FilesystemCatalog", () => {
 
   it("preserves executable payload mode in its digest and projection bytes", async () => {
     const root = await createTempRepository({
-      "ai-harness.yaml": authoring(skillDefinition("executable")),
+      "railguard.yaml": authoring(skillDefinition("executable")),
       "skills/executable/SKILL.md": skill("executable"),
       "skills/executable/scripts/run.sh": "#!/bin/sh\nexit 0\n",
     });
     try {
       await chmod(join(root.root, "skills", "executable", "scripts", "run.sh"), 0o755);
       const result = await new FilesystemCatalog({
-        catalogFile: join(root.root, "ai-harness.yaml"),
+        catalogFile: join(root.root, "railguard.yaml"),
         supportedLanguages,
       }).load();
       expect(result.kind).toBe("ready");
@@ -655,7 +611,7 @@ function authoring(
 ): string {
   const overriddenFamily = familyOverride[0]?.trim().replace(/:$/, "");
   return [
-    "schema: ai-harness/v1",
+    "schema: railguard/v1",
     `version: ${version}`,
     "catalog:",
     ...(skillLines.length === 0 ? ["  skills: {}"] : ["  skills:", ...skillLines]),
@@ -710,50 +666,40 @@ function remoteOauthMcpAuthoring(): readonly string[] {
   ];
 }
 
-function qualityAuthoring(
-  targets: readonly string[],
-  gateOperation: string,
-  makeBody: string,
-): string {
+function qualityAuthoring(gateOperation: string): string {
   return [
-    "schema: ai-harness/v1",
+    "schema: railguard/v1",
     "version: 0.1.0",
     "catalog:",
     "  skills: {}",
     "  mcps: {}",
     "  verification-profiles:",
     "    go-quality:",
-    "      version: 0.1.0",
+    "      version: 0.2.0",
     "      description: Test profile.",
     "      details: Detailed test profile guidance and its complete project verification purpose.",
     "      applies:",
     "        languages: [go]",
-    "      executables: [find, go, gofmt, make]",
+    "      executables: [go, gofmt]",
     "      inputs:",
     "        test_packages:",
     "          type: string-list",
     "          default: [\"./...\"]",
     "          item_pattern: \"^\\\\./.*$\"",
-    "          make_variable: GO_TEST_PACKAGES",
-      "      make:",
-      `        targets: [${targets.join(", ")}]`,
-      "        operations:",
-      "          check: check",
-      "          verify: verify",
-    "        body: |",
-    ...makeBody.split("\n").map((line) => `          ${line}`),
+    "      checks:",
+    "        - id: format",
+    "          kind: go-format",
+    "          stage: check",
+    "        - id: test",
+    "          kind: go-test",
+    "          stage: verify",
     "  git-gates:",
     "    pre-commit:",
-    "      version: 0.1.0",
+    "      version: 0.2.0",
     "      description: Test gate.",
     "      details: Detailed test gate guidance and the exact lifecycle point it protects.",
     "      event: pre-commit",
     `      operation: ${gateOperation}`,
-    "      inputs:",
-    "        scopes:",
-    "          type: string-list",
-    "          default: [\"*\"]",
-    "          item_pattern: \"^(?:\\\\*|\\\\.)$\"",
     "      relations:",
     "        - kind: requires",
     "          target: verification-profile:go-quality",
@@ -769,7 +715,7 @@ function instructionGroupAuthoring(
   fragments: readonly (readonly [id: string, section: string, group: string])[],
 ): string {
   return [
-    "schema: ai-harness/v1",
+    "schema: railguard/v1",
     "version: 0.1.0",
     "catalog:",
     "  skills: {}",

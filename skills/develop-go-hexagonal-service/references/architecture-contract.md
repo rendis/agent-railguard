@@ -1,8 +1,10 @@
 # Go Hexagonal Architecture Contract
 
+Apply this contract when the repository has adopted hexagonal architecture. A legacy repository with another declared layering keeps that layering instead; route changes by its own convention.
+
 ## Core rule
 
-Keep `internal/core` independent of transport, persistence, messaging, cloud, configuration, frameworks, drivers, and SDKs. Every integration import points toward the core.
+Keep `internal/core` independent of transport, persistence, messaging, cloud, configuration, frameworks, drivers, and SDKs — every integration import points toward the core. `railguard check --changed`'s `go-architecture` check enforces this mechanically; treat a violation it reports as a design defect, not a config to relax.
 
 ## Responsibilities
 
@@ -19,12 +21,7 @@ Keep `internal/core` independent of transport, persistence, messaging, cloud, co
 
 ## Application contracts
 
-- Name use cases with business language.
-- Use Command for intent that may change state and Query for reads.
-- Use Result when the output has semantics of its own.
-- Define ports from consumer needs and keep them small.
-- Reserve Repository for collection-like access to aggregate roots.
-- Return concrete types from implementations; accept interfaces at consumers.
+Name use cases with business language. Use Command for intent that may change state, Query for reads, and Result when the output has semantics of its own. Define ports from consumer needs and keep them small; reserve Repository for collection-like access to aggregate roots. Return concrete types from implementations; accept interfaces at consumers.
 
 ## Models and mapping
 
@@ -32,18 +29,8 @@ Reuse a core type at a boundary only when concept, fields, optionality, precisio
 
 ## Errors and resilience
 
-- Define stable categories without HTTP or gRPC codes in the core.
-- Translate provider errors in the secondary adapter.
-- Preserve `context.Canceled` and `context.DeadlineExceeded`.
-- Map core categories to the protocol in the primary adapter.
-- Give each retry one owner and a bounded budget.
-- Retry effects only when idempotency and ambiguous outcomes are resolved by contract.
+Own error categories and retry policy by the same boundary that owns the layer above: full contract in [error-management.md](error-management.md).
 
 ## Configuration and lifecycle
 
-- Follow [runtime-configuration.md](runtime-configuration.md) for file ownership, source precedence, loading, normalization, validation, and secret handling.
-- Validate configuration before readiness.
-- Inject only technology-agnostic policies into the core; keep endpoints, pools, and technical timeouts in adapters or infrastructure.
-- Build the graph manually in `cmd/<runtime>/bootstrap.go`.
-- Make `main` load configuration, construct, start, and manage shutdown.
-- Stop accepting work, drain, and close resources within a tested deadline.
+Own runtime configuration by [runtime-configuration.md](runtime-configuration.md): file ownership, source precedence, loading, validation, and secrets. Inject only technology-agnostic policies into the core, keeping endpoints, pools, and technical timeouts in adapters or infrastructure. Build the graph manually in `cmd/<runtime>/bootstrap.go`; make `main` load configuration, construct, start, and manage a drained shutdown within a tested deadline.

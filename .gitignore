@@ -5,3 +5,5 @@ coverage/
 .vitest/
 *.log
 artifacts/
+.atl/
+*.bun-build

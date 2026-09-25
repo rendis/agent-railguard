@@ -19,25 +19,16 @@
 | Startup, health, server, or shutdown | internal/infra/server or lifecycle | cmd/<runtime> |
 | Implementation selection and connection | cmd/<runtime>/bootstrap.go | bootstrap_*.go functions when the graph grows |
 
+Apply this table when the repository has adopted hexagonal layering. A repository declaring a different architecture keeps its own layering; route by that instead.
+
 ## Locate or explain
 
-To locate a definition, follow actor → primary adapter → use case → service → port → secondary adapter → bootstrap. For an explanation, finish with observed paths and symbols. Reorganization requires an explicit change request.
+To locate a definition, follow actor → primary adapter → use case → service → port → secondary adapter → bootstrap. For an explanation, finish with observed paths and symbols. Reorganization needs an explicit change request.
 
 ## Incorporate a slice
 
-1. Start from observable behavior and the owning rule.
-2. Change the domain only when a real invariant exists.
-3. Change the use case when the application contract changes.
-4. Create or narrow a port only when the service needs an external capability.
-5. Implement the service without technology types.
-6. Map in the owning adapters.
-7. Connect concrete types in bootstrap.
-
-Touch only the layers required for the behavior. Create a port for a current external conversation and a DTO when the boundary contract differs.
+Start from observable behavior and its owning rule, then touch only the layers it requires: the domain only for a real invariant, the use case when the application contract changes, a port only when the service needs a new external capability (implemented without technology types), the owning adapters for mapping, and bootstrap to connect concrete types. Create a port only for a current external conversation, and a DTO only when the boundary contract differs.
 
 ## Resolve ambiguity
 
-- If "repository" means source code, locate and explain it; reserve Repository for collection-like access to aggregate roots.
-- If "service" may mean a use case, remote client, or process, inspect consumers and vocabulary.
-- If an established structure differs from the guide, keep the change within the requested slice and propose any larger migration separately.
-- Ask only when two placements produce materially different public contracts, persistence, security, or behavior.
+If "repository" means source code, locate and explain it — reserve Repository itself for collection-like access to aggregate roots. If "service" may mean a use case, remote client, or process, inspect consumers and vocabulary. If the established structure differs from this guide, keep the change within the requested slice and propose any larger migration separately. Ask only when two placements produce materially different public contracts, persistence, security, or behavior.

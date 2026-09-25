@@ -21,8 +21,6 @@ import {
   type CommandResultEnvelope,
   type HeadlessRun,
 } from "./headless.js";
-import { createUpdateServiceFromEnvironment } from "../update/composition-root.js";
-import type { UpdateService } from "../update/update-service.js";
 
 export interface InputAssignment {
   readonly ref: ComponentRef;
@@ -85,16 +83,11 @@ export type ProductCommandRequest =
       readonly targets: readonly HarnessTargetId[];
       readonly approve: boolean;
     }
-  | {
-      readonly command: "update";
-      readonly action: "check" | "apply";
-      readonly currentVersion: string;
-    };
+;
 
 export async function runProductCommand(
   runtime: InteractionRuntime,
   request: ProductCommandRequest,
-  services: { readonly update?: UpdateService } = {},
 ): Promise<HeadlessRun> {
   const events: PublicInteractionEvent[] = [];
   const unsubscribe = runtime.session.subscribe(({ event }) => {
@@ -102,7 +95,7 @@ export async function runProductCommand(
   });
   let result: CommandResultEnvelope;
   try {
-    result = await execute(runtime, request, services);
+    result = await execute(runtime, request);
   } finally {
     unsubscribe();
   }
@@ -112,7 +105,6 @@ export async function runProductCommand(
 async function execute(
   runtime: InteractionRuntime,
   request: ProductCommandRequest,
-  services: { readonly update?: UpdateService },
 ): Promise<CommandResultEnvelope> {
   switch (request.command) {
     case "scan": {
@@ -227,12 +219,6 @@ async function execute(
     case "mcp-login":
     case "mcp-logout":
       return await mcpSession(runtime, request);
-    case "update":
-      return await update(
-        runtime.session.snapshot,
-        request,
-        services.update ?? createUpdateServiceFromEnvironment(),
-      );
   }
 }
 
@@ -376,56 +362,6 @@ async function doctor(
     data: Object.freeze({ kind: "doctor", checks: result.checks }),
     diagnostics: publicDiagnostics(result.diagnostics),
   });
-}
-
-async function update(
-  snapshot: InteractionSnapshot,
-  request: Extract<ProductCommandRequest, { readonly command: "update" }>,
-  service: UpdateService,
-): Promise<CommandResultEnvelope> {
-  const outcome = request.action === "check"
-    ? await service.check(request.currentVersion)
-    : await service.apply(request.currentVersion);
-  const applied = outcome.status === "applied";
-  const data: CommandData = Object.freeze({
-    kind: "update",
-    current_version:
-      applied && outcome.latestVersion !== null
-        ? outcome.latestVersion
-        : request.currentVersion,
-    latest_version: outcome.latestVersion,
-    status:
-      outcome.status === "available"
-        ? "available"
-        : outcome.status === "unknown" || outcome.status === "failed" || outcome.status === "rolled-back"
-          ? "unknown"
-          : "current",
-  });
-  return buildCommandResult("update", snapshot, {
-    verdict: updateVerdict(outcome.status, outcome.diagnostics),
-    data,
-    diagnostics: outcome.diagnostics,
-  });
-}
-
-function updateVerdict(
-  status: Awaited<ReturnType<UpdateService["check"]>>["status"],
-  diagnostics: readonly { readonly severity: string }[],
-): CommandVerdict {
-  switch (status) {
-    case "current":
-      return "NO_CHANGES";
-    case "available":
-      return "CHANGES_AVAILABLE";
-    case "unknown":
-      return "READY";
-    case "applied":
-      return "SUCCEEDED";
-    case "rolled-back":
-      return "ROLLED_BACK";
-    case "failed":
-      return diagnostics.some((entry) => entry.severity === "failed") ? "FAILED" : "BLOCKED";
-  }
 }
 
 function catalogSummary(component: CatalogComponent): CatalogComponentSummary {

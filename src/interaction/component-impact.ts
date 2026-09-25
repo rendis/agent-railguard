@@ -16,12 +16,12 @@ export function componentImpact(component: CatalogComponent): CatalogItemView["i
         workflow: `Lets agents call ${component.tools.join(", ")} at runtime; network access is required and authentication is ${component.auth.type}.`,
       });
     case "verification-profile": {
-      const operations = Object.keys(component.make.operations)
-        .map((operation) => `make ${operation}`)
+      const stages = [...new Set(component.checks.map((check) => check.stage))]
+        .map((stage) => `railguard ${stage}`)
         .join(" and ");
       return Object.freeze({
-        changes: `Creates or updates AI Harness-managed sections in the root Makefile and exposes ${operations}.`,
-        workflow: "Gives developers, skills and optional Git hooks one deterministic verification contract; it does not enable a hook by itself.",
+        changes: `Writes no file; records ${component.checks.length} check(s) in the project selection that ${stages} run.`,
+        workflow: "Gives developers, agent hooks, Git gates and CI one deterministic verification contract that judges only the change with --changed.",
       });
     }
     case "git-gate": {
@@ -29,13 +29,18 @@ export function componentImpact(component: CatalogComponent): CatalogItemView["i
         (relation) => relation.kind === "requires",
       )?.target;
       return Object.freeze({
-        changes: `Creates or updates the managed ${component.event} hook, activates the repository hooks path and runs make ${component.operation}.`,
+        changes: `Creates or updates the managed ${component.event} hook, activates the repository hooks path and runs railguard ${component.operation} --changed.`,
         workflow: `Blocks ${component.event === "pre-commit" ? "commits" : "pushes"} when the operation fails${provider === undefined ? "." : `; includes ${provider} as its provider.`}`,
       });
     }
+    case "agent-hook":
+      return Object.freeze({
+        changes: `Adds a ${component.event} hook to the configuration of each selected harness (Claude Code, Codex, Cursor) and a managed script under .railguard/agent-hooks.`,
+        workflow: `When an agent tries to finish, runs railguard ${component.operation} --changed and sends failures back to the agent, at most three times per session.`,
+      });
     case "instruction-fragment":
       return Object.freeze({
-        changes: `Updates only the AI Harness-managed ${component.section} section in the project instruction files used by selected targets.`,
+        changes: `Updates only the Railguard-managed ${component.section} section in the project instruction files used by selected targets.`,
         workflow: "Changes agent guidance and discovery; it does not execute commands or modify application code.",
       });
     case "pack": {

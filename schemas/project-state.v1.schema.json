@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:example:ai-harness:schema:project-state:v1",
-  "title": "AI Harness project state and transaction envelopes v1",
-  "description": "Closed schemas for desired state, portable lock, plans, journals, and receipts.",
+  "$id": "urn:railguard:schema:project-state:v1",
+  "title": "Railguard project state and transaction envelopes v1",
+  "description": "Closed schemas for desired state, portable lock and plans.",
   "oneOf": [
     {
       "$ref": "#/$defs/project"
@@ -12,12 +12,6 @@
     },
     {
       "$ref": "#/$defs/plan"
-    },
-    {
-      "$ref": "#/$defs/journal"
-    },
-    {
-      "$ref": "#/$defs/receipt"
     }
   ],
   "$defs": {
@@ -46,14 +40,6 @@
       "minLength": 1,
       "pattern": "^(?!/)(?!.*\\\\)\\.?[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/\\.?[A-Za-z0-9_-][A-Za-z0-9._-]*)*$"
     },
-    "timestamp": {
-      "type": "string",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$"
-    },
-    "uuid": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-    },
     "nullableDigest": {
       "oneOf": [
         {
@@ -74,7 +60,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "ai-harness/project/v1"
+          "const": "railguard/project/v1"
         },
         "targets": {
           "type": "array",
@@ -265,6 +251,31 @@
               "$ref": "#/$defs/stableId"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "path",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "json-member"
+            },
+            "path": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "pointer": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
         }
       ]
     },
@@ -433,6 +444,56 @@
               "$ref": "#/$defs/sha256"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "ownership_id",
+            "target",
+            "adapter",
+            "path",
+            "pointer",
+            "sources",
+            "content_digest"
+          ],
+          "properties": {
+            "kind": {
+              "const": "json-member"
+            },
+            "ownership_id": {
+              "$ref": "#/$defs/stableId"
+            },
+            "target": {
+              "$ref": "#/$defs/stableId"
+            },
+            "adapter": {
+              "$ref": "#/$defs/stableId"
+            },
+            "path": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "pointer": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "sources": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/componentRef"
+              }
+            },
+            "content_digest": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
         }
       ]
     },
@@ -485,7 +546,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "ai-harness/lock/v1"
+          "const": "railguard/lock/v1"
         },
         "desired_digest": {
           "$ref": "#/$defs/sha256"
@@ -773,7 +834,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "ai-harness/plan/v1"
+          "const": "railguard/plan/v1"
         },
         "plan_id": {
           "$ref": "#/$defs/sha256"
@@ -810,531 +871,6 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/verificationRequirement"
-          }
-        }
-      }
-    },
-    "backupState": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind"
-          ],
-          "properties": {
-            "kind": {
-              "const": "absent"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "digest",
-            "backup_ref",
-            "mode"
-          ],
-          "properties": {
-            "kind": {
-              "const": "backup"
-            },
-            "digest": {
-              "$ref": "#/$defs/sha256"
-            },
-            "backup_ref": {
-              "$ref": "#/$defs/relativePath"
-            },
-            "mode": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 511
-            }
-          }
-        }
-      ]
-    },
-    "journalFileState": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind"
-          ],
-          "properties": {
-            "kind": {
-              "const": "absent"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "digest",
-            "mode"
-          ],
-          "properties": {
-            "kind": {
-              "const": "present"
-            },
-            "digest": {
-              "$ref": "#/$defs/sha256"
-            },
-            "mode": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 511
-            }
-          }
-        }
-      ]
-    },
-    "journalFilesystemUnit": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "unit_id",
-        "state",
-        "target",
-        "container_path",
-        "before",
-        "after"
-      ],
-      "properties": {
-        "kind": {
-          "const": "filesystem"
-        },
-        "unit_id": {
-          "$ref": "#/$defs/stableId"
-        },
-        "state": {
-          "enum": [
-            "prepared",
-            "applied",
-            "restored"
-          ]
-        },
-        "target": {
-          "$ref": "#/$defs/artifactPointer"
-        },
-        "container_path": {
-          "$ref": "#/$defs/relativePath"
-        },
-        "before": {
-          "$ref": "#/$defs/backupState"
-        },
-        "after": {
-          "$ref": "#/$defs/journalFileState"
-        }
-      }
-    },
-    "journalDirectoryState": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind"],
-          "properties": {
-            "kind": { "const": "absent" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "mode"],
-          "properties": {
-            "kind": { "const": "directory" },
-            "mode": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 511
-            }
-          }
-        }
-      ]
-    },
-    "journalDirectoryUnit": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "unit_id",
-        "state",
-        "path",
-        "before",
-        "after"
-      ],
-      "properties": {
-        "kind": {
-          "const": "directory"
-        },
-        "unit_id": {
-          "$ref": "#/$defs/stableId"
-        },
-        "state": {
-          "enum": [
-            "prepared",
-            "applied",
-            "restored"
-          ]
-        },
-        "path": {
-          "$ref": "#/$defs/relativePath"
-        },
-        "before": { "$ref": "#/$defs/journalDirectoryState" },
-        "after": { "$ref": "#/$defs/journalDirectoryState" }
-      }
-    },
-    "journalSymlinkUnit": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "unit_id", "state", "path", "before_target", "after_target"],
-      "properties": {
-        "kind": { "const": "symlink" },
-        "unit_id": { "$ref": "#/$defs/stableId" },
-        "state": { "enum": ["prepared", "applied", "restored"] },
-        "path": { "$ref": "#/$defs/relativePath" },
-        "before_target": { "type": ["string", "null"] },
-        "after_target": { "type": ["string", "null"] }
-      }
-    },
-    "journalGitConfigUnit": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "unit_id",
-        "state",
-        "key",
-        "before_value",
-        "after_value"
-      ],
-      "properties": {
-        "kind": {
-          "const": "git-config"
-        },
-        "unit_id": {
-          "$ref": "#/$defs/stableId"
-        },
-        "state": {
-          "enum": [
-            "prepared",
-            "applied",
-            "restored"
-          ]
-        },
-        "key": {
-          "const": "core.hooksPath"
-        },
-        "before_value": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "after_value": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "journalUnit": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/journalFilesystemUnit"
-        },
-        {
-          "$ref": "#/$defs/journalDirectoryUnit"
-        },
-        {
-          "$ref": "#/$defs/journalSymlinkUnit"
-        },
-        {
-          "$ref": "#/$defs/journalGitConfigUnit"
-        }
-      ]
-    },
-    "journal": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "schema",
-        "operation_id",
-        "plan_id",
-        "phase",
-        "worktree_identity",
-        "root_real_path",
-        "started_at",
-        "updated_at",
-        "units"
-      ],
-      "properties": {
-        "schema": {
-          "const": "ai-harness/journal/v1"
-        },
-        "operation_id": {
-          "$ref": "#/$defs/uuid"
-        },
-        "plan_id": {
-          "$ref": "#/$defs/sha256"
-        },
-        "phase": {
-          "enum": [
-            "prepared",
-            "applying",
-            "verifying",
-            "rolling-back",
-            "rollback-failed"
-          ]
-        },
-        "worktree_identity": {
-          "$ref": "#/$defs/sha256"
-        },
-        "root_real_path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "started_at": {
-          "$ref": "#/$defs/timestamp"
-        },
-        "updated_at": {
-          "$ref": "#/$defs/timestamp"
-        },
-        "units": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/journalUnit"
-          }
-        }
-      }
-    },
-    "preflightResult": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "verdict"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/stableId"
-        },
-        "verdict": {
-          "enum": [
-            "passed",
-            "failed",
-            "skipped"
-          ]
-        }
-      }
-    },
-    "receiptChange": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "unit_id",
-        "target",
-        "action",
-        "outcome",
-        "before_digest",
-        "after_digest"
-      ],
-      "properties": {
-        "unit_id": {
-          "$ref": "#/$defs/stableId"
-        },
-        "target": {
-          "$ref": "#/$defs/artifactPointer"
-        },
-        "action": {
-          "enum": [
-            "create",
-            "replace",
-            "remove"
-          ]
-        },
-        "outcome": {
-          "enum": [
-            "unchanged",
-            "applied",
-            "restored",
-            "not-applied"
-          ]
-        },
-        "before_digest": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "after_digest": {
-          "$ref": "#/$defs/nullableDigest"
-        }
-      }
-    },
-    "verificationResult": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "kind",
-        "verdict",
-        "evidence"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/stableId"
-        },
-        "kind": {
-          "enum": [
-            "materialization",
-            "certification"
-          ]
-        },
-        "verdict": {
-          "enum": [
-            "passed",
-            "failed",
-            "unknown",
-            "not-run"
-          ]
-        },
-        "evidence": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/sha256"
-          }
-        }
-      }
-    },
-    "diagnosticReference": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "code",
-        "severity"
-      ],
-      "properties": {
-        "code": {
-          "$ref": "#/$defs/stableId"
-        },
-        "severity": {
-          "enum": [
-            "info",
-            "warning",
-            "blocked",
-            "failed"
-          ]
-        }
-      }
-    },
-    "receipt": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "schema",
-        "operation_id",
-        "plan_id",
-        "command",
-        "started_at",
-        "completed_at",
-        "result",
-        "materialization",
-        "certification",
-        "preflight",
-        "changes",
-        "verification",
-        "diagnostics"
-      ],
-      "properties": {
-        "schema": {
-          "const": "ai-harness/receipt/v1"
-        },
-        "operation_id": {
-          "$ref": "#/$defs/uuid"
-        },
-        "plan_id": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/sha256"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "command": {
-          "$ref": "#/$defs/stableId"
-        },
-        "started_at": {
-          "$ref": "#/$defs/timestamp"
-        },
-        "completed_at": {
-          "$ref": "#/$defs/timestamp"
-        },
-        "result": {
-          "enum": [
-            "succeeded",
-            "no-changes",
-            "rejected",
-            "cancelled",
-            "rolled-back",
-            "verification-failed",
-            "recovery-required",
-            "failed"
-          ]
-        },
-        "materialization": {
-          "enum": [
-            "unchanged",
-            "committed",
-            "rolled-back",
-            "unknown"
-          ]
-        },
-        "certification": {
-          "enum": [
-            "verified",
-            "failed",
-            "unknown",
-            "not-run"
-          ]
-        },
-        "preflight": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/preflightResult"
-          }
-        },
-        "changes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/receiptChange"
-          }
-        },
-        "verification": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/verificationResult"
-          }
-        },
-        "diagnostics": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/diagnosticReference"
           }
         }
       }

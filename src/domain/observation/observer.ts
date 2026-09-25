@@ -1,4 +1,9 @@
 import {
+  getJsonMember,
+  jsonMemberDigest,
+  parseJsonContainer,
+} from "../managed-json/managed-json.js";
+import {
   inspectManagedSection,
 } from "../managed-section/managed-section.js";
 import type {
@@ -45,7 +50,9 @@ export class DefaultProjectObserver implements ProjectObserver {
         ? observeFile(artifact, entries.get(artifact.path), diagnostics)
         : artifact.kind === "symlink"
           ? observeSymlink(artifact, entries.get(artifact.path), diagnostics)
-          : await observeSection(snapshot, artifact, entries.get(artifact.path), diagnostics);
+          : artifact.kind === "json-member"
+            ? await observeJsonMember(snapshot, artifact, entries.get(artifact.path), diagnostics)
+            : await observeSection(snapshot, artifact, entries.get(artifact.path), diagnostics);
       units.push(observed);
     }
     for (const effect of lock.local_effects) {
@@ -88,7 +95,7 @@ export class DefaultProjectObserver implements ProjectObserver {
           subjects: effect.sources,
           evidence: [errorMessage(error)],
           message: `Git config ${effect.key} could not be observed.`,
-          impact: "AI Harness cannot classify the local effect as installed or missing.",
+          impact: "Railguard cannot classify the local effect as installed or missing.",
           action: "Restore repository-local Git config access and run status again.",
         }),
       );
@@ -134,7 +141,7 @@ function observeDirectory(
         subjects: directory.sources,
         evidence: [entry.kind],
         message: "A managed directory path has an unsafe filesystem type.",
-        impact: "AI Harness cannot prove its directory ownership safely.",
+        impact: "Railguard cannot prove its directory ownership safely.",
         action: "Restore the project-local directory and run status again.",
       }),
     );
@@ -206,7 +213,7 @@ async function observeSection(
         subjects: artifact.sources,
         evidence: [errorMessage(error)],
         message: "The managed section container could not be read as bounded UTF-8.",
-        impact: "AI Harness cannot identify its owned envelope safely.",
+        impact: "Railguard cannot identify its owned envelope safely.",
         action: "Restore a regular UTF-8 container below the size limit and run status again.",
       }),
     );
@@ -242,7 +249,7 @@ async function observeSection(
         subjects: artifact.sources,
         evidence: inspection.evidence,
         message: "Managed section markers are duplicate, incomplete, malformed, or nested.",
-        impact: "AI Harness cannot prove a unique owned envelope.",
+        impact: "Railguard cannot prove a unique owned envelope.",
         action: "Repair the managed markers before applying another change.",
       }),
     );
@@ -261,6 +268,53 @@ async function observeSection(
     artifact.content_digest,
     inspection.digest,
   );
+}
+
+async function observeJsonMember(
+  snapshot: RepositorySnapshot,
+  artifact: Extract<ManagedArtifactOwnership, { readonly kind: "json-member" }>,
+  entry: RepositoryEntry | undefined,
+  diagnostics: Diagnostic[],
+): Promise<ObservedManagedUnit> {
+  const observed = (status: ObservedManagedUnit["status"], digest: Sha256Digest | null) =>
+    unit(artifact.ownership_id, "json-member", status, artifact.content_digest, digest);
+  if (entry === undefined) return observed("missing", null);
+  if (entry.kind !== "file") {
+    diagnostics.push(unsafeEntryDiagnostic(artifact, entry));
+    return observed("unknown", null);
+  }
+  let source: string;
+  try {
+    const read = await snapshot.read(artifact.path, maximumManagedContainerBytes);
+    source = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes.copy());
+  } catch (error) {
+    diagnostics.push(jsonUnreadableDiagnostic(artifact, [errorMessage(error)]));
+    return observed("unknown", null);
+  }
+  const parsed = parseJsonContainer(source);
+  if (parsed.kind === "invalid") {
+    diagnostics.push(jsonUnreadableDiagnostic(artifact, parsed.evidence));
+    return observed("unknown", null);
+  }
+  const value = getJsonMember(parsed.value, artifact.pointer);
+  if (value === undefined) return observed("missing", null);
+  const digest = jsonMemberDigest(artifact.pointer, value);
+  return observed(digest === artifact.content_digest ? "clean" : "drifted", digest);
+}
+
+function jsonUnreadableDiagnostic(
+  artifact: Extract<ManagedArtifactOwnership, { readonly kind: "json-member" }>,
+  evidence: readonly string[],
+): Diagnostic {
+  return observationDiagnostic({
+    code: "observation.json-member.unreadable",
+    path: artifact.path,
+    subjects: artifact.sources,
+    evidence,
+    message: `${artifact.path} is not a readable JSON object.`,
+    impact: `Railguard cannot observe its ${artifact.pointer.join(".")} entry.`,
+    action: "Fix the JSON file and run status again.",
+  });
 }
 
 function unit(
@@ -283,7 +337,7 @@ function unsafeEntryDiagnostic(
     subjects: artifact.sources,
     evidence: [entry.kind],
     message: "A locked artifact path has an unexpected filesystem type.",
-    impact: "AI Harness cannot observe the managed unit safely.",
+    impact: "Railguard cannot observe the managed unit safely.",
     action: "Restore the expected project-local artifact and run status again.",
   });
 }

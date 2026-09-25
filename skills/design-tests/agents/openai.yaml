@@ -1,4 +1,0 @@
-interface:
-  display_name: "Design Tests"
-  short_description: "Design behavior-focused, durable tests"
-  default_prompt: "Use $design-tests to design a behavior-focused test contract."

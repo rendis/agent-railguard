@@ -10,7 +10,7 @@ const execute = promisify(execFile);
 const cli = resolve("dist/cli.js");
 const ptyRunner = resolve("scripts/verification/pty-runner.py");
 
-describe("production TUI PTY", () => {
+describe("interactive wizard in a PTY", () => {
   beforeAll(async () => {
     await execute(process.execPath, ["esbuild.config.mjs"], {
       cwd: resolve("."),
@@ -19,129 +19,77 @@ describe("production TUI PTY", () => {
     await execute("python3", ["--version"], { timeout: 5_000 });
   }, 35_000);
 
-  it("responds to a live resize and restores terminal state on exit", async () => {
+  it("runs the interactive wizard in a real terminal and quits without changes", async () => {
     const repository = await createTempRepository({
       "go.mod": "module example.com/tui-pty\n\ngo 1.24\n",
     });
-    const control = await mkdtemp(join(tmpdir(), "ai-harness-pty-"));
-    const resizeFile = join(control, "viewport");
+    const control = await mkdtemp(join(tmpdir(), "railguard-pty-"));
     await execute("git", ["init", "--quiet", repository.root]);
-    await writeFile(resizeFile, "160x40\n", "utf8");
-
-    const child = spawn("python3", [
-      ptyRunner,
-      "--columns", "160",
-      "--rows", "40",
-      "--resize-file", resizeFile,
-      "--",
-      process.execPath,
-      cli,
-      "--cwd", repository.root,
-    ], {
-      cwd: resolve("."),
-      env: {
-        ...process.env,
-        NO_COLOR: "1",
-      },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let output = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      output += chunk;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      output += chunk;
-    });
-
+    const session = startPty(control, ["--cwd", repository.root]);
     try {
-      await waitFor(
-        () => output.includes("SCAN COMPLETE"),
-        15_000,
-        () => output,
-      );
-      const beforeResize = output.length;
-      await writeFile(resizeFile, "120x30\n", "utf8");
-      await waitFor(
-        () => output.slice(beforeResize).includes("SCAN COMPLETE") && output.slice(beforeResize).includes("[d] Scan details"),
-        20_000,
-        () => output.slice(beforeResize),
-      );
-
-      child.stdin.write("q");
-      const exit = await waitForExit(child, 20_000);
+      await waitFor(() => session.output().includes("What do you want to do?"), 20_000, session.output);
+      expect(session.output()).toContain("Configure this repository");
+      expect(session.output()).toContain("Stack        go");
+      session.write("\u001B[A");
+      session.write("\r");
+      const exit = await waitForExit(session.child, 20_000);
 
       expect(exit.signal).toBeNull();
-      expect(exit.code, output.slice(-4_000)).toBe(0);
-      expect(output).toContain("\u001B[?1049h\u001B[?25l");
-      expect(output).toContain("\u001B[?25h\u001B[?1049l");
-      expect(output).toContain(
-        "AI Harness: session closed | management=uninitialized | integrity=unknown | no repository changes applied",
-      );
+      expect(exit.code, session.output().slice(-4_000)).toBe(0);
+      expect(session.output()).toContain("No repository changes applied.");
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+      session.stop();
       await Promise.all([repository.cleanup(), rm(control, { recursive: true, force: true })]);
     }
-  }, 100_000);
+  }, 60_000);
 
-  it("uses the global local content source before the mandatory TUI scan", async () => {
+  it("uses the global local content source for the catalog it offers", async () => {
     const repository = await createTempRepository({
       "go.mod": "module example.com/tui-local-source\n\ngo 1.24\n",
     });
     const source = await tuiContentSource();
-    const resizeFile = join(source, ".tui-viewport");
     await execute("git", ["init", "--quiet", repository.root]);
-    await writeFile(resizeFile, "140x36\n", "utf8");
-    const child = spawn("python3", [
-      ptyRunner,
-      "--columns", "140",
-      "--rows", "36",
-      "--resize-file", resizeFile,
-      "--",
-      process.execPath,
-      cli,
-      "--source", source,
-      "--cwd", repository.root,
-    ], {
-      cwd: resolve("."),
-      env: { ...process.env, NO_COLOR: "1" },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let output = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => { output += chunk; });
-    child.stderr.on("data", (chunk: string) => { output += chunk; });
-
+    const session = startPty(source, ["--source", source, "--cwd", repository.root]);
     try {
-      await waitFor(
-        () => output.includes("SCAN COMPLETE"),
-        20_000,
-        () => output,
-      );
-      child.stdin.write("\r");
-      await waitFor(() => output.includes("COMPONENTS"), 20_000, () => output);
-      child.stdin.write("\u001B[C");
-      await waitFor(() => output.includes("Local Only Go"), 20_000, () => output);
-      child.stdin.write("q");
-      const exit = await waitForExit(child, 20_000);
-      expect(exit.code, output.slice(-4_000)).toBe(0);
-      expect(exit.signal).toBeNull();
-      expect(output).toContain("Local content source ready");
-      expect(output).toContain("AI Harness: session closed");
+      await waitFor(() => session.output().includes("What do you want to do?"), 20_000, session.output);
+      session.write("\r");
+      await waitFor(() => session.output().includes("local-only-go"), 20_000, session.output);
+      session.write("\u0003");
+      await waitFor(() => session.output().split("What do you want to do?").length > 2, 20_000, session.output);
+      session.write("\u001B[A");
+      session.write("\r");
+      const exit = await waitForExit(session.child, 20_000);
+      expect(exit.code, session.output().slice(-4_000)).toBe(0);
     } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-      await Promise.all([
-        repository.cleanup(),
-        rm(source, { recursive: true, force: true }),
-      ]);
+      session.stop();
+      await Promise.all([repository.cleanup(), rm(source, { recursive: true, force: true })]);
     }
-  }, 70_000);
+  }, 60_000);
 });
 
+function startPty(control: string, args: readonly string[]) {
+  const resizeFile = join(control, ".tui-viewport");
+  const child = spawn("python3", [
+    ptyRunner, "--columns", "140", "--rows", "40", "--resize-file", resizeFile, "--",
+    process.execPath, cli, ...args,
+  ], { cwd: resolve("."), env: { ...process.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"] });
+  let output = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => { output += chunk; });
+  child.stderr.on("data", (chunk: string) => { output += chunk; });
+  return {
+    child,
+    output: () => output.replace(/\u001B\[[0-9;?]*[A-Za-z]/g, ""),
+    write: (text: string) => child.stdin.write(text),
+    stop: () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    },
+  };
+}
+
 async function tuiContentSource(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "ai-harness-tui-source-"));
+  const root = await mkdtemp(join(tmpdir(), "railguard-tui-source-"));
   const skill = join(root, "skills", "local-only-go");
   await mkdir(skill, { recursive: true });
   await writeFile(join(skill, "SKILL.md"), [
@@ -155,8 +103,8 @@ async function tuiContentSource(): Promise<string> {
     "Use the local content source selected for this invocation.",
     "",
   ].join("\n"), "utf8");
-  await writeFile(join(root, "ai-harness.yaml"), [
-    "schema: ai-harness/v1",
+  await writeFile(join(root, "railguard.yaml"), [
+    "schema: railguard/v1",
     "version: 9.9.9",
     "catalog:",
     "  skills:",

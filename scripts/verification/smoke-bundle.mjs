@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { createDefaultApplication } from "../../dist/index.js";
 
 const execute = promisify(execFile);
-const repository = await mkdtemp(join(tmpdir(), "ai-harness-bundle-smoke-"));
+const repository = await mkdtemp(join(tmpdir(), "railguard-bundle-smoke-"));
 await cp(resolve("tests/fixtures/go-new"), repository, { recursive: true });
 await execute("git", ["init", "--quiet", repository]);
 

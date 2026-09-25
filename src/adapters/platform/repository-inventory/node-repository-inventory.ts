@@ -39,7 +39,7 @@ const defaultExcludedDirectories = Object.freeze([
   "vendor",
 ]);
 
-const defaultExcludedDirectoryPaths = Object.freeze(["tmp/ai-harness"]);
+const defaultExcludedDirectoryPaths = Object.freeze(["tmp/railguard"]);
 
 interface InventoryBudget {
   entries: number;

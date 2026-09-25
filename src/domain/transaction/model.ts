@@ -43,6 +43,11 @@ export type TransactionOperation =
             readonly kind: "managed-section";
             readonly path: RelativePosixPath;
             readonly sectionId: string;
+          }
+        | {
+            readonly kind: "json-member";
+            readonly path: RelativePosixPath;
+            readonly pointer: readonly string[];
           };
       readonly bytes: ReadonlyBytes;
       readonly mode: number;
@@ -58,6 +63,11 @@ export type TransactionOperation =
             readonly kind: "managed-section";
             readonly path: RelativePosixPath;
             readonly sectionId: string;
+          }
+        | {
+            readonly kind: "json-member";
+            readonly path: RelativePosixPath;
+            readonly pointer: readonly string[];
           };
       readonly before: Extract<TransactionFileState, { readonly kind: "file" }>;
     }
@@ -125,20 +135,10 @@ export interface DurableApplyResult {
   readonly operationId: string;
   readonly diagnostics: readonly Diagnostic[];
   readonly changedPaths: readonly RelativePosixPath[];
-  readonly receiptPath: string | null;
 }
 
 export interface DurableMutationEvent {
-  readonly phase:
-    | "recovery"
-    | "lock"
-    | "preflight"
-    | "staging"
-    | "backup"
-    | "apply"
-    | "verify"
-    | "rollback"
-    | "cleanup";
+  readonly phase: "preflight" | "apply" | "verify" | "rollback";
   readonly status: "started" | "completed" | "failed";
   readonly message: string;
   readonly unitId?: string;
@@ -161,15 +161,4 @@ export interface DurableMutationEngine {
     plan: Extract<DurableProjectPlan, { readonly kind: "ready" }>,
     options?: DurableApplyOptions,
   ): Promise<DurableApplyResult>;
-}
-
-export interface RecoveryResult {
-  readonly kind: "no-recovery" | "rolled-back" | "recovery-required";
-  readonly operationId: string;
-  readonly diagnostics: readonly Diagnostic[];
-  readonly receiptPath: string | null;
-}
-
-export interface RecoveryManager {
-  recover(root: string): Promise<RecoveryResult>;
 }

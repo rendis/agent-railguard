@@ -63,7 +63,7 @@ async function readStateFile(root: string, fileName: "project.yaml" | "lock.json
   } catch (error) {
     return { kind: "unsafe", evidence: errorMessage(error) };
   }
-  const stateDirectory = join(rootRealPath, ".ai-harness");
+  const stateDirectory = join(rootRealPath, ".railguard");
   let directoryStat;
   try {
     directoryStat = await lstat(stateDirectory);
@@ -74,7 +74,7 @@ async function readStateFile(root: string, fileName: "project.yaml" | "lock.json
   }
   try {
     if (!directoryStat.isDirectory() || (await realpath(stateDirectory)) !== stateDirectory) {
-      return { kind: "unsafe", evidence: ".ai-harness must be a real repository directory" };
+      return { kind: "unsafe", evidence: ".railguard must be a real repository directory" };
     }
   } catch (error) {
     return { kind: "unsafe", evidence: errorMessage(error) };
@@ -107,7 +107,7 @@ function unsafeLock(evidence: string): Extract<LockStateResult, { readonly kind:
     severity: "failed",
     phase: "project-state",
     subjects: Object.freeze([]),
-    location: Object.freeze({ path: relativePosixPath(".ai-harness/lock.json") }),
+    location: Object.freeze({ path: relativePosixPath(".railguard/lock.json") }),
     message: "The portable lock path is not a safe repository-local regular file.",
     evidence: Object.freeze([evidence].sort(compareUtf8)),
     impact: "The lock cannot be trusted for reconciliation.",
@@ -127,7 +127,7 @@ function unsafeDesired(
     severity: "failed",
     phase: "project-state",
     subjects: Object.freeze([]),
-    location: Object.freeze({ path: relativePosixPath(".ai-harness/project.yaml") }),
+    location: Object.freeze({ path: relativePosixPath(".railguard/project.yaml") }),
     message: "The desired state path is not a safe repository-local regular file.",
     evidence: Object.freeze([evidence].sort(compareUtf8)),
     impact: "The desired state cannot be trusted for resolution.",

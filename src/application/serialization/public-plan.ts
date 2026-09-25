@@ -1,6 +1,6 @@
 import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
 import planSchema from "../../../schemas/plan.v1.schema.json" with { type: "json" };
-import type { AiHarnessCases, InstallPreparation } from "../model.js";
+import type { RailguardCases, InstallPreparation } from "../model.js";
 import type { CatalogSnapshot } from "../../domain/catalog/model.js";
 import { buildReviewModel, type ReviewModel } from "../../domain/review/review-model.js";
 import type { ReadyResolution } from "../../domain/resolution/model.js";
@@ -30,7 +30,7 @@ export interface PublicPlanBasis {
 }
 
 export interface PublicDesiredState {
-  readonly schema: "ai-harness/project/v1";
+  readonly schema: "railguard/project/v1";
   readonly targets: readonly HarnessTargetId[];
   readonly selections: readonly {
     readonly ref: ComponentRef;
@@ -52,7 +52,7 @@ export interface PublicReviewModel {
 }
 
 export interface PublicPlan {
-  readonly schema: "ai-harness/plan/v1";
+  readonly schema: "railguard/plan/v1";
   readonly plan_id: Sha256Digest;
   readonly mode: "reconcile" | "repair" | "remove";
   readonly basis: PublicPlanBasis;
@@ -63,14 +63,14 @@ export interface PublicPlan {
 export type PublicPlanReplayResult =
   | {
       readonly kind: "ready";
-      readonly scan: Extract<Awaited<ReturnType<AiHarnessCases["scan"]>>, { readonly kind: "ready" }>;
+      readonly scan: Extract<Awaited<ReturnType<RailguardCases["scan"]>>, { readonly kind: "ready" }>;
       readonly preparation: InstallPreparation;
       readonly plan: Extract<DurableProjectPlan, { readonly kind: "ready" }>;
       readonly diagnostics: readonly Diagnostic[];
     }
   | {
       readonly kind: "stale";
-      readonly scan: Awaited<ReturnType<AiHarnessCases["scan"]>>;
+      readonly scan: Awaited<ReturnType<RailguardCases["scan"]>>;
       readonly diagnostics: readonly [Diagnostic, ...Diagnostic[]];
     };
 
@@ -88,7 +88,7 @@ export function exportPublicPlan(input: {
 }): PublicPlan {
   const review = buildReviewModel(input);
   const value: PublicPlan = {
-    schema: "ai-harness/plan/v1",
+    schema: "railguard/plan/v1",
     plan_id: input.plan.id,
     mode: input.plan.mode,
     basis: {
@@ -146,7 +146,7 @@ export function encodePublicPlan(plan: PublicPlan): string {
 }
 
 export async function rehydratePublicPlan(
-  application: AiHarnessCases,
+  application: RailguardCases,
   root: string,
   publicPlan: PublicPlan,
 ): Promise<PublicPlanReplayResult> {
@@ -180,7 +180,7 @@ export async function rehydratePublicPlan(
         "plan-import.catalog-changed",
         "The current project-content catalog differs from the catalog used for review.",
         "Component payloads or projections could differ from the reviewed outcome.",
-        "Generate and review a new plan with this AI Harness version.",
+        "Generate and review a new plan with this Railguard version.",
         [publicPlan.basis.catalog_digest, scan.catalog.digest],
       ),
     ]);
@@ -280,7 +280,7 @@ function validationIssues(
 }
 
 function stale(
-  scan: Awaited<ReturnType<AiHarnessCases["scan"]>>,
+  scan: Awaited<ReturnType<RailguardCases["scan"]>>,
   diagnostics: readonly Diagnostic[],
 ): Extract<PublicPlanReplayResult, { readonly kind: "stale" }> {
   const unique = new Map(diagnostics.map((diagnostic) => [

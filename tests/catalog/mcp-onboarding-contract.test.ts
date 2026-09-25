@@ -36,9 +36,9 @@ describe("MCP authoring-only onboarding contract", () => {
     const repository = await createTempRepository({});
     await Promise.all([
       cp(resolve("skills"), resolve(source.root, "skills"), { recursive: true }),
-      cp(resolve("ai-harness.yaml"), resolve(source.root, "ai-harness.yaml")),
+      cp(resolve("railguard.yaml"), resolve(source.root, "railguard.yaml")),
     ]);
-    await injectFixtureMcp(resolve(source.root, "ai-harness.yaml"));
+    await injectFixtureMcp(resolve(source.root, "railguard.yaml"));
     await execute("git", ["init", "--quiet", repository.root]);
 
     const runtime = await createDefaultApplication({
@@ -61,18 +61,17 @@ describe("MCP authoring-only onboarding contract", () => {
       expect(install.plan?.kind).toBe("ready");
       if (install.plan?.kind !== "ready") throw new Error("Expected ready install plan");
       expect(install.plan.operations.map(({ path }) => path).sort()).toEqual([
-        ".ai-harness",
-        ".ai-harness/lock.json",
-        ".ai-harness/project.yaml",
         ".codex",
         ".codex/config.toml",
         ".cursor",
         ".cursor/mcp.json",
         ".mcp.json",
+        ".railguard",
+        ".railguard/lock.json",
+        ".railguard/project.yaml",
         ".vscode",
         ".vscode/mcp.json",
         "AGENTS.md",
-        "CLAUDE.md",
         "opencode.json",
       ]);
       expect((await runtime.application.apply(install.plan)).kind).toBe("applied");
@@ -90,8 +89,7 @@ describe("MCP authoring-only onboarding contract", () => {
       const agentInstructions = await readFile(resolve(repository.root, "AGENTS.md"), "utf8");
       expect(agentInstructions).toContain('id="mcps.mapping"');
       expect(agentInstructions).toContain("`authoring-only-fixture`");
-      await expect(readFile(resolve(repository.root, "CLAUDE.md"), "utf8"))
-        .resolves.toContain("@AGENTS.md");
+      await expect(readFile(resolve(repository.root, "CLAUDE.md"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
       const installed = await runtime.application.scan(repository.root);
       if (installed.kind !== "ready") throw new Error("Expected installed scan");

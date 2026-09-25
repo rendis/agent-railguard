@@ -8,9 +8,10 @@ describe("skill routing contract", () => {
     const skills = await realSkills();
 
     for (const skill of skills) {
-      expect(skill.description.length).toBeLessThanOrEqual(320);
-      expect(skill.description).not.toMatch(/outer owner|remains the .*owner|owns remediation/i);
+      expect(skill.description.length).toBeLessThanOrEqual(280);
+      expect(skill.description).not.toMatch(/outer owner|remains the .*owner|owns remediation|belongs to|focused skills/i);
       expect(skill.description).not.toContain("develop-go-hexagonal-service");
+      expect(skill.description).toMatch(/Use for |Use when /);
     }
   });
 
@@ -35,7 +36,7 @@ describe("skill routing contract", () => {
 
 async function realSkills() {
   const result = await new FilesystemCatalog({
-    catalogFile: resolve("ai-harness.yaml"),
+    catalogFile: resolve("railguard.yaml"),
     supportedLanguages: [
       languageId("go"),
       languageId("python"),

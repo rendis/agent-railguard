@@ -46,11 +46,6 @@ export interface DiagnosticView {
   readonly evidence: readonly string[];
   readonly impact: string;
   readonly action: string | null;
-  readonly resolutions?: readonly {
-    readonly action: "replace";
-    readonly label: string;
-    readonly destructive: boolean;
-  }[];
 }
 
 export interface RepositoryView {
@@ -85,6 +80,7 @@ export interface CatalogItemView {
     | "mcp-integration"
     | "verification-profile"
     | "git-gate"
+    | "agent-hook"
     | "pack"
     | "agent";
   readonly version: string;
@@ -98,6 +94,7 @@ export interface CatalogItemView {
     | "passive"
     | "project-write"
     | "local-git-execution"
+    | "local-agent-execution"
     | "third-party-network"
     | "agent-instruction";
   readonly recommended: boolean;
@@ -177,7 +174,7 @@ export interface InteractionSnapshot {
 }
 
 interface EventBase {
-  readonly schema: "ai-harness/interaction-event/v1";
+  readonly schema: "railguard/interaction-event/v1";
   readonly operation_id: string;
   readonly sequence: number;
 }
@@ -241,11 +238,6 @@ export type InteractionAction =
   | {
       readonly type: "request-plan";
       readonly mode: "reconcile" | "repair" | "remove";
-    }
-  | {
-      readonly type: "resolve-plan-blocker";
-      readonly code: "quality.make.target-collision";
-      readonly resolution: "replace";
     }
   | { readonly type: "load-plan"; readonly root: string; readonly plan: PublicPlan }
   | { readonly type: "request-managed-plan"; readonly mode: "sync" | "repair" }

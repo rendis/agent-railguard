@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:example:ai-harness:schema:interaction-event:v1",
-  "title": "AI Harness interaction event v1",
+  "$id": "urn:railguard:schema:interaction-event:v1",
+  "title": "Railguard interaction event v1",
   "oneOf": [
     {
       "type": "object",
@@ -30,7 +30,7 @@
       "properties": {
         "type": { "const": "scan-result" },
         "repository": {
-          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/repository"
+          "$ref": "urn:railguard:schema:command-result:v1#/$defs/repository"
         },
         "catalog": {
           "type": "array",
@@ -43,7 +43,7 @@
         "diagnostics": {
           "type": "array",
           "items": {
-            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/diagnostic"
+            "$ref": "urn:railguard:schema:command-result:v1#/$defs/diagnostic"
           }
         }
       },
@@ -59,7 +59,7 @@
         "diagnostics": {
           "type": "array",
           "items": {
-            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/diagnostic"
+            "$ref": "urn:railguard:schema:command-result:v1#/$defs/diagnostic"
           }
         }
       },
@@ -73,7 +73,7 @@
         "type": { "const": "plan-ready" },
         "plan": {
           "oneOf": [
-            { "$ref": "urn:example:ai-harness:schema:public-plan:v1" },
+            { "$ref": "urn:railguard:schema:public-plan:v1" },
             { "type": "null" }
           ]
         },
@@ -81,7 +81,7 @@
         "diagnostics": {
           "type": "array",
           "items": {
-            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/diagnostic"
+            "$ref": "urn:railguard:schema:command-result:v1#/$defs/diagnostic"
           }
         }
       },
@@ -94,7 +94,7 @@
       "properties": {
         "type": { "const": "receipt" },
         "receipt": {
-          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/receipt"
+          "$ref": "urn:railguard:schema:command-result:v1#/$defs/receipt"
         }
       },
       "required": ["type", "receipt"],
@@ -116,9 +116,9 @@
       "type": "object",
       "required": ["schema", "operation_id", "sequence", "type"],
       "properties": {
-        "schema": { "const": "ai-harness/interaction-event/v1" },
+        "schema": { "const": "railguard/interaction-event/v1" },
         "operation_id": {
-          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/uuid"
+          "$ref": "urn:railguard:schema:command-result:v1#/$defs/uuid"
         },
         "sequence": { "type": "integer", "minimum": 1 },
         "type": {
@@ -176,7 +176,7 @@
       "required": ["ref", "version", "reasons"],
       "properties": {
         "ref": {
-          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+          "$ref": "urn:railguard:schema:command-result:v1#/$defs/componentRef"
         },
         "version": { "type": "string", "minLength": 1 },
         "reasons": {
@@ -191,7 +191,7 @@
       "required": ["ref", "kind", "version", "description", "details", "impact", "trust", "recommended"],
       "properties": {
         "ref": {
-          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+          "$ref": "urn:railguard:schema:command-result:v1#/$defs/componentRef"
         },
         "kind": {
           "enum": [
@@ -199,6 +199,7 @@
             "mcp-integration",
             "verification-profile",
             "git-gate",
+            "agent-hook",
             "instruction-fragment",
             "pack",
             "agent"
@@ -221,6 +222,7 @@
             "passive",
             "project-write",
             "local-git-execution",
+            "local-agent-execution",
             "third-party-network",
             "agent-instruction"
           ]
@@ -235,7 +237,7 @@
             "event": { "enum": ["pre-commit", "pre-push"] },
             "operation": { "type": "string", "minLength": 1 },
             "provider": {
-              "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+              "$ref": "urn:railguard:schema:command-result:v1#/$defs/componentRef"
             }
           }
         }
@@ -250,20 +252,20 @@
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+            "$ref": "urn:railguard:schema:command-result:v1#/$defs/componentRef"
           }
         },
         "targets": {
           "type": "array",
           "uniqueItems": true,
           "items": {
-            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/stableId"
+            "$ref": "urn:railguard:schema:command-result:v1#/$defs/stableId"
           }
         },
         "components": {
           "type": "array",
           "items": {
-            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/component"
+            "$ref": "urn:railguard:schema:command-result:v1#/$defs/component"
           }
         },
         "blocked": { "type": "boolean" }
@@ -276,12 +278,12 @@
       "properties": {
         "operation": { "enum": ["inspect", "login", "logout"] },
         "component": {
-          "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/componentRef"
+          "$ref": "urn:railguard:schema:command-result:v1#/$defs/componentRef"
         },
         "results": {
           "type": "array",
           "items": {
-            "$ref": "urn:example:ai-harness:schema:command-result:v1#/$defs/mcpSessionResult"
+            "$ref": "urn:railguard:schema:command-result:v1#/$defs/mcpSessionResult"
           }
         }
       }

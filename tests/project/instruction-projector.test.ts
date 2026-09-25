@@ -23,7 +23,7 @@ describe("InstructionProjector", () => {
     });
     try {
       const catalogResult = await new FilesystemCatalog({
-        catalogFile: resolve("ai-harness.yaml"),
+        catalogFile: resolve("railguard.yaml"),
         supportedLanguages: [
           languageId("go"),
           languageId("python"),
@@ -111,16 +111,19 @@ describe("InstructionProjector", () => {
 
       const automation = sections.find((section) => section.id === "automation.mapping")?.body;
       expect(automation).toContain("## Git automation");
-      expect(automation).toContain("`pre-commit-check`: Before committing, run `make check`");
+      expect(automation).toContain(
+        "`pre-commit-check`: Before committing, `railguard check --changed` runs automatically; run it yourself to reproduce a failure.",
+      );
       expect(automation).toContain("Treat hook failures as local feedback");
 
       const quality = sections.find((section) => section.id === "quality.mapping")?.body;
       expect(quality).toContain("## Verification");
-      expect(quality).toContain("`go-quality`: Use `make check` during development");
-      expect(quality).toContain("Use `SCOPE=<project-unit>` only to limit a check");
+      expect(quality).toContain(
+        "`go-quality`: Run `railguard check --changed` while developing and `railguard verify --changed` before delivery for Go changes.",
+      );
 
       for (const section of sections) {
-        expect(section.body).not.toContain("installed by AI Harness");
+        expect(section.body).not.toContain("installed by Railguard");
         expect(section.body).not.toMatch(/\b(?:Install|Configure|Create or update)\b/u);
       }
     } finally {
@@ -132,7 +135,7 @@ describe("InstructionProjector", () => {
     const repository = await createTempRepository({});
     try {
       const catalogResult = await new FilesystemCatalog({
-        catalogFile: resolve("ai-harness.yaml"),
+        catalogFile: resolve("railguard.yaml"),
         supportedLanguages: ["go", "python", "typescript", "java"].map(languageId),
       }).load();
       if (catalogResult.kind !== "ready") throw new Error("Expected valid catalog");

@@ -53,27 +53,36 @@ describe("NodeRepositoryGate", () => {
     }
   });
 
-  it.each([
-    {
-      name: "tracked sensitive path",
-      files: { ".env": "SECRET=redacted\n" },
-      code: "repository.gate.sensitive-path",
-    },
-    {
-      name: "tracked Git LFS policy",
-      files: { ".gitattributes": "*.bin filter=lfs diff=lfs merge=lfs -text\n" },
-      code: "repository.gate.lfs-unsupported",
-    },
-  ])("blocks an uncertified $name without reading its payload", async ({ files, code }) => {
-    const repository = await gitRepository(files);
+  it("blocks an uncertified tracked Git LFS policy", async () => {
+    const repository = await gitRepository({
+      ".gitattributes": "*.bin filter=lfs diff=lfs merge=lfs -text\n",
+    });
     try {
       await execute("git", ["-C", repository.root, "add", "."]);
 
       const result = await new NodeRepositoryGate().check(repository.root);
 
       expect(result.kind).toBe("blocked");
-      expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain(code);
-      expect(JSON.stringify(result.diagnostics)).not.toContain("SECRET=redacted");
+      expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+        "repository.gate.lfs-unsupported",
+      );
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
+  it.each([
+    ".env", ".env.local", ".env-local", ".env.development", ".env.production",
+    ".env.test", ".npmrc", ".pypirc", "id_rsa", "id_ed25519",
+    "test.key", "test.p12", "test.pem", "test.pfx",
+  ])("does not reject unrelated tracked file %s by name", async (path) => {
+    const repository = await gitRepository({ [path]: "fixture-only-value\n" });
+    try {
+      await execute("git", ["-C", repository.root, "add", "."]);
+      expect(await new NodeRepositoryGate().check(repository.root)).toMatchObject({
+        kind: "ready",
+        diagnostics: [],
+      });
     } finally {
       await repository.cleanup();
     }

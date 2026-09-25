@@ -30,6 +30,7 @@ import {
   type SemVer,
   type Sha256Digest,
 } from "../domain/shared/types.js";
+import { jsonMemberDigest } from "../domain/managed-json/managed-json.js";
 import { parseSafeJson } from "../shared/safe-json.js";
 
 export interface LockTargetDraft {
@@ -61,6 +62,10 @@ export type LockArtifactDraft =
   | (LockArtifactBaseDraft & {
       readonly kind: "symlink";
       readonly linkTarget: string;
+    })
+  | (LockArtifactBaseDraft & {
+      readonly kind: "json-member";
+      readonly pointer: readonly string[];
     });
 
 export interface LockLocalEffectDraft {
@@ -106,7 +111,7 @@ export type LockedDirectory = ManagedDirectoryOwnership;
 export type LockedGitConfigEffect = ManagedGitConfigOwnership;
 
 export interface LockState {
-  readonly schema: "ai-harness/lock/v1";
+  readonly schema: "railguard/lock/v1";
   readonly desired_digest: Sha256Digest;
   readonly catalog: {
     readonly revision: SemVer;
@@ -148,7 +153,7 @@ export type LockStateResult =
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validateLock = ajv.compile<LockState>(projectStateSchema);
-const lockPath = relativePosixPath(".ai-harness/lock.json");
+const lockPath = relativePosixPath(".railguard/lock.json");
 
 export class LockStateModule {
   public buildFromProjections(input: ProjectionLockBuildInput): LockStateResult {
@@ -207,6 +212,15 @@ export class LockStateModule {
               portableMode: (unit.intent.mode & 0o111) === 0 ? "regular" : "executable",
             }),
           );
+        } else if (unit.intent.kind === "json-member") {
+          artifacts.push(
+            Object.freeze({
+              ...common,
+              kind: "json-member",
+              contentDigest: jsonMemberDigest(unit.intent.pointer, unit.intent.value),
+              pointer: Object.freeze([...unit.intent.pointer]),
+            }),
+          );
         } else if (unit.intent.kind === "symlink") {
           artifacts.push(
             Object.freeze({
@@ -252,7 +266,7 @@ export class LockStateModule {
     if (diagnostics.length > 0) return invalid(diagnostics);
 
     const state: LockState = Object.freeze({
-      schema: "ai-harness/lock/v1",
+      schema: "railguard/lock/v1",
       desired_digest: input.desiredDigest,
       catalog: Object.freeze({
         revision: input.catalog.revision,
@@ -276,7 +290,7 @@ export class LockStateModule {
         lockDiagnostic("lock.json-invalid", "The portable lock is not valid JSON.", parsed.errors),
       ]);
     }
-    if (!validateLock(parsed.value) || parsed.value.schema !== "ai-harness/lock/v1") {
+    if (!validateLock(parsed.value) || parsed.value.schema !== "railguard/lock/v1") {
       return invalid([schemaDiagnostic(validateLock.errors)]);
     }
     const state = deepFreeze(parsed.value as LockState);
@@ -618,6 +632,8 @@ function normalizeArtifacts(
         ? Object.freeze({ ...common, kind: "file" as const, portable_mode: artifact.portableMode })
         : artifact.kind === "symlink"
           ? Object.freeze({ ...common, kind: "symlink" as const, link_target: artifact.linkTarget })
+          : artifact.kind === "json-member"
+          ? Object.freeze({ ...common, kind: "json-member" as const, pointer: Object.freeze([...artifact.pointer]) })
           : Object.freeze({
             ...common,
             kind: "managed-section" as const,
@@ -660,7 +676,7 @@ function collectDuplicates(
 function schemaDiagnostic(errors: readonly ErrorObject[] | null | undefined): Diagnostic {
   return lockDiagnostic(
     "lock.schema-invalid",
-    "The portable lock does not satisfy ai-harness/lock/v1.",
+    "The portable lock does not satisfy railguard/lock/v1.",
     (errors ?? []).map(
       (error) => `${error.instancePath || "/"}:${error.keyword}:${error.message ?? "invalid"}`,
     ),

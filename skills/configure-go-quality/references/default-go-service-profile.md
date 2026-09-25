@@ -1,45 +1,43 @@
 # Go Service Quality Profiles
 
-## Managed AI Harness v1 baseline
+## Baseline
 
-Use `verification-profile:go-quality` for a generic request when no stronger valid policy is adopted. It owns two repository entrypoints:
+Use `verification-profile:go-quality` for a generic request when no stronger valid policy is adopted. The engine runs it through two commands:
 
-- `make check` verifies formatting, runs normal tests, and runs `go vet` for every selected Go module;
-- `make verify` runs `make check` and race-enabled tests for the same modules.
+- `railguard check` checks formatting, runs `go vet` and runs the tests;
+- `railguard verify` also runs the tests with the race detector and a shuffled order.
 
-The profile accepts module roots derived from project units and explicit test-package patterns. `SCOPE=<module-root>` may select one known module; an unknown scope must fail. The repository's Go version and standard tools remain authoritative. Git gates are separate selections and are never activated by the profile or skill.
+With `--changed` every check judges only what the change touched since the merge-base with the default branch (or `--base <ref>`): changed files for formatting, packages containing changes for vet and tests. Pre-existing debt elsewhere does not block the change. Without `--changed` every detected Go module is checked completely. Git gates are separate selections and are never activated by a profile.
 
-When `Makefile` contains `# ai-harness:managed:start id="verification.go-quality"`, the marked block and the `check`/`verify` entrypoints belong to AI Harness. Assess them in place. Apply or Repair only through `Resolve -> Plan -> Review -> Apply`, using inputs declared by the selected profile. Do not reconstruct the block, copy an asset over it, or claim it can materialize targets absent from the catalog definition.
+Profiles write no files. Their selection and inputs live in `.railguard/project.yaml` and change only through `Resolve -> Plan -> Review -> Apply` (`railguard plan --add … --set …`, then `railguard apply`).
 
-Prove this baseline with the exact generated commands:
+Prove the baseline with the real commands:
 
-1. require the managed profile and entrypoint markers once each;
-2. require `make -n check verify` to resolve for the default scope;
-3. run `make check` and `make verify` once over the adopted scope;
-4. when multiple modules exist, prove one valid `SCOPE` and one unknown scope;
-5. compare CI or Git-gate consumers with the same entrypoints;
-6. after Apply, require a second plan to contain no repository mutation.
+1. run `railguard check --changed` and `railguard verify --changed` on the change;
+2. run `railguard verify` once without `--changed` to record the existing debt of the module;
+3. compare CI and Git-gate consumers with the same commands;
+4. after Apply, require a second plan to contain no repository mutation.
 
-A failing test, vet, formatting, or race command is `READY_WITH_FINDINGS` after the complete task surface executes. Missing or invalid managed inputs are `MISSING` or `BROKEN`. An unavailable required executable or platform after complete inputs is `BLOCKED_SETUP`.
+A failing check is `READY_WITH_FINDINGS` after the complete task surface executes. Missing or invalid inputs are `MISSING` or `BROKEN`. A check reported as `unavailable` (missing tool pin or config) is `BLOCKED_SETUP`; it never counts as a pass.
 
-## Explicit managed assurance
+## Explicit assurance
 
-Use one public `make check` and `make verify` interface for every adopted level. Keep `verification-profile:go-quality` as the portable baseline, then select only the managed profiles justified by repository evidence:
+Keep `verification-profile:go-quality` as the portable baseline, then select only the profiles justified by repository evidence:
 
-| Profile | `check` contribution | `verify` contribution | Required inputs |
+| Profile | `check` | `verify` | Inputs |
 |---|---|---|---|
-| `verification-profile:go-assurance` | module verification and configured lint | exact core/overall coverage and reachable vulnerabilities | test, core, and cover packages |
-| `verification-profile:go-fuzz` | explicit case/scope readiness | each selected fuzz case | `package:FuzzName:duration` cases |
-| `verification-profile:go-mutation` | explicit package/scope readiness | non-empty KILLED-only campaigns | production package scopes |
-| `verification-profile:go-e2e` | explicit package/scope readiness | `e2e`-tagged acceptance packages | E2E package scopes |
+| `verification-profile:go-assurance` | `go mod verify` when dependencies change; golangci-lint on issues introduced by the change | changed-line coverage (100% core, 80% elsewhere; full mode 100% core, 85% overall); govulncheck when dependencies change | `tool_modfile`, `test_packages`, `core_packages`, `core_cover_packages`, `overall_cover_packages` |
+| `verification-profile:go-fuzz` | — | each case whose package changed | `package:FuzzName:duration` cases |
+| `verification-profile:go-mutation` | — | Gremlins on changed packages; any LIVED or NOT_COVERED mutant on a changed line fails | `tool_modfile`, `packages` scope |
+| `verification-profile:go-e2e` | — | `e2e`-tagged packages whenever the module changed | E2E package patterns |
 
-The projector composes selected private `ai-harness-*` targets behind the same two public commands. Apply inputs through `.ai-harness/project.yaml` and the CLI transaction; never copy, reconstruct, or extend the generated Make sections manually. A selected profile with its default `disabled` sentinel is intentionally incomplete and must be classified `MISSING` until explicit inputs replace it.
+A profile whose inputs keep the default `disabled` sentinel is intentionally incomplete and is classified `MISSING` until explicit inputs replace it.
 
 Strict assurance also requires repository-owned supporting inputs:
 
-- [golangci.yml](../assets/golangci.yml) for the pinned analyzer policy;
-- [gremlins.yaml](../assets/gremlins.yaml) for mutation configuration;
-- ignored `tmp/ai-harness` evidence paths and exact Go tool pins.
+- [golangci.yml](../assets/golangci.yml) as `.golangci.yml` in each module root;
+- [gremlins.yaml](../assets/gremlins.yaml) as `.gremlins.yaml` for mutation configuration;
+- exact Go tool pins in the `tool_modfile`.
 
 Pin the validated tool set atomically through repository `tool` directives:
 
@@ -47,8 +45,7 @@ Pin the validated tool set atomically through repository `tool` directives:
 go get -tool \
   github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 \
   golang.org/x/vuln/cmd/govulncheck@v1.6.0 \
-  github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0 \
-  github.com/itchyny/gojq/cmd/gojq@v0.12.19
+  github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
 ```
 
-Adapt only observed test, critical, cover, mutation, fuzz, and E2E inputs. Require non-empty mutation campaigns, bounded fuzz, explicit E2E ownership, ignored volatile output, native config paths, and one observed `make verify` run. When Sonar is adopted, require the CI scanner to wait for the actual Quality Gate and retain its analysis identity; repository-side proxies cannot replace that verdict. A missing behavioral proof remains a product finding; this skill configures its signal without inventing the proof.
+Adapt only observed test, core, cover, mutation, fuzz, and E2E inputs. Require bounded fuzz, explicit E2E ownership and one observed `railguard verify --changed` run. When Sonar is adopted, require the CI scanner to wait for the actual Quality Gate and retain its analysis identity; repository-side proxies cannot replace that verdict. A missing behavioral proof remains a product finding; this skill configures its signal without inventing the proof.

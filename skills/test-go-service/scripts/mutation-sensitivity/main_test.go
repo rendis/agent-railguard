@@ -45,7 +45,16 @@ func TestPrepareMarksAStandaloneClone(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("prepare() status = %d, want 0", status)
 	}
-	marker, err := os.ReadFile(filepath.Join(checkout, disposableMarkerName))
+	directory, err := os.OpenRoot(checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := directory.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	marker, err := directory.ReadFile(disposableMarkerName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +81,16 @@ func TestPrepareMarksALinkedWorktree(t *testing.T) {
 		t.Fatalf("prepare() status = %d, want 0", status)
 	}
 	want := strings.TrimSpace(output.String())
-	marker, err := os.ReadFile(filepath.Join(checkout, disposableMarkerName))
+	directory, err := os.OpenRoot(checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := directory.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	marker, err := directory.ReadFile(disposableMarkerName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,3 +426,24 @@ func TestExactLimit(t *testing.T) {
 	}
 }
 `
+
+// TestValidateSetupRejectsMarkerOutsideCheckout prevents a valid external marker from authorizing the checkout.
+func TestValidateSetupRejectsMarkerOutsideCheckout(t *testing.T) {
+	checkout := t.TempDir()
+	expected, err := treeHash(checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	marker := filepath.Join(outside, "marker")
+	writeFile(t, marker, expected)
+	if err := os.Symlink(marker, filepath.Join(checkout, disposableMarkerName)); err != nil {
+		t.Fatal(err)
+	}
+	patch := filepath.Join(outside, "change.patch")
+	writeFile(t, patch, "patch")
+	_, err = validateSetup(configuration{checkout: checkout, expectedHash: expected, patch: patch, output: filepath.Join(outside, "result.json")})
+	if err == nil {
+		t.Fatal("external marker must not authorize the checkout")
+	}
+}

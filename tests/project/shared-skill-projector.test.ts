@@ -161,7 +161,7 @@ function resolveSkill(catalog: CatalogSnapshot, targets: readonly string[]) {
 
 async function loadCatalog(): Promise<CatalogSnapshot> {
   const result = await new FilesystemCatalog({
-    catalogFile: resolve("ai-harness.yaml"),
+    catalogFile: resolve("railguard.yaml"),
     supportedLanguages: ["go", "python", "typescript", "java"].map(languageId),
   }).load();
   if (result.kind !== "ready") throw new Error("Expected catalog to be ready");

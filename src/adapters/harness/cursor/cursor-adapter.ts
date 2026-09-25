@@ -15,6 +15,7 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentStopScript,
   componentId,
   nativeFileUnit,
   nativeProjectionIdentity,
@@ -42,6 +43,7 @@ export class CursorAdapter implements HarnessAdapter {
         { role: "skills", path: ".agents/skills", expected: "directory" },
         { role: "agents", path: ".cursor/agents", expected: "directory" },
         { role: "mcp", path: ".cursor/mcp.json", expected: "file" },
+        { role: "hooks", path: ".cursor/hooks.json", expected: "file" },
       ],
     });
   }
@@ -72,6 +74,20 @@ export class CursorAdapter implements HarnessAdapter {
             ),
           }),
           sources: components.mcps.map((mcp) => mcp.ref),
+        }),
+      );
+    }
+    if (components.agentHooks.length > 0) {
+      units.push(
+        nativeFileUnit({
+          target: this.id,
+          role: "hook",
+          path: ".cursor/hooks.json",
+          text: stablePrettyJson({
+            version: 1,
+            hooks: { stop: [{ command: `${agentStopScript} cursor`, loop_limit: 3 }] },
+          }),
+          sources: components.agentHooks.map((hook) => hook.ref),
         }),
       );
     }

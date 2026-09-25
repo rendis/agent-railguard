@@ -303,10 +303,10 @@ function reconciliationDiagnostic(
     severity: "blocked",
     phase: "reconciliation",
     subjects: Object.freeze([...subjects].sort(compareUtf8)),
-    location: Object.freeze({ path: relativePosixPath(".ai-harness/lock.json") }),
+    location: Object.freeze({ path: relativePosixPath(".railguard/lock.json") }),
     message,
     evidence: Object.freeze([...evidence].sort(compareUtf8)),
-    impact: "AI Harness cannot claim a converged project state from inconsistent evidence.",
+    impact: "Railguard cannot claim a converged project state from inconsistent evidence.",
     action,
   });
 }

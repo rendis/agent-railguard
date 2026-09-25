@@ -14,7 +14,7 @@ const probe: ExecutableProbe = {
   },
 };
 
-describe("AiHarnessApplication public cases", () => {
+describe("RailguardApplication public cases", () => {
   it("scans a new directory without Git and defers the mutation requirement", async () => {
     const repository = await createTempRepository({});
     const runtime = await createDefaultApplication({ executableProbe: probe });
@@ -25,7 +25,6 @@ describe("AiHarnessApplication public cases", () => {
       if (scan.kind !== "ready") throw new Error("Expected a discoverable new project");
       expect(scan.snapshot.entries).toEqual([]);
       expect(scan.assessment.projectUnits).toEqual([]);
-      expect(scan.recovery.kind).toBe("no-recovery");
 
       const preparation = await runtime.application.preparePlan(
         scan,
@@ -80,9 +79,12 @@ describe("AiHarnessApplication public cases", () => {
       );
       if (preparation.plan?.kind !== "ready") throw new Error("Expected ready plan");
       expect((await runtime.application.apply(preparation.plan)).kind).toBe("applied");
-      expect(await readFile(`${repository.root}/Makefile`, "utf8")).toContain(
-        "AI_HARNESS_GO_TEST_PACKAGES := ./cmd/... ./internal/...",
+      expect(await readFile(`${repository.root}/.railguard/project.yaml`, "utf8")).toContain(
+        "./cmd/...",
       );
+      await expect(readFile(`${repository.root}/Makefile`, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
 
       const managed = await runtime.application.scan(repository.root);
       if (managed.kind !== "ready") throw new Error("Expected managed scan");
@@ -113,28 +115,6 @@ describe("AiHarnessApplication public cases", () => {
         expect.objectContaining({ id: "materialization", status: "passed" }),
       );
     } finally {
-      await Promise.all([runtime.dispose(), repository.cleanup()]);
-    }
-  });
-
-  it("reports operation contention instead of misclassifying the repository scope", async () => {
-    const repository = await createTempRepository({
-      "go.mod": "module example.com/contention\n\ngo 1.24\n",
-    });
-    await execute("git", ["init", "--quiet", repository.root]);
-    const runtime = await createDefaultApplication({ executableProbe: probe });
-    const lease = await runtime.transactionStore.acquire(repository.root);
-    try {
-      const scan = await runtime.application.scan(repository.root);
-      expect(scan.kind).toBe("blocked");
-      expect(scan.diagnostics.map((entry) => entry.code)).toContain(
-        "recovery.operation-busy",
-      );
-      expect(scan.diagnostics.map((entry) => entry.code)).not.toContain(
-        "recovery.repository-gate.failed",
-      );
-    } finally {
-      await lease.release();
       await Promise.all([runtime.dispose(), repository.cleanup()]);
     }
   });

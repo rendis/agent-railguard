@@ -10,9 +10,13 @@ linters:
   enable:
     - bodyclose
     - contextcheck
+    - cyclop
     - dupl
+    - durationcheck
     - errcheck
     - errorlint
+    - fatcontext
+    - funlen
     - gocognit
     - goconst
     - gocritic
@@ -21,20 +25,37 @@ linters:
     - gosec
     - govet
     - ineffassign
+    - loggercheck
+    - maintidx
+    - musttag
+    - nestif
+    - nilerr
+    - nilnil
     - noctx
     - nolintlint
     - revive
+    - sloglint
     - staticcheck
+    - testifylint
     - thelper
     - unused
     - usetesting
+    - wastedassign
   settings:
+    cyclop:
+      max-complexity: 5
+      package-average: 0
     dupl:
       threshold: 100
+    funlen:
+      lines: 80
+      statements: 40
+      ignore-comments: true
     gocognit:
-      min-complexity: 10
+      min-complexity: 6
     goconst:
       ignore-tests: true
+      ignore-calls: false
       min-len: 3
       min-occurrences: 3
     godoclint:
@@ -53,6 +74,10 @@ linters:
       keywords:
         - FIXME
         - TODO
+    maintidx:
+      under: 20
+    nestif:
+      min-complexity: 4
     nolintlint:
       allow-unused: false
       require-explanation: true
@@ -60,6 +85,8 @@ linters:
     revive:
       enable-all-rules: false
       rules:
+        - name: argument-limit
+          arguments: [7]
         - name: bare-return
         - name: confusing-results
         - name: early-return
@@ -72,8 +99,13 @@ linters:
     rules:
       - path: _test\.go
         linters:
+          - cyclop
+          - funlen
           - gocognit
           - godoclint
+          - maintidx
+          - nestif
+          - nilnil
 
 issues:
   max-issues-per-linter: 0

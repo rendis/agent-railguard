@@ -41,7 +41,7 @@ export interface DesiredSelection {
 }
 
 export interface DesiredState {
-  readonly schema: "ai-harness/project/v1";
+  readonly schema: "railguard/project/v1";
   readonly targets: readonly HarnessTargetId[];
   readonly selections: readonly DesiredSelection[];
 }
@@ -60,21 +60,21 @@ export type DesiredStateResult =
     };
 
 interface ProjectEnvelope {
-  readonly schema: "ai-harness/project/v1";
+  readonly schema: "railguard/project/v1";
   readonly targets: readonly string[];
   readonly selections: readonly DesiredSelectionDraft[];
 }
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const validateEnvelope = ajv.compile<ProjectEnvelope>(projectStateSchema);
-const projectPath = relativePosixPath(".ai-harness/project.yaml");
+const projectPath = relativePosixPath(".railguard/project.yaml");
 
 export class DesiredStateModule {
   public evaluate(input: DesiredStateInput, catalog: CatalogSnapshot): DesiredStateResult {
     const decoded = decodeInput(input);
     if (decoded.kind === "invalid") return decoded;
 
-    if (!validateEnvelope(decoded.value) || decoded.value.schema !== "ai-harness/project/v1") {
+    if (!validateEnvelope(decoded.value) || decoded.value.schema !== "railguard/project/v1") {
       return invalid([schemaDiagnostic(validateEnvelope.errors)]);
     }
 
@@ -102,10 +102,7 @@ export class DesiredStateModule {
         diagnostics.push(projectDiagnostic("project-state.component-unknown", `Component ${ref} is not present in this catalog.`, [ref], [ref]));
         continue;
       }
-      const definitions =
-        component.kind === "verification-profile" || component.kind === "git-gate"
-          ? component.inputs
-          : [];
+      const definitions = component.kind === "verification-profile" ? component.inputs : [];
       const normalizedInputs = normalizeInputs(ref, candidate.inputs ?? {}, definitions, diagnostics);
       selections.push(Object.freeze({ ref, inputs: normalizedInputs }));
     }
@@ -113,7 +110,7 @@ export class DesiredStateModule {
     if (diagnostics.length > 0) return invalid(diagnostics);
     selections.sort((left, right) => compareUtf8(left.ref, right.ref));
     const state: DesiredState = Object.freeze({
-      schema: "ai-harness/project/v1",
+      schema: "railguard/project/v1",
       targets: Object.freeze(targets),
       selections: Object.freeze(selections),
     });
@@ -134,7 +131,7 @@ function decodeInput(input: DesiredStateInput):
   if (input.kind === "draft") {
     return {
       kind: "ready",
-      value: { schema: "ai-harness/project/v1", targets: input.targets, selections: input.selections },
+      value: { schema: "railguard/project/v1", targets: input.targets, selections: input.selections },
     };
   }
   const parsed = parseSafeYaml(input.source);
@@ -196,7 +193,7 @@ function normalizeInputs(
 }
 
 function render(state: DesiredState): string {
-  const lines = ["schema: ai-harness/project/v1", "targets:"];
+  const lines = ["schema: railguard/project/v1", "targets:"];
   for (const target of state.targets) lines.push(`  - ${target}`);
   if (state.targets.length === 0) lines[1] = "targets: []";
   lines.push("selections:");
@@ -217,7 +214,7 @@ function render(state: DesiredState): string {
 
 function schemaDiagnostic(errors: readonly ErrorObject[] | null | undefined): Diagnostic {
   const evidence = (errors ?? []).map((error) => `${error.instancePath || "/"}:${error.keyword}:${error.message ?? "invalid"}`);
-  return projectDiagnostic("project-state.schema-invalid", "Desired state does not match ai-harness/project/v1.", evidence);
+  return projectDiagnostic("project-state.schema-invalid", "Desired state does not match railguard/project/v1.", evidence);
 }
 
 function projectDiagnostic(code: string, message: string, evidence: readonly string[], subjects: readonly ComponentRef[] = []): Diagnostic {

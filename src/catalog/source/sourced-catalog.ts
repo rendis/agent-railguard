@@ -52,15 +52,6 @@ export class SourcedCatalog implements Catalog {
       supportedLanguages: this.#supportedLanguages,
     }).load();
     if (result.kind === "invalid") return result;
-    if (source.revision !== null && source.revision !== result.catalog.revision) {
-      const diagnostics: readonly [Diagnostic] = Object.freeze([
-        sourceRevisionDiagnostic(source, result.catalog.revision),
-      ]);
-      return Object.freeze({
-        kind: "invalid" as const,
-        diagnostics,
-      });
-    }
     const diagnostics = Object.freeze([
       ...result.diagnostics,
       sourceDiagnostic(source),
@@ -79,7 +70,7 @@ function invalidSource(error: unknown): Extract<CatalogLoadResult, { readonly ki
     message: `Project content source is unavailable: ${errorMessage(error)}`,
     evidence: Object.freeze([]),
     impact: "The current catalog cannot be established, so no project content was planned or changed.",
-    action: "Restore the configured content channel or run with --source <local-checkout>.",
+    action: "Reinstall railguard or run with --source <local-checkout>.",
   });
   const diagnostics: readonly [Diagnostic] = Object.freeze([diagnostic]);
   return Object.freeze({ kind: "invalid" as const, diagnostics });
@@ -92,24 +83,10 @@ function sourceDiagnostic(source: ResolvedContentSource): Diagnostic {
     phase: "source",
     subjects: Object.freeze([]),
     location: null,
-    message: `${source.kind === "local" ? "Local" : "Remote"} project content loaded from ${source.location}`,
+    message: `${source.kind === "local" ? "Local" : "Embedded"} project content loaded from ${source.location}`,
     evidence: Object.freeze([source.identity]),
-    impact: "This verified source is authoritative for the current process.",
+    impact: "This source is authoritative for the current process.",
     action: null,
-  });
-}
-
-function sourceRevisionDiagnostic(source: ResolvedContentSource, catalogRevision: string): Diagnostic {
-  return Object.freeze({
-    code: "catalog.source.revision-mismatch",
-    severity: "blocked",
-    phase: "integrity",
-    subjects: Object.freeze([]),
-    location: { path: relativePosixPath("ai-harness.yaml"), pointer: "/version" },
-    message: `Content manifest revision ${source.revision ?? "unknown"} does not match catalog revision ${catalogRevision}`,
-    evidence: Object.freeze([source.identity]),
-    impact: "The remote snapshot identity is inconsistent and cannot be installed.",
-    action: "Republish the content manifest and its verified file inventory from one source revision.",
   });
 }
 

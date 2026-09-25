@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { lstat, open, opendir } from "node:fs/promises";
 import { dirname, posix, relative, resolve, sep } from "node:path";
 import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
-import authoringSchema from "../../schemas/ai-harness.v1.schema.json" with {
+import authoringSchema from "../../schemas/railguard.v1.schema.json" with {
   type: "json",
 };
 import type {
@@ -119,16 +119,15 @@ interface VerificationProfileDefinition {
         readonly type: "string-list";
         readonly default: readonly string[];
         readonly item_pattern: string;
-        readonly make_variable: string;
-        readonly source?: "literal" | "project-units";
       }
     >
   >;
-  readonly make: {
-    readonly targets: readonly string[];
-    readonly operations: Readonly<Record<string, string>>;
-    readonly body: string;
-  };
+  readonly checks: readonly {
+    readonly id: string;
+    readonly kind: string;
+    readonly stage: "check" | "verify";
+    readonly params?: Readonly<Record<string, string | number | boolean>>;
+  }[];
   readonly relations?: readonly RelationDefinition[];
 }
 
@@ -137,28 +136,28 @@ interface GitGateDefinition {
   readonly description: string;
   readonly details: string;
   readonly event: "pre-commit" | "pre-push";
-  readonly operation: string;
-  readonly inputs: Readonly<
-    Record<
-      string,
-      {
-        readonly type: "string-list";
-        readonly default: readonly string[];
-        readonly item_pattern: string;
-      }
-    >
-  >;
+  readonly operation: "check" | "verify";
   readonly relations: readonly RelationDefinition[];
 }
 
-interface AiHarnessAuthoring {
-  readonly schema: "ai-harness/v1";
+interface AgentHookDefinition {
+  readonly version: string;
+  readonly description: string;
+  readonly details: string;
+  readonly event: "stop";
+  readonly operation: "check" | "verify";
+  readonly relations?: readonly RelationDefinition[];
+}
+
+interface RailguardAuthoring {
+  readonly schema: "railguard/v1";
   readonly version: string;
   readonly catalog: {
     readonly skills: Readonly<Record<string, SkillDefinition>>;
     readonly mcps: Readonly<Record<string, McpDefinition>>;
     readonly "verification-profiles": Readonly<Record<string, VerificationProfileDefinition>>;
     readonly "git-gates": Readonly<Record<string, GitGateDefinition>>;
+    readonly "agent-hooks"?: Readonly<Record<string, AgentHookDefinition>>;
     readonly "instruction-fragments": Readonly<Record<string, InstructionFragmentDefinition>>;
     readonly packs: Readonly<Record<string, PackDefinition>>;
     readonly agents: Readonly<Record<string, AgentDefinition>>;
@@ -191,7 +190,7 @@ const relationOrder: Readonly<Record<CatalogRelationKind, number>> = Object.free
 });
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validateAuthoring = ajv.compile<AiHarnessAuthoring>(authoringSchema);
+const validateAuthoring = ajv.compile<RailguardAuthoring>(authoringSchema);
 
 export class FilesystemCatalog implements Catalog {
   readonly #catalogFile: string;
@@ -207,9 +206,9 @@ export class FilesystemCatalog implements Catalog {
   public async load(): Promise<CatalogLoadResult> {
     let source: SourceFile;
     try {
-      source = await readRegularSourceFile(this.#catalogFile, relativePosixPath("ai-harness.yaml"));
+      source = await readRegularSourceFile(this.#catalogFile, relativePosixPath("railguard.yaml"));
       if (source.mode !== "100644") {
-        throw new Error("ai-harness.yaml must use mode 100644");
+        throw new Error("railguard.yaml must use mode 100644");
       }
     } catch (error) {
       return invalidResult([
@@ -228,8 +227,8 @@ export class FilesystemCatalog implements Catalog {
         diagnostic({
           code: "catalog.authoring.parse-invalid",
           phase: "parse",
-          message: "ai-harness.yaml is not the required safe YAML mapping.",
-          path: relativePosixPath("ai-harness.yaml"),
+          message: "railguard.yaml is not the required safe YAML mapping.",
+          path: relativePosixPath("railguard.yaml"),
           evidence: parsed.errors,
         }),
       ]);
@@ -240,8 +239,8 @@ export class FilesystemCatalog implements Catalog {
         diagnostic({
           code: "catalog.authoring.schema-invalid",
           phase: "schema",
-          message: "ai-harness.yaml does not satisfy the closed marketplace schema.",
-          path: relativePosixPath("ai-harness.yaml"),
+          message: "railguard.yaml does not satisfy the closed marketplace schema.",
+          path: relativePosixPath("railguard.yaml"),
           ...(pointer === undefined ? {} : { pointer }),
           evidence: schemaEvidence(validateAuthoring.errors),
         }),
@@ -273,6 +272,11 @@ export class FilesystemCatalog implements Catalog {
       ([left], [right]) => compareUtf8(left, right),
     )) {
       loaded.push(this.#loadGitGate(id, definition));
+    }
+    for (const [id, definition] of Object.entries(parsed.value.catalog["agent-hooks"] ?? {}).sort(
+      ([left], [right]) => compareUtf8(left, right),
+    )) {
+      loaded.push(this.#loadAgentHook(id, definition));
     }
     for (const [id, definition] of Object.entries(
       parsed.value.catalog["instruction-fragments"],
@@ -338,7 +342,7 @@ export class FilesystemCatalog implements Catalog {
             code: "catalog.payload.invalid",
             phase: "payload",
             message: "A component source must remain below the authoring root.",
-            path: relativePosixPath("ai-harness.yaml"),
+            path: relativePosixPath("railguard.yaml"),
             pointer: `${authoringPointer}/source`,
             evidence: [definition.source],
           }),
@@ -572,7 +576,7 @@ export class FilesystemCatalog implements Catalog {
     });
     return Object.freeze({
       component,
-      sourceDirectory: relativePosixPath("ai-harness.yaml"),
+      sourceDirectory: relativePosixPath("railguard.yaml"),
       authoringPointer: `/catalog/mcps/${id}`,
     });
   }
@@ -619,7 +623,7 @@ export class FilesystemCatalog implements Catalog {
     });
     return Object.freeze({
       component,
-      sourceDirectory: relativePosixPath("ai-harness.yaml"),
+      sourceDirectory: relativePosixPath("railguard.yaml"),
       authoringPointer: `/catalog/instruction-fragments/${id}`,
     });
   }
@@ -655,7 +659,7 @@ export class FilesystemCatalog implements Catalog {
     });
     return Object.freeze({
       component,
-      sourceDirectory: relativePosixPath("ai-harness.yaml"),
+      sourceDirectory: relativePosixPath("railguard.yaml"),
       authoringPointer: `/catalog/packs/${id}`,
     });
   }
@@ -694,7 +698,7 @@ export class FilesystemCatalog implements Catalog {
     });
     return Object.freeze({
       component,
-      sourceDirectory: relativePosixPath("ai-harness.yaml"),
+      sourceDirectory: relativePosixPath("railguard.yaml"),
       authoringPointer: `/catalog/agents/${id}`,
     });
   }
@@ -708,7 +712,7 @@ export class FilesystemCatalog implements Catalog {
     const relations = normalizeRelations(definition.relations ?? []);
     const applies = normalizeApplies(definition.applies);
     const inputs = Object.freeze(
-      Object.entries(definition.inputs)
+      Object.entries(definition.inputs ?? {})
         .sort(([left], [right]) => compareUtf8(left, right))
         .map(([id, input]) =>
           Object.freeze({
@@ -716,20 +720,23 @@ export class FilesystemCatalog implements Catalog {
             type: input.type,
             default: Object.freeze([...input.default].sort(compareUtf8)),
             itemPattern: input.item_pattern,
-            makeVariable: input.make_variable,
-            source: input.source ?? "literal",
           }),
         ),
     );
-    const make = Object.freeze({
-      targets: Object.freeze([...definition.make.targets].sort(compareUtf8)),
-      operations: Object.freeze(
-        Object.fromEntries(
-          Object.entries(definition.make.operations).sort(([left], [right]) => compareUtf8(left, right)),
-        ),
+    const checks = Object.freeze(
+      definition.checks.map((check) =>
+        Object.freeze({
+          id: check.id,
+          kind: check.kind,
+          stage: check.stage,
+          params: Object.freeze(
+            Object.fromEntries(
+              Object.entries(check.params ?? {}).sort(([left], [right]) => compareUtf8(left, right)),
+            ),
+          ),
+        }),
       ),
-      body: normalizeMakeBody(definition.make.body),
-    });
+    );
     const definitionDigest = sha256(
       JSON.stringify({
         ref,
@@ -740,7 +747,7 @@ export class FilesystemCatalog implements Catalog {
         executables: [...definition.executables].sort(compareUtf8),
         inputs,
         relations,
-        make,
+        checks,
       }),
     );
     const payloadDigest = sha256("");
@@ -757,7 +764,7 @@ export class FilesystemCatalog implements Catalog {
       payload: null,
       executables: Object.freeze([...definition.executables].sort(compareUtf8)),
       inputs,
-      make,
+      checks,
       integrity: Object.freeze({
         definition: definitionDigest,
         payload: payloadDigest,
@@ -766,7 +773,7 @@ export class FilesystemCatalog implements Catalog {
     });
     return Object.freeze({
       component,
-      sourceDirectory: relativePosixPath("ai-harness.yaml"),
+      sourceDirectory: relativePosixPath("railguard.yaml"),
       authoringPointer: `/catalog/verification-profiles/${id}`,
     });
   }
@@ -775,20 +782,6 @@ export class FilesystemCatalog implements Catalog {
     const ref = componentRef(`git-gate:${id}`);
     const version = semVer(definition.version);
     const relations = normalizeRelations(definition.relations);
-    const inputs = Object.freeze(
-      Object.entries(definition.inputs)
-        .sort(([left], [right]) => compareUtf8(left, right))
-        .map(([inputId, input]) =>
-          Object.freeze({
-            id: inputId,
-            type: input.type,
-            default: Object.freeze([...input.default].sort(compareUtf8)),
-            itemPattern: input.item_pattern,
-            makeVariable: null,
-            source: "literal" as const,
-          }),
-        ),
-    );
     const definitionDigest = sha256(
       JSON.stringify({
         ref,
@@ -797,7 +790,6 @@ export class FilesystemCatalog implements Catalog {
         details: definition.details,
         event: definition.event,
         operation: definition.operation,
-        inputs,
         relations,
       }),
     );
@@ -815,7 +807,6 @@ export class FilesystemCatalog implements Catalog {
       payload: null,
       event: definition.event,
       operation: definition.operation,
-      inputs,
       integrity: Object.freeze({
         definition: definitionDigest,
         payload: payloadDigest,
@@ -824,8 +815,46 @@ export class FilesystemCatalog implements Catalog {
     });
     return Object.freeze({
       component,
-      sourceDirectory: relativePosixPath("ai-harness.yaml"),
+      sourceDirectory: relativePosixPath("railguard.yaml"),
       authoringPointer: `/catalog/git-gates/${id}`,
+    });
+  }
+
+  #loadAgentHook(id: string, definition: AgentHookDefinition): LoadedComponent {
+    const ref = componentRef(`agent-hook:${id}`);
+    const version = semVer(definition.version);
+    const relations = normalizeRelations(definition.relations ?? []);
+    const definitionDigest = sha256(
+      JSON.stringify({
+        ref,
+        version,
+        description: definition.description,
+        details: definition.details,
+        event: definition.event,
+        operation: definition.operation,
+        relations,
+      }),
+    );
+    const payloadDigest = sha256("");
+    const component: CatalogComponent = Object.freeze({
+      kind: "agent-hook",
+      ref,
+      version,
+      description: definition.description,
+      details: definition.details,
+      capabilities: Object.freeze([]),
+      trust: "local-agent-execution",
+      applies: null,
+      relations,
+      payload: null,
+      event: definition.event,
+      operation: definition.operation,
+      integrity: inlineIntegrity(ref, version, definitionDigest, payloadDigest),
+    });
+    return Object.freeze({
+      component,
+      sourceDirectory: relativePosixPath("railguard.yaml"),
+      authoringPointer: `/catalog/agent-hooks/${id}`,
     });
   }
 
@@ -868,7 +897,7 @@ export class FilesystemCatalog implements Catalog {
             code: "catalog.instruction-fragment.section-noncanonical",
             phase: "catalog",
             message: "A grouped instruction mapping must use its canonical managed section ID.",
-            path: relativePosixPath("ai-harness.yaml"),
+            path: relativePosixPath("railguard.yaml"),
             pointer: `${entry.authoringPointer}/section`,
             subjects: [entry.component.ref],
             evidence: [entry.component.section, canonicalSection],
@@ -882,7 +911,7 @@ export class FilesystemCatalog implements Catalog {
             code: "catalog.instruction-fragment.group-duplicate",
             phase: "catalog",
             message: "Only one managed instruction mapping may own a component group.",
-            path: relativePosixPath("ai-harness.yaml"),
+            path: relativePosixPath("railguard.yaml"),
             pointer: `${entry.authoringPointer}/content/group`,
             subjects: [previousGroupOwner.component.ref, entry.component.ref],
             evidence: [entry.component.content.group],
@@ -898,7 +927,7 @@ export class FilesystemCatalog implements Catalog {
             code: "catalog.instruction-fragment.section-duplicate",
             phase: "catalog",
             message: "Two instruction fragments cannot own the same managed section.",
-            path: relativePosixPath("ai-harness.yaml"),
+            path: relativePosixPath("railguard.yaml"),
             pointer: `${entry.authoringPointer}/section`,
             subjects: [previousOwner.component.ref, entry.component.ref],
             evidence: [entry.component.section],
@@ -917,7 +946,7 @@ export class FilesystemCatalog implements Catalog {
               code: "catalog.language.unknown",
               phase: "catalog",
               message: "The catalog declares a language with no registered stack adapter.",
-              path: relativePosixPath("ai-harness.yaml"),
+              path: relativePosixPath("railguard.yaml"),
               pointer: `${entry.authoringPointer}/applies/languages`,
               subjects: [component.ref],
               evidence: [language],
@@ -926,8 +955,7 @@ export class FilesystemCatalog implements Catalog {
         }
       }
 
-      if (component.kind === "verification-profile" || component.kind === "git-gate") {
-        const makeVariables = new Set<string>();
+      if (component.kind === "verification-profile") {
         for (const input of component.inputs) {
           let pattern: RegExp;
           try {
@@ -938,7 +966,7 @@ export class FilesystemCatalog implements Catalog {
                 code: "catalog.input.pattern-invalid",
                 phase: "catalog",
                 message: "A verification input declares an invalid item pattern.",
-                path: relativePosixPath("ai-harness.yaml"),
+                path: relativePosixPath("railguard.yaml"),
                 pointer: `${entry.authoringPointer}/inputs/${input.id}/item_pattern`,
                 subjects: [component.ref],
                 evidence: [errorMessage(error)],
@@ -953,30 +981,28 @@ export class FilesystemCatalog implements Catalog {
                 code: "catalog.input.default-invalid",
                 phase: "catalog",
                 message: "A verification input default is rejected by its item pattern.",
-                path: relativePosixPath("ai-harness.yaml"),
+                path: relativePosixPath("railguard.yaml"),
                 pointer: `${entry.authoringPointer}/inputs/${input.id}/default`,
                 subjects: [component.ref],
                 evidence: rejectedDefaults,
               }),
             );
           }
-          if (input.makeVariable === null) {
-            continue;
-          }
-          if (makeVariables.has(input.makeVariable)) {
-            diagnostics.push(
-              diagnostic({
-                code: "catalog.input.make-variable-duplicate",
-                phase: "catalog",
-                message: "Two verification inputs cannot own the same Make variable.",
-                path: relativePosixPath("ai-harness.yaml"),
-                pointer: `${entry.authoringPointer}/inputs/${input.id}/make_variable`,
-                subjects: [component.ref],
-                evidence: [input.makeVariable],
-              }),
-            );
-          }
-          makeVariables.add(input.makeVariable);
+        }
+        const checkIds = component.checks.map((check) => check.id);
+        const duplicateChecks = checkIds.filter((id, index) => checkIds.indexOf(id) !== index);
+        if (duplicateChecks.length > 0) {
+          diagnostics.push(
+            diagnostic({
+              code: "catalog.verification-profile.check-duplicate",
+              phase: "catalog",
+              message: "Every check of a verification profile needs a unique id.",
+              path: relativePosixPath("railguard.yaml"),
+              pointer: `${entry.authoringPointer}/checks`,
+              subjects: [component.ref],
+              evidence: [...new Set(duplicateChecks)].sort(compareUtf8),
+            }),
+          );
         }
       }
 
@@ -988,7 +1014,7 @@ export class FilesystemCatalog implements Catalog {
               code: "catalog.relation.invalid",
               phase: "catalog",
               message: "A relation cannot be a self-reference or duplicate a target.",
-              path: relativePosixPath("ai-harness.yaml"),
+              path: relativePosixPath("railguard.yaml"),
               pointer: `${entry.authoringPointer}/relations`,
               subjects: [component.ref],
               evidence: [relation.target],
@@ -1002,46 +1028,10 @@ export class FilesystemCatalog implements Catalog {
               code: "catalog.relation.target-missing",
               phase: "catalog",
               message: "A relation target does not exist in the same catalog snapshot.",
-              path: relativePosixPath("ai-harness.yaml"),
+              path: relativePosixPath("railguard.yaml"),
               pointer: `${entry.authoringPointer}/relations`,
               subjects: [component.ref],
               evidence: [relation.target],
-            }),
-          );
-        }
-      }
-
-      if (component.kind === "verification-profile") {
-        const declaredTargets = new Set(component.make.targets);
-        const undeclaredOperationTargets = Object.entries(component.make.operations)
-          .filter(([, target]) => !declaredTargets.has(target))
-          .map(([operation, target]) => `${operation}:${target}`);
-        if (undeclaredOperationTargets.length > 0) {
-          diagnostics.push(
-            diagnostic({
-              code: "catalog.verification-profile.operation-target-missing",
-              phase: "catalog",
-              message: "Every public verification operation must map to a declared private target.",
-              path: relativePosixPath("ai-harness.yaml"),
-              pointer: `${entry.authoringPointer}/make/operations`,
-              subjects: [component.ref],
-              evidence: undeclaredOperationTargets,
-            }),
-          );
-        }
-        const missingTargets = component.make.targets.filter(
-          (target) => !new RegExp(`^${escapeRegExp(target)}\\s*:`, "m").test(component.make.body),
-        );
-        if (missingTargets.length > 0) {
-          diagnostics.push(
-            diagnostic({
-              code: "catalog.verification-profile.target-missing",
-              phase: "catalog",
-              message: "Every declared Make target must be implemented by the verification profile.",
-              path: relativePosixPath("ai-harness.yaml"),
-              pointer: `${entry.authoringPointer}/make`,
-              subjects: [component.ref],
-              evidence: missingTargets,
             }),
           );
         }
@@ -1061,24 +1051,12 @@ export class FilesystemCatalog implements Catalog {
               code: "catalog.git-gate.profile-invalid",
               phase: "catalog",
               message: "A Git gate must require exactly one verification profile.",
-              path: relativePosixPath("ai-harness.yaml"),
+              path: relativePosixPath("railguard.yaml"),
               pointer: `${entry.authoringPointer}/relations`,
               subjects: [component.ref],
               evidence: component.relations
                 .filter((relation) => relation.kind === "requires")
                 .map((relation) => relation.target),
-            }),
-          );
-        } else if (requiredProfiles[0]!.make.operations[component.operation] === undefined) {
-          diagnostics.push(
-            diagnostic({
-              code: "catalog.git-gate.operation-missing",
-              phase: "catalog",
-              message: "A Git hook operation must be provided by its required verification profile.",
-              path: relativePosixPath("ai-harness.yaml"),
-              pointer: `${entry.authoringPointer}/operation`,
-              subjects: [component.ref],
-              evidence: [component.operation, ...Object.keys(requiredProfiles[0]!.make.operations).sort(compareUtf8)],
             }),
           );
         }
@@ -1286,10 +1264,6 @@ function normalizeApplies(applies: {
   });
 }
 
-function normalizeMakeBody(body: string): string {
-  return normalizeTextBody(body);
-}
-
 function normalizeTextBody(body: string): string {
   const normalized = body.replaceAll("\r\n", "\n");
   return normalized.endsWith("\n") ? normalized : `${normalized}\n`;
@@ -1306,10 +1280,6 @@ function inlineIntegrity(
     payload,
     component: sha256(`${ref}\0${version}\0${definition}\0${payload}\n`),
   });
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function findCaseInsensitiveCollision(

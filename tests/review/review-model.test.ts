@@ -48,15 +48,23 @@ describe("buildReviewModel", () => {
         expect.objectContaining({ from: "pack:go-service-foundation", kind: "includes" }),
       );
       expect(review.changes.some((change) => change.path === ".codex/config.toml")).toBe(true);
-      expect(review.changes.some((change) => change.path === ".ai-harness/hooks/pre-commit")).toBe(true);
+      expect(review.changes.some((change) => change.path === ".railguard/hooks/pre-commit")).toBe(true);
       expect(review.gitConfig).toContainEqual({
         key: "core.hooksPath",
         action: "set",
-        value: ".ai-harness/hooks",
+        value: ".railguard/hooks",
       });
       expect(review.hooks).toEqual([
-        { component: "git-gate:pre-commit-check", event: "pre-commit", command: "make check" },
-        { component: "git-gate:pre-push-verify", event: "pre-push", command: "make verify" },
+        {
+          component: "git-gate:pre-commit-check",
+          event: "pre-commit",
+          command: "railguard check --changed",
+        },
+        {
+          component: "git-gate:pre-push-verify",
+          event: "pre-push",
+          command: "railguard verify --changed",
+        },
       ]);
       expect(review.runtimes).toContainEqual({
         component: "mcp:context7",
@@ -69,49 +77,6 @@ describe("buildReviewModel", () => {
         auth: "none",
       });
       expect(review.applyExecutes).not.toContain("npx");
-    } finally {
-      await Promise.all([runtime.dispose(), repository.cleanup()]);
-    }
-  });
-
-  it("shows every scoped hook command exactly as it will be written", async () => {
-    const repository = await createTempRepository({
-      "go.mod": "module example.com/scoped-review\n\ngo 1.24\n",
-    });
-    await execute("git", ["init", "--quiet", repository.root]);
-    const runtime = await createDefaultApplication({ executableProbe: readyProbe });
-    try {
-      const scan = await runtime.application.scan(repository.root);
-      if (scan.kind !== "ready") throw new Error("Expected ready scan");
-      const preparation = await runtime.application.preparePlan(
-        scan,
-        [{
-          ref: componentRef("git-gate:pre-commit-check"),
-          inputs: { scopes: ["services/orders", "services/payments"] },
-        }],
-        [harnessTargetId("codex")],
-        "reconcile",
-      );
-      if (preparation.resolution.kind !== "ready" || preparation.plan?.kind !== "ready") {
-        throw new Error("Expected a reviewable scoped plan");
-      }
-
-      expect(buildReviewModel({
-        catalog: scan.catalog,
-        resolution: preparation.resolution,
-        plan: preparation.plan,
-      }).hooks).toEqual([
-        {
-          component: "git-gate:pre-commit-check",
-          event: "pre-commit",
-          command: "make check SCOPE='services/orders'",
-        },
-        {
-          component: "git-gate:pre-commit-check",
-          event: "pre-commit",
-          command: "make check SCOPE='services/payments'",
-        },
-      ]);
     } finally {
       await Promise.all([runtime.dispose(), repository.cleanup()]);
     }

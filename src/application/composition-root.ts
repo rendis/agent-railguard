@@ -11,19 +11,19 @@ import { OpenCodeMcpSessionAdapter } from "../adapters/harness/opencode/opencode
 import { VsCodeAdapter } from "../adapters/harness/vscode/vscode-adapter.js";
 import { VsCodeMcpSessionAdapter } from "../adapters/harness/vscode/vscode-mcp-session-adapter.js";
 import { NodeInteractiveCommandRunner } from "../adapters/platform/process/node-interactive-command-runner.js";
+import { NodeChangeSetReader } from "../adapters/platform/git/node-change-set-reader.js";
 import { NodeGitConfig } from "../adapters/platform/git/node-git-config.js";
 import { NodeGitHookInventory } from "../adapters/platform/git/node-git-hook-inventory.js";
 import { NodeExecutableProbe } from "../adapters/platform/process/node-executable-probe.js";
+import { NodeProcessRunner } from "../adapters/platform/process/node-process-runner.js";
 import { NodeRepositoryInventory } from "../adapters/platform/repository-inventory/node-repository-inventory.js";
 import { NodeRepositoryGate } from "../adapters/platform/repository-gate/node-repository-gate.js";
 import { NodeProjectStateStore } from "../adapters/platform/state/project-state-store.js";
-import { NodeRecoveryManager } from "../adapters/platform/transaction/node-recovery-manager.js";
-import { NodeTransactionStore } from "../adapters/platform/transaction/node-transaction-store.js";
-import { NodeTransactionalMutationEngine } from "../adapters/platform/transaction/node-transactional-mutation-engine.js";
+import { NodeMutationEngine } from "../adapters/platform/transaction/node-mutation-engine.js";
 import { QualityProjector } from "../adapters/project/quality/quality-projector.js";
 import { InstructionProjector } from "../adapters/project/instructions/instruction-projector.js";
 import { SharedSkillProjector } from "../adapters/project/skills/shared-skill-projector.js";
-import { registeredStackAdapters } from "../adapters/stack/registry.js";
+import { registeredCheckProviders, registeredStackAdapters } from "../adapters/stack/registry.js";
 import { createDefaultContentSource } from "../catalog/source/content-source-composition.js";
 import type { ContentSource, ContentSourceProgress } from "../catalog/source/content-source.js";
 import { SourcedCatalog } from "../catalog/source/sourced-catalog.js";
@@ -35,9 +35,10 @@ import { DefaultReconciler } from "../domain/reconciliation/reconciler.js";
 import { DefaultRepositoryAssessment } from "../domain/repository/assessment.js";
 import { DefaultResolver } from "../domain/resolution/resolver.js";
 import { DurableProjectPlanner } from "../domain/transaction/project-planner.js";
-import { AiHarnessApplication } from "./ai-harness-application.js";
+import { RailguardApplication } from "./railguard-application.js";
 import { McpSessionCoordinator } from "./mcp-session-coordinator.js";
 import type { ApplicationEventSink } from "./model.js";
+import { VerificationService } from "./verification-service.js";
 
 export interface DefaultApplicationOptions {
   readonly sourcePath?: string;
@@ -48,14 +49,12 @@ export interface DefaultApplicationOptions {
   readonly developmentCatalogFile?: string;
   readonly executableProbe?: ExecutableProbe;
   readonly mcpCommandRunner?: CommandRunner;
-  /** @deprecated Durable operation state is always stored under the effective Git directory. */
-  readonly stateBaseDirectory?: string;
   readonly events?: ApplicationEventSink;
 }
 
 export interface DefaultApplicationRuntime {
-  readonly application: AiHarnessApplication;
-  readonly transactionStore: NodeTransactionStore;
+  readonly application: RailguardApplication;
+  readonly verification: VerificationService;
   dispose(): Promise<void>;
 }
 
@@ -75,7 +74,6 @@ export async function createDefaultApplication(
   ];
   const gitConfig = new NodeGitConfig();
   const commandRunner = options.mcpCommandRunner ?? new NodeInteractiveCommandRunner();
-  const transactionStore = new NodeTransactionStore();
   const progress = (event: ContentSourceProgress) =>
     options.events?.({
       operation: "catalog",
@@ -93,7 +91,7 @@ export async function createDefaultApplication(
     ...(options.contentCacheRoot === undefined ? {} : { cacheRoot: options.contentCacheRoot }),
     progress,
   });
-  const application = new AiHarnessApplication({
+  const application = new RailguardApplication({
     catalog: new SourcedCatalog({
       source: contentSource,
       supportedLanguages: stackAdapters.map((adapter) => adapter.id),
@@ -110,8 +108,7 @@ export async function createDefaultApplication(
     ],
     projectionCoordinator: new DefaultProjectProjectionCoordinator(),
     planner: new DurableProjectPlanner(gitConfig),
-    mutationEngine: new NodeTransactionalMutationEngine(
-      transactionStore,
+    mutationEngine: new NodeMutationEngine(
       gitConfig,
       (event) =>
         options.events?.({
@@ -141,12 +138,17 @@ export async function createDefaultApplication(
         message: event.message,
       }),
     }),
-    recovery: new NodeRecoveryManager(transactionStore, gitConfig),
     ...(options.events === undefined ? {} : { events: options.events }),
+  });
+  const processRunner = new NodeProcessRunner();
+  const verification = new VerificationService({
+    scan: (root) => application.scan(root),
+    changeSets: new NodeChangeSetReader(processRunner),
+    providers: registeredCheckProviders(processRunner),
   });
   return Object.freeze({
     application,
-    transactionStore,
+    verification,
     async dispose() {
       // Durable state is repository-owned; there is no process-local store to remove.
     },
@@ -157,6 +159,6 @@ function defaultCatalogFile(): string {
   const moduleDirectory = dirname(fileURLToPath(import.meta.url));
   return resolve(
     moduleDirectory,
-    basename(moduleDirectory) === "dist" ? "../ai-harness.yaml" : "../../ai-harness.yaml",
+    basename(moduleDirectory) === "dist" ? "../railguard.yaml" : "../../railguard.yaml",
   );
 }

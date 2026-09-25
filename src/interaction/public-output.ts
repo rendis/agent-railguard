@@ -68,7 +68,7 @@ export type CommandData =
   | {
       readonly kind: "doctor";
       readonly checks: readonly {
-        readonly id: "catalog" | "recovery" | "repository" | "materialization";
+        readonly id: "catalog" | "repository" | "materialization";
         readonly status: "passed" | "warning" | "failed";
         readonly message: string;
       }[];
@@ -93,6 +93,7 @@ export interface CatalogComponentSummary {
     | "mcp-integration"
     | "verification-profile"
     | "git-gate"
+    | "agent-hook"
     | "instruction-fragment"
     | "pack"
     | "agent";
@@ -103,6 +104,7 @@ export interface CatalogComponentSummary {
     | "passive"
     | "project-write"
     | "local-git-execution"
+    | "local-agent-execution"
     | "third-party-network"
     | "agent-instruction";
   readonly applies_languages: readonly string[];
@@ -150,7 +152,7 @@ export interface PublicReceiptView {
 }
 
 interface PublicEventBase {
-  readonly schema: "ai-harness/interaction-event/v1";
+  readonly schema: "railguard/interaction-event/v1";
   readonly operation_id: string;
   readonly sequence: number;
 }
@@ -294,9 +296,6 @@ export function publicDiagnostics(
         evidence: diagnostic.evidence,
         impact: diagnostic.impact,
         action: diagnostic.action,
-        ...(diagnostic.resolutions === undefined
-          ? {}
-          : { resolutions: diagnostic.resolutions }),
       }),
     ),
   );

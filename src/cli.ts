@@ -1,8 +1,7 @@
 import { readFile, realpath, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import React from "react";
 import { Command, CommanderError } from "commander";
-import { render } from "ink";
 import {
   decodePublicPlan,
   encodePublicPlan,
@@ -26,6 +25,14 @@ import {
   renderRun,
   type OutputFormat,
 } from "./cli/output.js";
+import { runStopHook } from "./application/agent-stop-hook.js";
+import { createDefaultApplication } from "./application/composition-root.js";
+import {
+  encodeVerificationReport,
+  label,
+  renderVerificationReport,
+  verificationExitCodes,
+} from "./cli/verification-output.js";
 import { createInteractionRuntime } from "./interaction/interaction-session.js";
 import { toPublicEvent, type CommandName } from "./interaction/public-output.js";
 import {
@@ -35,22 +42,18 @@ import {
   type HarnessTargetId,
 } from "./domain/shared/types.js";
 import type { CatalogComponent } from "./domain/catalog/model.js";
-import { AiHarnessTui } from "./tui/app.js";
-import {
-  beginTuiTerminal,
-  renderTuiExitSummary,
-} from "./tui/terminal.js";
-import { createUpdateServiceFromEnvironment } from "./update/composition-root.js";
+import { clackUi } from "./tui/clack-ui.js";
+import { runWizard } from "./tui/wizard.js";
 
-declare const __AI_HARNESS_VERSION__: string;
-const version = __AI_HARNESS_VERSION__;
+declare const __RAILGUARD_VERSION__: string;
+const version = __RAILGUARD_VERSION__;
 
 const program = new Command()
-  .name("ai-harness")
+  .name("railguard")
   .description("Configure an AI-assisted development environment for this repository")
   .version(version)
   .option("--cwd <path>", "repository root", process.cwd())
-  .option("--source <path>", "use this local AI Harness checkout for project content")
+  .option("--source <path>", "use this local Railguard checkout for project content")
   .option("--plain", "render human output without terminal styling", false)
   .showHelpAfterError()
   .exitOverride();
@@ -74,7 +77,7 @@ addReadOptions(program.command("status").description("Report durable managed sta
 addFormat(
   program
     .command("init")
-    .description("Initialize project-managed AI Harness configuration")
+    .description("Initialize project-managed Railguard configuration")
     .option("--recommended", "include all recommendations from the current scan", false)
     .option("--add <components...>", "direct component references")
     .requiredOption("--harness <harnesses...>", "explicit harness targets")
@@ -182,7 +185,7 @@ addReadOptions(
 addFormat(
   program
     .command("repair")
-    .description("Restore drifted AI Harness-owned project materialization")
+    .description("Restore drifted Railguard-owned project materialization")
     .option("--plan-only", "review without applying", false)
     .option("--yes", "approve and apply the exact generated plan", false),
 ).action(async (_options, command) => {
@@ -218,6 +221,61 @@ addFormat(
     ref: componentRef(component),
   }));
 });
+
+for (const stage of ["check", "verify"] as const) {
+  addFormat(
+    program
+      .command(stage)
+      .description(
+        stage === "check"
+          ? "Run the fast checks of every selected verification profile"
+          : "Run every check of the selected verification profiles",
+      )
+      .option("--changed", "judge only what changed relative to the base branch", false)
+      .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch"),
+    ["text", "json"],
+  ).action(async (_options, command: Command) => {
+    await runVerification(stage, command);
+  });
+}
+
+program
+  .command("hook", { hidden: true })
+  .description("Entry points called by managed agent hooks")
+  .command("stop")
+  .description("Block a coding agent from finishing while its change fails verification")
+  .requiredOption("--harness <harness>", "claude-code, codex or cursor")
+  .option("--operation <operation>", "check or verify", "check")
+  .action(async (_options, command: Command) => {
+    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+    const harness = String(options.harness);
+    const stage = String(options.operation);
+    if (harness !== "claude-code" && harness !== "codex" && harness !== "cursor") {
+      throw new CommandInputError(`Unsupported hook harness: ${harness}`);
+    }
+    if (stage !== "check" && stage !== "verify") {
+      throw new CommandInputError(`Unsupported hook operation: ${stage}`);
+    }
+    const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+    const runtime = await createDefaultApplication();
+    try {
+      const response = await runStopHook(
+        {
+          harness,
+          root: rootFrom(options),
+          stage,
+          input,
+          stateDirectory: join(tmpdir(), "railguard-stop-hooks"),
+        },
+        runtime.verification,
+        (report) => renderVerificationReport(report, true),
+      );
+      process.stdout.write(response.stdout);
+      process.stderr.write(response.stderr);
+    } finally {
+      await runtime.dispose();
+    }
+  });
 
 addFormat(program.command("doctor").description("Run read-only project diagnostics"))
   .action(async (_options, command) => {
@@ -276,33 +334,12 @@ addFormat(
   }));
 });
 
-addFormat(
-  program
-    .command("update")
-    .description("Check or replace the verified global engine")
-    .option("--check", "check without changing the installed CLI", false)
-    .option("--yes", "apply an available verified update", false),
-).action(async (_options, command) => {
-  await invoke("update", command, (options) => {
-    const check = Boolean(options.check);
-    const yes = Boolean(options.yes);
-    if (check === yes) {
-      throw new CommandInputError("update requires exactly one of --check or --yes");
-    }
-    return {
-      command: "update",
-      action: check ? "check" : "apply",
-      currentVersion: version,
-    };
-  });
-});
-
 addDetailedHelp(program, catalog, mcp);
 
 program.action(async () => {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     process.stderr.write(
-      "ai-harness requires a subcommand when stdin/stdout are not TTYs. Run ai-harness --help.\n",
+      "railguard requires a subcommand when stdin/stdout are not TTYs. Run railguard --help.\n",
     );
     process.exitCode = 2;
     return;
@@ -312,22 +349,10 @@ program.action(async () => {
   const runtime = await createInteractionRuntime({
     ...(sourcePath === undefined ? {} : { sourcePath }),
   });
-  const terminal = beginTuiTerminal(process.stdout);
   try {
-    const instance = render(React.createElement(AiHarnessTui, {
-      session: runtime.session,
-      root,
-      currentVersion: version,
-      updateService: createUpdateServiceFromEnvironment(),
-    }));
-    await instance.waitUntilExit();
+    await runWizard(runtime.session, root, clackUi(), version);
   } finally {
-    try {
-      await runtime.dispose();
-    } finally {
-      terminal.restore();
-      process.stdout.write(renderTuiExitSummary(runtime.session.snapshot));
-    }
+    await runtime.dispose();
   }
 });
 
@@ -463,6 +488,42 @@ function writeRun(run: HeadlessRun, format: OutputFormat): void {
     process.stdout.write(renderRun(run, format));
   }
   process.exitCode = run.result.exit_code;
+}
+
+async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function runVerification(stage: "check" | "verify", command: Command): Promise<void> {
+  const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+  const format = outputFormat(options);
+  const plain = options.plain === true || !process.stdout.isTTY;
+  const sourcePath = sourceFrom(options);
+  const runtime = await createDefaultApplication({
+    ...(sourcePath === undefined ? {} : { sourcePath }),
+  });
+  try {
+    const report = await runtime.verification.run(
+      {
+        root: rootFrom(options),
+        stage,
+        changed: options.changed === true,
+        ...(options.base === undefined ? {} : { base: requiredString(options.base, "--base") }),
+      },
+      (event) => {
+        if (format !== "text" || !process.stderr.isTTY) return;
+        if (event.type === "started") process.stderr.write(`› ${label(event)}\n`);
+      },
+    );
+    process.stdout.write(
+      format === "text" ? renderVerificationReport(report, plain) : encodeVerificationReport(report),
+    );
+    process.exitCode = verificationExitCodes[report.verdict];
+  } finally {
+    await runtime.dispose();
+  }
 }
 
 function outputFormat(options: Readonly<Record<string, unknown>>): OutputFormat {
@@ -611,7 +672,7 @@ function errorMessage(error: unknown): string {
 function addDetailedHelp(root: Command, catalogCommand: Command, mcpCommand: Command): void {
   root.addHelpText("after", `
 Interactive use:
-  ai-harness [--cwd REPOSITORY] [--source LOCAL_CHECKOUT]
+  railguard [--cwd REPOSITORY] [--source LOCAL_CHECKOUT]
   With a TTY and no subcommand, opens the TUI and scans before enabling actions.
 
 Machine-readable operation:
@@ -621,9 +682,8 @@ Machine-readable operation:
 
 Content source precedence:
   1. --source <path> for this invocation
-  2. AI_HARNESS_CONTENT_MANIFEST_URL operational override
-  3. this local authoring checkout during development
-  4. the installed engine content source configured by install.sh (local checkout or remote channel)
+  2. this local authoring checkout during development
+  3. the content embedded in this railguard release
 
 Component references:
   skill:NAME | mcp:NAME | verification-profile:NAME | git-gate:NAME |
@@ -632,28 +692,28 @@ Harness targets:
   codex | claude-code | opencode | cursor | vscode
 
 Project content update:
-  ai-harness sync --check|--plan-only|--yes fetches the current content manifest and
-  reconciles skills, configurations, managed sections and hooks in the repository.
+  railguard sync --check|--plan-only|--yes reconciles skills, configurations, managed
+  sections and hooks in the repository with the current content.
 Engine update:
-  ai-harness update --check|--yes verifies or replaces only the global CLI engine.
+  Re-run the install script to replace the railguard binary with the latest release.
 
 Exit codes:
   0 ready/succeeded/no changes; 2 invalid input; 3 invalid scope; 4 readiness blocked;
-  5 blocked/rejected; 6 changes available; 7 failed/rolled back/recovery required;
+  5 blocked/rejected; 6 changes available; 7 failed/rolled back/partial rollback;
   8 verification failed; 70 internal error; 130 cancelled.
 
-Run ai-harness COMMAND --help for exact effects and examples.`);
+Run railguard COMMAND --help for exact effects and examples.`);
 
   command(root, "scan").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness scan --cwd . --format json
-  ai-harness --source ../ai-harness-marketplace scan --cwd . --format ndjson
+  railguard scan --cwd . --format json
+  railguard --source ../agent-railguard scan --cwd . --format ndjson
 
-Effect: fetches and verifies current project content, then observes the real repository.
+Effect: loads current project content, then observes the real repository.
 No repository mutation is attempted.`));
   command(root, "status").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness status --cwd . --format json
+  railguard status --cwd . --format json
 
 Effect: compares Desired, Lock and real managed artifacts against current content.
 No repository mutation is attempted.`));
@@ -662,78 +722,64 @@ Component references use TYPE:NAME. Harness targets are codex, claude-code, open
 cursor and vscode. --set uses COMPONENT.INPUT=JSON_STRING_ARRAY.
 
 Examples:
-  ai-harness init --recommended --harness codex --plan-only --format json
-  ai-harness init --add skill:tdd mcp:context7 --harness codex claude-code --yes
+  railguard init --recommended --harness codex --plan-only --format json
+  railguard init --add skill:tdd mcp:context7 --harness codex claude-code --yes
 
 Effect: initializes an uninitialized repository from direct selections plus dependencies.
 No prompt is opened; use --plan-only for Review or --yes for the exact approved plan.`));
   command(root, "plan").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness plan --add skill:tdd --harness codex --format json
-  ai-harness plan --remove mcp:context7 --out /tmp/ai-harness-plan.json
+  railguard plan --add skill:tdd --harness codex --format json
+  railguard plan --remove mcp:context7 --out /tmp/railguard-plan.json
 
 Effect: creates a reviewable plan from current content and real repository state. --out
 must be outside the target repository and never overwrites an existing file.`));
   command(root, "apply").addHelpText("after", mutationHelp(`
 Examples:
-  ai-harness apply --plan /tmp/ai-harness-plan.json --yes --cwd . --format json
+  railguard apply --plan /tmp/railguard-plan.json --yes --cwd . --format json
 
 Effect: reconstructs the exported plan, rejects stale inputs and applies it transactionally.`));
   command(root, "remove").addHelpText("after", mutationHelp(`
 Examples:
-  ai-harness remove skill:tdd --plan-only --format json
-  ai-harness remove --all --yes --format json
+  railguard remove skill:tdd --plan-only --format json
+  railguard remove --all --yes --format json
 
 Effect: removes direct selections and only managed materialization no longer required.
 Choose exactly one of COMPONENT... or --all.`));
   command(root, "sync").addHelpText("after", commonReadHelp(`
-Project content update only; this command never replaces the global engine.
-
 Examples:
-  ai-harness sync --check --format json
-  ai-harness sync --plan-only --format json
-  ai-harness sync --yes --format ndjson
+  railguard sync --check --format json
+  railguard sync --plan-only --format json
+  railguard sync --yes --format ndjson
 
-Effect: fetches current project content, resolves installed selections, then checks,
+Effect: loads current project content, resolves installed selections, then checks,
 reviews or transactionally applies the resulting repository changes.`));
   command(root, "repair").addHelpText("after", mutationHelp(`
 Examples:
-  ai-harness repair --plan-only --format json
-  ai-harness repair --yes --format ndjson
+  railguard repair --plan-only --format json
+  railguard repair --yes --format ndjson
 
-Effect: restores only drifted AI Harness-owned files, blocks and managed sections.`));
+Effect: restores only drifted Railguard-owned files, blocks and managed sections.`));
   command(root, "doctor").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness doctor --cwd . --format json
+  railguard doctor --cwd . --format json
 
-Effect: diagnoses content, recovery, repository and materialization without mutation.`));
-  command(root, "update").addHelpText("after", `
-Global engine update only; this command does not load or modify project content.
-
-Examples:
-  ai-harness update --check --format json
-  ai-harness update --yes --format ndjson
-
-Effect: verifies the corporate engine release manifest; --yes installs, smokes and
-switches the candidate or restores the previous global engine.
-
-Output: --format text|json|ndjson. --cwd and --source do not affect this engine-only
-operation; --plain only changes human rendering.`);
+Effect: diagnoses content, repository and materialization without mutation.`));
   catalogCommand.addHelpText("after", `
 Reads the current verified project-content source. Use --source <path> globally to
 inspect a local authoring checkout.
 
 Examples:
-  ai-harness catalog list --format json
-  ai-harness catalog show skill:tdd --format json`);
+  railguard catalog list --format json
+  railguard catalog show skill:tdd --format json`);
   command(catalogCommand, "list").addHelpText("after", commonReadHelp(`
 Types: skill, mcp, verification-profile, git-gate, pack, agent.
 
 Examples:
-  ai-harness catalog list --type skill --format json`));
+  railguard catalog list --type skill --format json`));
   command(catalogCommand, "show").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness catalog show mcp:context7 --format json
+  railguard catalog show mcp:context7 --format json
 
 Effect: returns version, trust, applicability and declared relations for one component.`));
   mcpCommand.addHelpText("after", `
@@ -741,27 +787,27 @@ Authentication is user-scoped and owned by each harness. These commands never re
 persist OAuth credentials and never change project materialization.
 
 Examples:
-  ai-harness mcp status mcp:atlassian-rovo --harness codex --format json
-  ai-harness mcp login mcp:atlassian-rovo --harness codex claude-code --yes --format ndjson
-  ai-harness mcp logout mcp:atlassian-rovo --harness codex --yes --format json`);
+  railguard mcp status mcp:atlassian-rovo --harness codex --format json
+  railguard mcp login mcp:atlassian-rovo --harness codex claude-code --yes --format ndjson
+  railguard mcp logout mcp:atlassian-rovo --harness codex --yes --format json`);
   command(mcpCommand, "status").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness mcp status mcp:atlassian-rovo --harness codex opencode --format json
+  railguard mcp status mcp:atlassian-rovo --harness codex opencode --format json
 
 Effect: checks the configured project MCP through each harness adapter. If the harness
 does not expose a stable read-only status command, returns authentication-unknown with
 an exact native action instead of inferring success from project state.`));
   command(mcpCommand, "login").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness mcp login mcp:atlassian-rovo --harness codex --yes --format ndjson
-  ai-harness mcp login mcp:atlassian-rovo --harness claude-code --format json
+  railguard mcp login mcp:atlassian-rovo --harness codex --yes --format ndjson
+  railguard mcp login mcp:atlassian-rovo --harness claude-code --format json
 
 Effect: without --yes, reports what would be required. With --yes, runs only documented
 native CLI activation where available (Codex, Claude Code, OpenCode and Cursor Agent when
-installed). UI-owned flows remain action_required; AI Harness never automates harness UI.`));
+installed). UI-owned flows remain action_required; Railguard never automates harness UI.`));
   command(mcpCommand, "logout").addHelpText("after", commonReadHelp(`
 Examples:
-  ai-harness mcp logout mcp:atlassian-rovo --harness codex opencode --yes --format json
+  railguard mcp logout mcp:atlassian-rovo --harness codex opencode --yes --format json
 
 Effect: invokes or describes explicit harness-native logout. It does not uninstall the
 MCP, edit project files or claim that Atlassian organization consent was revoked.`));

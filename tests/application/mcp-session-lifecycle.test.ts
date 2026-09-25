@@ -45,7 +45,6 @@ describe("MCP session and materialization lifecycle", () => {
       if (install.plan?.kind !== "ready") throw new Error("Expected ready MCP install");
       const installResult = await runtime.application.apply(install.plan);
       expect(installResult.kind).toBe("applied");
-      if (installResult.receiptPath === null) throw new Error("Expected durable install receipt");
       const installedInstructions = await readFile(resolve(repository.root, "AGENTS.md"), "utf8");
       expect(installedInstructions.match(/id="mcps\.mapping"/gu)).toHaveLength(2);
       expect(installedInstructions).toContain("`atlassian-rovo`");
@@ -54,7 +53,6 @@ describe("MCP session and materialization lifecycle", () => {
       const managed = await runtime.application.scan(repository.root);
       if (managed.kind !== "ready") throw new Error("Expected ready managed scan");
       const before = await managedBytes(repository.root);
-      const receiptBefore = await readFile(installResult.receiptPath, "utf8");
       const session = await runtime.application.mcpSession(
         repository.root,
         atlassian,
@@ -75,7 +73,6 @@ describe("MCP session and materialization lifecycle", () => {
         cwd: managed.snapshot.realRoot,
       });
       expect(await managedBytes(repository.root)).toEqual(before);
-      expect(await readFile(installResult.receiptPath, "utf8")).toBe(receiptBefore);
 
       const afterFailure = await runtime.application.scan(repository.root);
       if (afterFailure.kind !== "ready") throw new Error("Expected ready scan after failed login");
@@ -128,8 +125,8 @@ class FailingRunner implements CommandRunner {
 
 async function managedBytes(root: string): Promise<readonly string[]> {
   return await Promise.all([
-    readFile(resolve(root, ".ai-harness/project.yaml"), "utf8"),
-    readFile(resolve(root, ".ai-harness/lock.json"), "utf8"),
+    readFile(resolve(root, ".railguard/project.yaml"), "utf8"),
+    readFile(resolve(root, ".railguard/lock.json"), "utf8"),
     readFile(resolve(root, ".codex/config.toml"), "utf8"),
   ]);
 }

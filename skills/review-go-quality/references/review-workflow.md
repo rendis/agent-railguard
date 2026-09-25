@@ -2,34 +2,23 @@
 
 ## Fix the scope
 
-Choose and declare one: worktree changes, commit or range, merge base with a branch, concrete paths, or the complete repository for a baseline. Capture the SHA or initial state. Stop and fix it again if the comparison point changes.
+Choose and declare one: worktree changes, commit or range, merge base with a branch, concrete paths, or the complete repository for a baseline. Capture the SHA or initial state, and fix it again if the comparison point changes.
 
-## Read authority
+## Read the requirements
 
-Read applicable instructions, acceptance criteria, contracts, ADRs, documentation, and tests. Separate two questions:
+Read applicable instructions, acceptance criteria, contracts, ADRs, documentation, and tests. Separate two questions: does the change satisfy the specification without breaking behavior, and is the implementation safe, simple, and maintainable? Turn an observation into a requirement only when supported by a stated contract or demonstrable impact.
 
-1. Does the change satisfy the specification without breaking behavior?
-2. Is the implementation safe, simple, and maintainable?
+## Run the mechanical gate
 
-Turn an observation into a requirement only when supported by authority or demonstrable impact.
+Run `railguard verify --changed` (or `check --changed` for the lighter subset) as the primary mechanical gate — gofmt, vet, tests of changed packages, lint on new lines, `go-architecture` boundaries, race, changed-line coverage, mutation, `govulncheck`, and E2E. Reuse observed results only for the same snapshot, command, and scope; run project-native commands for anything the harness doesn't cover, and record command, version, exit code, scope, and artifact path per [toolchain-and-deprecations.md](toolchain-and-deprecations.md)'s evidence states. A failed test, mutation, scanner, or E2E producer invalidates its partial output even when a file exists.
 
-## Run mechanical gates
+If the change is an `Apply`/`Repair` configuration change, or claims a readiness classification, load `configure-go-quality` in `Assess` mode once — it owns that state contract; do not re-derive it here. Otherwise load it only when the effective configuration is missing, invalid, inherited, unpinned, or unclear enough to affect a claim. A valid pinned canonical gate with no readiness claim needs no separate configuration load. Verify the change's claimed outcome against the observed results; a supported `BLOCKED_SETUP`/`unavailable`/`not evaluated` dimension is an honest limitation, not a defect, unless the change caused it, could have resolved it, misclassified it, or claimed stronger evidence than was observed.
 
-Reuse observed results only for the same snapshot, command, and scope. Use project-established commands for absent or invalidated evidence. As a Go fallback, consider from narrow to broad: `gofmt -l` on changed files; `go test` and `go vet` on affected packages; the project task surface or CI suite; `go test -race` for executed concurrency; and pinned vulnerability, deprecation, and lint analyzers.
+When Step 4's coverage-review branch applies, use `test-go-service`'s gap-analysis contract, matching the fresh profile to the snapshot, producer command, module, tags, `coverpkg`, and owning test packages before interpreting it. A passing percentage does not close an unclassified in-scope block. Treat a task-local parser as report-only: repository commands and configuration must never depend on its installed path.
 
-If the review concerns an `Apply` or `Repair` candidate or a configuration-readiness classification, use `configure-go-quality` in read-only `Assess` mode once to resolve its state contract. Otherwise use it only when the effective configuration is missing, invalid, inherited, unpinned, or unclear enough to affect a claim. Record the resulting limitation; do not repair tooling or change the fixed snapshot. A valid pinned canonical gate with no readiness claim needs no separate configuration load.
+Before reporting a missing mutation oracle, search the complete relevant test corpus by behavior, unit, boundary, error, and outcome — not only by the mutated symbol or the nearest test. Read the whole matching test, then run the narrow named test when a broad package command is blocked by unrelated setup. An independent oracle is stronger when it derives the expected boundary from the external contract rather than the production constant or helper under test. Do not infer a test gap merely because the mutation engine cannot instrument a compile-time expression, or because another test in the package needs unavailable infrastructure.
 
-Inspect the repository-native task graph and direct pinned commands. Require explicit configs and scopes, fresh producer artifacts, and non-zero failure semantics. A failed test, mutation, scanner, or E2E producer invalidates its partial output even when a file exists. Native tool output or retained CI logs are sufficient evidence; a proprietary aggregate schema, runner, attestation, or skill-installed command is neither required nor preferred. Record command, version, exit code, scope, and artifact path, and diagnose before repeating.
-
-When Step 4's coverage-review branch applies, use the installed `test-go-service` gap-analysis contract. Match the fresh profile to the snapshot, producer command, module, tags, `coverpkg`, and owning test packages before interpreting it. A passing percentage does not close an unclassified in-scope block. Treat a task-local parser as report-only evidence: repository commands and configuration must never depend on its installed path.
-
-Before reporting a missing mutation oracle, search the complete relevant test corpus by behavior, unit, boundary, error, and outcome—not only by the mutated symbol or the nearest test. Read the whole matching test, then run the narrow named test when a broad package command is blocked by unrelated setup. An independent oracle is stronger when it derives the expected boundary from the external contract and does not reference the production constant or helper. Do not infer a test gap merely because the mutation engine cannot instrument a compile-time expression or because another test in the package needs unavailable infrastructure.
-
-Verify the candidate's claimed outcome against those results. For a configuration candidate, apply `configure-go-quality`'s state precedence to the whole adopted surface: a passing wiring/readiness subtarget cannot turn an unavailable required real dimension into `READY` or `READY_WITH_FINDINGS`. A supported `BLOCKED_SETUP`, `unavailable`, or `not evaluated` dimension is an honest limitation, not a defect in otherwise correct configuration or code. Record it separately and pass the review when no actionable candidate defect remains. Issue a finding only when the candidate caused the blocker, could resolve it within its granted authority, omitted or misclassified it, or claimed stronger evidence than was observed.
-
-Judge configuration evidence as a complete set, not by forcing every product gate into one readiness recipe. A wiring target may validate pins, configs, isolation, task resolution, overrides, and negative probes while the same snapshot's direct `check`, vulnerability, race, fuzz, mutation, and E2E commands provide the execution evidence used by the classifier. Do not report a missing readiness dependency when the canonical direct command was independently observed with the relevant override. Do report a baseline dimension that is neither executed nor explicitly classified as non-applicable, a dry/version probe presented as product evidence, or an override that the real recipe does not consume.
-
-Preserve the ownership boundary when a configuration-only candidate exposes an absent behavioral proof. If the repository now has a pinned, reachable direct target, the aggregate retains it, its stable non-zero diagnostic says that no meaningful fuzz test or E2E journey exists, and the candidate reports that exact result as `READY_WITH_FINDINGS`, the configuration has done its job. The missing test or journey belongs to development/testing; configure is forbidden to invent it. Do not call this broken wiring, recommend deleting the failing target, or demand that CI turn green. A configuration finding exists only when the command itself is invalid, unreachable, unpinned, silently omitted, mis-scoped, non-deterministic by design, or misclassified.
+Preserve the ownership boundary when a configuration-only change exposes an absent behavioral proof: if a pinned, reachable direct target exists, its stable diagnostic truthfully reports no fuzz test or E2E journey, and the change reports that result as `READY_WITH_FINDINGS`, the configuration has done its job. That missing test or journey belongs to development, not to `configure-go-quality` — do not call it broken wiring or demand the target turn green. A configuration finding exists only when the command itself is invalid, unreachable, unpinned, silently omitted, mis-scoped, non-deterministic by design, or misclassified.
 
 ## Review from architecture to detail
 
@@ -42,8 +31,8 @@ Preserve the ownership boundary when a configuration-only candidate exposes an a
 7. Simplicity, semantic reuse, modularization, and real pattern need.
 8. Evidence-based optimization, APIs, naming, and tests.
 
-Use `go-metrics` to locate outliers. Read the code before turning a metric into a finding.
+Use `go-metrics` to locate outliers, and read the code before turning a metric into a finding.
 
 ## Reduce false positives
 
-For every candidate, verify the exact line, demonstrate an observable path or cost, confirm it is in scope, search for a test or contract that invalidates it, distinguish a current defect from an optional improvement, and remove preferences without impact. Make a second reading from the author's perspective. Report only findings whose correction can be verified through a test, command, or concrete contract inspection.
+For every candidate finding, verify the exact line, demonstrate an observable path or cost, confirm it is in scope, search for a test or contract that invalidates it, distinguish a current defect from an optional improvement, and drop preferences without impact. Make a second reading from the author's perspective, and report only findings whose correction can be verified through a test, command, or concrete contract inspection.

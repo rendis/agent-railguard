@@ -42,7 +42,7 @@ describe("LockStateModule", () => {
         ownershipId: "git-gate.pre-commit",
         target: harnessTargetId("project"),
         adapter: harnessTargetId("quality"),
-        path: relativePosixPath(".ai-harness/hooks/pre-commit"),
+        path: relativePosixPath(".railguard/hooks/pre-commit"),
         sources: [componentRef("git-gate:pre-commit-check")],
         contentDigest: hookDigest,
         portableMode: "executable" as const,
@@ -66,7 +66,7 @@ describe("LockStateModule", () => {
         effectId: "git-gates.activation",
         sources: [componentRef("git-gate:pre-commit-check")],
         key: "core.hooksPath" as const,
-        expectedValue: ".ai-harness/hooks",
+        expectedValue: ".railguard/hooks",
       },
     ];
 
@@ -159,7 +159,7 @@ describe("LockStateModule", () => {
           effectId: "git-gates.activation-a",
           sources: [componentRef("git-gate:pre-commit-check")],
           key: "core.hooksPath",
-          expectedValue: ".ai-harness/hooks",
+          expectedValue: ".railguard/hooks",
         },
         {
           kind: "git-config",
@@ -269,8 +269,8 @@ describe("LockStateModule", () => {
           intent: Object.freeze({
             kind: "file" as const,
             owner: gate,
-            scopeRoot: relativePosixPath(".ai-harness/hooks"),
-            path: relativePosixPath(".ai-harness/hooks/pre-commit"),
+            scopeRoot: relativePosixPath(".railguard/hooks"),
+            path: relativePosixPath(".railguard/hooks/pre-commit"),
             bytes: new ReadonlyBytes(Buffer.from("#!/bin/sh\nmake check\n")),
             mode: 0o755,
           }),
@@ -284,7 +284,7 @@ describe("LockStateModule", () => {
             owner: "git-gates:activation",
             path: relativePosixPath(".git/config"),
             key: "core.hooksPath" as const,
-            value: ".ai-harness/hooks",
+            value: ".railguard/hooks",
           }),
         }),
       ]),
@@ -310,7 +310,7 @@ describe("LockStateModule", () => {
 
 async function readyCatalog(): Promise<CatalogSnapshot> {
   const loaded = await new FilesystemCatalog({
-    catalogFile: resolve("ai-harness.yaml"),
+    catalogFile: resolve("railguard.yaml"),
     supportedLanguages: [languageId("go")],
   }).load();
   if (loaded.kind !== "ready") throw new Error("Expected catalog to load");

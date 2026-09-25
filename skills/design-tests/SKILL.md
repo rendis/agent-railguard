@@ -1,24 +1,27 @@
 ---
 name: design-tests
-description: Design durable behavioral tests independent of language or framework. Use when a task creates or materially redesigns unit, component, integration, contract, property, fuzz, or end-to-end proofs and must choose a stable seam, independent oracle, deterministic data, doubles, or sensitivity evidence.
+description: Design a durable test contract — seam, independent check, data, doubles, sensitivity — before writing the test. Use when creating or materially redesigning a test.
 ---
 
-# Design Tests
+# Design tests
 
-## Design one behavioral proof
+## Design one proof
 
-1. **Authority.** Read the requirement, existing behavior, tests, and repository conventions. Declare the behavior and defect class the proof must detect. When `develop-go-hexagonal-service` is already active in a Go repository, it remains the edit owner; this skill supplies only the language-agnostic test contract. Complete when the source of truth, requested authority, and caller are explicit.
-2. **Inventory.** Read [behavioral-proof.md](references/behavioral-proof.md). Build its task-local inventory for every authorized behavior and material risk before selecting examples. `planned` is a valid design handoff; completeness here means every known in-scope item is represented, not that future evidence already passes. Complete when the caller can update the inventory without creating a repository ledger.
-3. **Proof.** Choose an observable stable seam and derive the expected result from a source independent of the implementation. Complete when an equivalent implementation could replace the internals without invalidating the proof.
-4. **Structure.** Read [test-structure.md](references/test-structure.md). Give the test one discoverable intent and separate context, action, and outcome semantically through the framework's native structure. Comments or prose are optional unless intent remains unclear or repository policy requires them. Complete when a maintainer can identify the precondition, stimulus, and observable result without reconstructing implementation details.
-5. **Data and boundaries.** Select representative, boundary, negative, and state-transition cases that discriminate the rule. Give independent fields distinct non-default values when omissions or swaps are plausible. Own clocks, randomness, identifiers, and fixtures deterministically. Complete when each case rejects a named wrong behavior and does not depend on order or ambient state.
-6. **Doubles and effects.** Introduce doubles only at external or nondeterministic boundaries. Assert owned behavior through results and observable effects; verify an interaction only when that interaction is itself contractual. Complete when setup cannot silently reproduce the implementation under test.
-7. **Sensitivity.** Demonstrate why the expected defect changes the signal. Use a counterexample, invariant, property, known-bad patch, or mutation probe when the first case still permits a plausible wrong implementation. Coverage is inspected separately and cannot close this step. Once the named defect is killed at the owning seam, stop; another layer or test file requires a distinct contractual defect and explicit authority, not a desire for extra confidence. Complete with a sensitive proof or an explicit gap returned to the caller.
+1. **Scope.** Read the requirement, current behavior, existing tests, and repository conventions. State the behavior and defect class this proof must catch. In a Go repository where `develop-go-hexagonal-service` is already active, it stays the edit owner; this skill only supplies the language-agnostic test contract. Complete when the source of truth and the behavior are explicit.
+2. **Inventory.** Read [behavioral-proof.md](references/behavioral-proof.md) and list every authorized behavior and material risk as a row before picking examples. `planned` is a normal handoff to `tdd`; completeness means every known item has a row, not that it already passes. Complete when the caller can update the inventory without a separate ledger.
+3. **Seam.** Choose a stable, observable boundary and derive the expected result from a source independent of the implementation. Use a narrower seam only when the public path would add unrelated failure modes or cost without increasing confidence. Complete when an equivalent implementation could replace the internals without invalidating the proof.
+4. **Structure.** Read [test-structure.md](references/test-structure.md). Give the test one discoverable intent and separate context, action, and outcome using the framework's native structure. Complete when a maintainer can find the precondition, stimulus, and result without reading the implementation.
+5. **Data and boundaries.** Pick representative, boundary, negative, and state-transition cases that discriminate the rule; give independent fields distinct non-default values wherever a swap or omission is plausible. Own clocks, randomness, IDs, and fixtures deterministically. Complete when each case rejects a named wrong behavior and runs independent of order or ambient state.
+6. **Doubles and effects.** Use doubles only at external or nondeterministic boundaries. Assert owned results and effects; verify an interaction only when the interaction itself is contractual. Complete when the setup can't quietly reproduce the code under test.
+7. **Sensitivity.** Show why the named defect changes the signal — add a counterexample, invariant, property, known-bad patch, or mutation probe if one case still permits a wrong implementation. Stop once that defect is killed at its owning seam; a different layer needs its own contractual defect, not extra confidence. Complete when the proof is sensitive or the gap is reported to the caller.
 
 ## Composition contract
 
-- When `tdd` is active, load this contract before RED or before adding a characterization test; an adequate existing safety net does not require another load.
-- With an active stack testing skill, load this contract before creating or materially changing tests, then apply that skill's language, framework, runner, layout, documentation, and technique-specific rules.
-- With an active E2E skill, load this contract only when creating or changing scenarios; journey, harness, readiness, and acceptance remain with E2E.
-- Load this skill once for the current task and behavioral contract. If its contract is already active, reuse it.
-- This skill does not own RED→GREEN sequencing, implementation placement, runner commands, language conventions, quality-tool configuration, E2E topology, or delivery closure.
+| Situation | Load or owner |
+| --- | --- |
+| `tdd` is active | Load this contract before RED or a characterization test |
+| Adequate existing safety net | No new load |
+| Stack testing skill is active | This contract first, then its language and runner rules |
+| E2E skill is active | Load only when creating or changing scenarios |
+| Contract already active for this task | Reuse |
+| RED→GREEN, placement, runners, E2E topology, delivery | Other owning skills |

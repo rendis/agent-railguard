@@ -15,10 +15,10 @@ import {
 } from "../../src/domain/shared/types.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
 
-const section = `# ai-harness:managed:start id="verification.go-quality"
+const section = `# railguard:managed:start id="verification.go-quality"
 check:
 	@true
-# ai-harness:managed:end id="verification.go-quality"
+# railguard:managed:end id="verification.go-quality"
 `;
 const appendedSection = `\n${section}`;
 const hook = "#!/bin/sh\nmake check\n";
@@ -27,12 +27,12 @@ describe("DefaultProjectObserver", () => {
   it("observes owned units from repository evidence and ignores content outside a section", async () => {
     const repository = await createTempRepository({
       Makefile: `custom:\n\t@echo user-owned\n${appendedSection}`,
-      ".ai-harness/hooks/pre-commit": hook,
+      ".railguard/hooks/pre-commit": hook,
     });
-    await chmod(join(repository.root, ".ai-harness/hooks/pre-commit"), 0o755);
+    await chmod(join(repository.root, ".railguard/hooks/pre-commit"), 0o755);
     const gitConfig: GitConfigPort = {
       async get() {
-        return { kind: "value", value: ".ai-harness/hooks" };
+        return { kind: "value", value: ".railguard/hooks" };
       },
       async set() {
         throw new Error("observer must not mutate Git config");
@@ -54,8 +54,8 @@ describe("DefaultProjectObserver", () => {
           ownershipId: "project.git-gates.activation",
           kind: "git-config",
           status: "clean",
-          expectedDigest: sha256(".ai-harness/hooks"),
-          observedDigest: sha256(".ai-harness/hooks"),
+          expectedDigest: sha256(".railguard/hooks"),
+          observedDigest: sha256(".railguard/hooks"),
         },
         {
           ownershipId: "project.verification.go-quality",
@@ -101,7 +101,7 @@ describe("DefaultProjectObserver", () => {
     const repository = await createTempRepository({ Makefile: `${section}${section}` });
     const gitConfig: GitConfigPort = {
       async get() {
-        return { kind: "value", value: ".ai-harness/hooks" };
+        return { kind: "value", value: ".railguard/hooks" };
       },
       async set() {
         throw new Error("observer must not mutate Git config");
@@ -125,7 +125,7 @@ describe("DefaultProjectObserver", () => {
 
 function lock(): LockState {
   return Object.freeze({
-    schema: "ai-harness/lock/v1",
+    schema: "railguard/lock/v1",
     desired_digest: sha256("desired"),
     catalog: Object.freeze({ revision: semVer("0.1.0"), digest: sha256("catalog") }),
     targets: Object.freeze([
@@ -155,7 +155,7 @@ function lock(): LockState {
         ownership_id: "project.git-gate.pre-commit",
         target: harnessTargetId("project"),
         adapter: harnessTargetId("quality"),
-        path: relativePosixPath(".ai-harness/hooks/pre-commit"),
+        path: relativePosixPath(".railguard/hooks/pre-commit"),
         sources: Object.freeze([componentRef("git-gate:pre-commit-check")]),
         content_digest: sha256(hook),
         portable_mode: "executable",
@@ -167,7 +167,7 @@ function lock(): LockState {
         effect_id: "project.git-gates.activation",
         sources: Object.freeze([componentRef("git-gate:pre-commit-check")]),
         key: "core.hooksPath",
-        expected_value: ".ai-harness/hooks",
+        expected_value: ".railguard/hooks",
       }),
     ]),
   });

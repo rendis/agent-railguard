@@ -1,7 +1,7 @@
-export { AiHarnessApplication } from "./application/ai-harness-application.js";
+export { RailguardApplication } from "./application/railguard-application.js";
 export { createDefaultApplication } from "./application/composition-root.js";
 export type {
-  AiHarnessCases,
+  RailguardCases,
   ApplicationEvent,
   ApplicationEventSink,
   InstallPreparation,

@@ -30,6 +30,14 @@ export class NodeExecutableProbe implements ExecutableProbe {
         diagnostics: Object.freeze([]),
       });
     }
+    if (args.length === 0) {
+      return Object.freeze({
+        detected: true,
+        path: executablePath,
+        version: null,
+        diagnostics: Object.freeze([]),
+      });
+    }
     try {
       const result = await execFileAsync(executablePath, [...args], {
         encoding: "utf8",

@@ -12,8 +12,8 @@ Apply this reference only after the E2E owner observes Go and selects executable
 
 ## Keep bindings discoverable
 
-Use handler names traceable to the step intent and one clear registration owner per capability. Add package or handler documentation when it explains vocabulary, lifecycle, a non-obvious mapping, or an explicitly adopted traceability contract. Do not require exact phrase comments, manual indexes, or GoDoc on every binding by default.
+Use handler names traceable to the step intent and one clear registration owner per capability. Add documentation only when it explains vocabulary, lifecycle, a non-obvious mapping, or an adopted traceability contract — not exact phrase comments, manual indexes, or GoDoc by default.
 
-The bundled `scripts/gherkin-docs` analyzer is an optional agent diagnostic for projects that explicitly adopt exact phrase-to-handler documentation. Resolve it from the installed skill root and pass the project step root. It must not be invoked by canonical CI from a skill path or copied into the consumer repository. A mandatory version requires a separately published and pinned CLI or a maintained standard replacement.
+`scripts/gherkin-docs` is an optional agent diagnostic for projects that explicitly adopt phrase-to-handler documentation. Resolve it from the installed skill root and pass the project step root; it must not be invoked by canonical CI from a skill path or copied into the consumer repository. Making it mandatory requires a separately published, pinned CLI or a maintained standard replacement.
 
 Return to E2E the Godog version, execution mode, locations, binding conventions, any adopted diagnostic, and observed result. Documentation evidence remains separate from the journey verdict.

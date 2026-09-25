@@ -1,11 +1,11 @@
 {
-  "name": "@example/ai-harness",
+  "name": "agent-railguard",
   "version": "0.1.0",
   "private": true,
-  "description": "Project-scoped AI harness configuration CLI",
+  "description": "Configure a repository so coding agents work inside deterministic quality guardrails",
   "type": "module",
   "bin": {
-    "ai-harness": "dist/cli.js"
+    "railguard": "dist/cli.js"
   },
   "exports": {
     ".": "./dist/index.js"
@@ -16,42 +16,29 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "build": "node esbuild.config.mjs",
-    "acceptance:matrix": "pnpm run build && node scripts/acceptance/real-repository-matrix.mjs",
-    "acceptance:install-update": "node scripts/acceptance/install-update.mjs",
-    "acceptance:linux": "node scripts/acceptance/linux-installer.mjs",
     "check": "pnpm run typecheck && pnpm run test:coverage && pnpm run check:boundaries && pnpm run build && pnpm run check:bundle",
     "check:boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "check:bundle": "node scripts/verification/smoke-bundle.mjs",
-    "prototype:interaction": "node scripts/prototypes/run-shared-cli-tui.mjs",
-    "release:build": "node scripts/release/build-release.mjs",
-    "release:verify": "node scripts/release/verify-v1.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:binaries": "node scripts/build-binaries.mjs"
   },
   "dependencies": {
-    "@inkjs/ui": "2.0.0",
+    "@clack/prompts": "1.8.1",
     "ajv": "8.20.0",
     "commander": "15.0.0",
-    "ink": "7.1.1",
-    "react": "19.2.8",
     "yaml": "2.9.0"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
-    "@types/react": "19.2.17",
     "@vitest/coverage-v8": "4.1.10",
     "dependency-cruiser": "18.1.1",
     "esbuild": "0.28.2",
-    "ink-testing-library": "4.0.0",
     "typescript": "6.0.3",
     "vite": "8.1.5",
     "vitest": "4.1.10"
   },
-  "files": [
-    "dist/cli.js",
-    "dist/index.js"
-  ],
-  "license": "UNLICENSED"
+  "license": "MIT"
 }

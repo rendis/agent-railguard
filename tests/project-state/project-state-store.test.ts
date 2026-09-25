@@ -12,7 +12,7 @@ import { createTempRepository } from "../helpers/temp-repository.js";
 describe("NodeProjectStateStore", () => {
   it("loads generated desired state from the project-owned path", async () => {
     const loaded = await new FilesystemCatalog({
-      catalogFile: resolve("ai-harness.yaml"),
+      catalogFile: resolve("railguard.yaml"),
       supportedLanguages: [languageId("go")],
     }).load();
     if (loaded.kind !== "ready") throw new Error("Expected catalog to load");
@@ -26,7 +26,7 @@ describe("NodeProjectStateStore", () => {
     );
     if (built.kind !== "ready") throw new Error("Expected desired state to build");
     const repository = await createTempRepository({
-      ".ai-harness/project.yaml": built.bytes.copy(),
+      ".railguard/project.yaml": built.bytes.copy(),
     });
     try {
       const observed = await new NodeProjectStateStore().loadDesired(
@@ -42,7 +42,7 @@ describe("NodeProjectStateStore", () => {
 
   it("loads a generated portable lock in a new store instance", async () => {
     const loaded = await new FilesystemCatalog({
-      catalogFile: resolve("ai-harness.yaml"),
+      catalogFile: resolve("railguard.yaml"),
       supportedLanguages: [languageId("go")],
     }).load();
     if (loaded.kind !== "ready") throw new Error("Expected catalog to load");
@@ -58,7 +58,7 @@ describe("NodeProjectStateStore", () => {
     });
     if (built.kind !== "ready") throw new Error("Expected lock to build");
     const repository = await createTempRepository({
-      ".ai-harness/lock.json": built.bytes.copy(),
+      ".railguard/lock.json": built.bytes.copy(),
     });
     try {
       const observed = await new NodeProjectStateStore().loadLock(repository.root, {
@@ -74,16 +74,16 @@ describe("NodeProjectStateStore", () => {
 
   it("reports an unsafe lock symlink without following it", async () => {
     const loaded = await new FilesystemCatalog({
-      catalogFile: resolve("ai-harness.yaml"),
+      catalogFile: resolve("railguard.yaml"),
       supportedLanguages: [languageId("go")],
     }).load();
     if (loaded.kind !== "ready") throw new Error("Expected catalog to load");
     const repository = await createTempRepository({});
     const outside = join(repository.root, "outside.json");
     try {
-      await mkdir(join(repository.root, ".ai-harness"));
+      await mkdir(join(repository.root, ".railguard"));
       await writeFile(outside, "{}\n");
-      await symlink(outside, join(repository.root, ".ai-harness", "lock.json"));
+      await symlink(outside, join(repository.root, ".railguard", "lock.json"));
 
       const result = await new NodeProjectStateStore().loadLock(repository.root, {
         desiredDigest: sha256("desired"),

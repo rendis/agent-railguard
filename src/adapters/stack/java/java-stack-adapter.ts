@@ -91,7 +91,7 @@ function ambiguousBuild(manifests: readonly RelativePosixPath[]): Diagnostic {
     location: Object.freeze({ path: manifests[0] ?? relativePosixPath("pom.xml") }),
     message: "Maven and Gradle markers coexist at the same Java root.",
     evidence: Object.freeze([...manifests]),
-    impact: "AI Harness reports both build systems and does not execute or choose either one.",
+    impact: "Railguard reports both build systems and does not execute or choose either one.",
     action: "Select the intended project verification profile explicitly when one is available.",
   });
 }

@@ -34,7 +34,7 @@ export function invalidInputRun(
   command: CommandName,
   message: string,
 ): HeadlessRun {
-  return errorRun(command, "INVALID_INPUT", "cli.input-invalid", message, "Run ai-harness --help or the command-specific --help and correct the input.");
+  return errorRun(command, "INVALID_INPUT", "cli.input-invalid", message, "Run railguard --help or the command-specific --help and correct the input.");
 }
 
 export function internalErrorRun(
@@ -67,7 +67,7 @@ function errorRun(
     action,
   });
   const result: CommandResultEnvelope = Object.freeze({
-    schema: "ai-harness/command-result/v1",
+    schema: "railguard/command-result/v1",
     type: "result",
     command,
     operation_id: randomUUID(),
@@ -86,7 +86,7 @@ function errorRun(
 
 function renderHumanResult(result: CommandResultEnvelope): string {
   const lines = [
-    `AI Harness · ${result.command}`,
+    `Railguard · ${result.command}`,
     `Verdict: ${result.verdict}`,
   ];
   if (result.repository !== null) {
@@ -147,11 +147,6 @@ function renderHumanResult(result: CommandResultEnvelope): string {
       );
     }
     for (const evidence of diagnostic.evidence) lines.push(`  Evidence: ${evidence}`);
-    for (const resolution of diagnostic.resolutions ?? []) {
-      lines.push(
-        `  Resolution: ${resolution.action} — ${resolution.label}${resolution.destructive ? " (destructive)" : ""}`,
-      );
-    }
     if (diagnostic.action !== null) lines.push(`  Next: ${diagnostic.action}`);
   }
   return `${lines.join("\n")}\n`;

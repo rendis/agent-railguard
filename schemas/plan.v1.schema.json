@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:example:ai-harness:schema:public-plan:v1",
-  "title": "AI Harness reviewed public plan v1",
+  "$id": "urn:railguard:schema:public-plan:v1",
+  "title": "Railguard reviewed public plan v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,7 +13,7 @@
     "review"
   ],
   "properties": {
-    "schema": { "const": "ai-harness/plan/v1" },
+    "schema": { "const": "railguard/plan/v1" },
     "plan_id": { "$ref": "#/$defs/sha256" },
     "mode": { "$ref": "#/$defs/mode" },
     "basis": { "$ref": "#/$defs/basis" },
@@ -76,7 +76,7 @@
       "additionalProperties": false,
       "required": ["schema", "targets", "selections"],
       "properties": {
-        "schema": { "const": "ai-harness/project/v1" },
+        "schema": { "const": "railguard/project/v1" },
         "targets": {
           "type": "array",
           "uniqueItems": true,
@@ -131,6 +131,7 @@
             "passive",
             "project-write",
             "local-git-execution",
+            "local-agent-execution",
             "third-party-network",
             "agent-instruction"
           ]
@@ -147,7 +148,7 @@
       "required": ["action", "kind", "path", "section", "owner"],
       "properties": {
         "action": { "enum": ["create", "replace", "remove"] },
-        "kind": { "enum": ["directory", "file", "symlink", "managed-section", "git-config"] },
+        "kind": { "enum": ["directory", "file", "symlink", "managed-section", "json-member", "git-config"] },
         "path": { "type": "string", "minLength": 1 },
         "section": {
           "oneOf": [

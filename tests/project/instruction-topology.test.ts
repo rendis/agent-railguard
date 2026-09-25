@@ -7,7 +7,7 @@ import { harnessTargetId } from "../../src/domain/shared/types.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
 
 describe("resolveInstructionTopology", () => {
-  it("uses AGENTS.md and requests a managed Claude import when both files are absent", async () => {
+  it("uses AGENTS.md and creates no CLAUDE.md when both files are absent", async () => {
     const repository = await createTempRepository({});
     try {
       const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
@@ -16,7 +16,7 @@ describe("resolveInstructionTopology", () => {
       ).resolves.toEqual({
         kind: "ready",
         instructionPath: "AGENTS.md",
-        claudeImport: "managed",
+        claudeImport: "not-required",
         diagnostics: [],
       });
     } finally {
@@ -44,9 +44,9 @@ describe("resolveInstructionTopology", () => {
   it("keeps a managed import in the desired topology instead of mistaking it for external content", async () => {
     const repository = await createTempRepository({
       "CLAUDE.md": [
-        '<!-- ai-harness:managed:start id="claude.agents-import" -->',
+        '<!-- railguard:managed:start id="claude.agents-import" -->',
         "@AGENTS.md",
-        '<!-- ai-harness:managed:end id="claude.agents-import" -->',
+        '<!-- railguard:managed:end id="claude.agents-import" -->',
         "",
       ].join("\n"),
     });

@@ -9,7 +9,7 @@ const otherDigest = `sha256:${"b".repeat(64)}`;
 const operationId = "123e4567-e89b-42d3-a456-426614174000";
 
 const project = {
-  schema: "ai-harness/project/v1",
+  schema: "railguard/project/v1",
   targets: ["codex"],
   selections: [
     { ref: "skill:tdd" },
@@ -21,7 +21,7 @@ const project = {
 };
 
 const lock = {
-  schema: "ai-harness/lock/v1",
+  schema: "railguard/lock/v1",
   desired_digest: digest,
   catalog: { revision: "release-0.1.0", digest },
   targets: [
@@ -75,7 +75,7 @@ const lock = {
 };
 
 const plan = {
-  schema: "ai-harness/plan/v1",
+  schema: "railguard/plan/v1",
   plan_id: digest,
   mode: "reconcile",
   basis: {
@@ -108,60 +108,6 @@ const plan = {
   ],
 };
 
-const journal = {
-  schema: "ai-harness/journal/v1",
-  operation_id: operationId,
-  plan_id: digest,
-  phase: "applying",
-  worktree_identity: digest,
-  root_real_path: "/workspace/service",
-  started_at: "2026-08-10T18:00:00Z",
-  updated_at: "2026-08-10T18:00:01Z",
-  units: [
-    {
-      kind: "filesystem",
-      unit_id: "codex.skill.tdd",
-      state: "applied",
-      target: { kind: "file", path: ".agents/skills/tdd/SKILL.md" },
-      container_path: ".agents/skills/tdd/SKILL.md",
-      before: { kind: "absent" },
-      after: { kind: "present", digest, mode: 420 },
-    },
-  ],
-};
-
-const receipt = {
-  schema: "ai-harness/receipt/v1",
-  operation_id: operationId,
-  plan_id: digest,
-  command: "sync",
-  started_at: "2026-08-10T18:00:00Z",
-  completed_at: "2026-08-10T18:00:02Z",
-  result: "succeeded",
-  materialization: "committed",
-  certification: "verified",
-  preflight: [{ id: "filesystem.permissions", verdict: "passed" }],
-  changes: [
-    {
-      unit_id: "codex.skill.tdd",
-      target: { kind: "file", path: ".agents/skills/tdd/SKILL.md" },
-      action: "create",
-      outcome: "applied",
-      before_digest: null,
-      after_digest: digest,
-    },
-  ],
-  verification: [
-    {
-      id: "codex.skill.tdd.materialization",
-      kind: "materialization",
-      verdict: "passed",
-      evidence: [digest],
-    },
-  ],
-  diagnostics: [],
-};
-
 describe("project state v1 schema", () => {
   const validate = new Ajv2020({ allErrors: true, strict: true }).compile(projectStateSchema);
 
@@ -169,8 +115,6 @@ describe("project state v1 schema", () => {
     ["desired state", project],
     ["portable lock", lock],
     ["plan", plan],
-    ["journal", journal],
-    ["receipt", receipt],
   ])("accepts a representative %s envelope", (_name, value) => {
     expect(validate(value), JSON.stringify(validate.errors)).toBe(true);
   });

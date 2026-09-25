@@ -29,6 +29,10 @@ export type ManagedArtifactOwnership =
   | (ManagedArtifactOwnershipBase & {
       readonly kind: "symlink";
       readonly link_target: string;
+    })
+  | (ManagedArtifactOwnershipBase & {
+      readonly kind: "json-member";
+      readonly pointer: readonly string[];
     });
 
 export interface ManagedGitConfigOwnership {

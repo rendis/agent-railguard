@@ -1,4 +1,4 @@
-# AI Harness Marketplace
+# Agent Railguard
 
 ## Mission
 

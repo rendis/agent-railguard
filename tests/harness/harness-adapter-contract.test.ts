@@ -96,9 +96,9 @@ describe("Harness adapter contract", () => {
         "project.mcp",
         "project.skills",
       ]);
-      expect(new Set(inspection.surfaces.map((surface) => surface.role))).toEqual(
-        new Set(["agents", "instructions", "mcp", "skills"]),
-      );
+      const roles = new Set(inspection.surfaces.map((surface) => surface.role));
+      roles.delete("hooks");
+      expect(roles).toEqual(new Set(["agents", "instructions", "mcp", "skills"]));
       expect(inspection.diagnostics).toEqual([]);
       expect(after.fingerprint).toBe(before.fingerprint);
     } finally {
@@ -187,12 +187,13 @@ function intentText(intent: ReturnType<HarnessAdapter["project"]>["units"][numbe
   if (intent.kind === "managed-section") return intent.body;
   if (intent.kind === "file") return new TextDecoder().decode(intent.bytes.copy());
   if (intent.kind === "symlink") return intent.target;
+  if (intent.kind === "json-member") return JSON.stringify(intent.value);
   return `${intent.key}=${intent.value}`;
 }
 
 async function loadCatalog(): Promise<CatalogSnapshot> {
   const result = await new FilesystemCatalog({
-    catalogFile: resolve("ai-harness.yaml"),
+    catalogFile: resolve("railguard.yaml"),
     supportedLanguages: ["go", "python", "typescript", "java"].map(languageId),
   }).load();
   if (result.kind !== "ready") throw new Error("Expected catalog to be ready");

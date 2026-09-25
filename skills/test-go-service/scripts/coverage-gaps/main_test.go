@@ -25,7 +25,7 @@ func TestRunReportsUncoveredBlocksAsStableJSON(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
-	want := "{\"schema\":\"ai-harness/go-coverage-gaps/v1\",\"mode\":\"set\",\"total_blocks\":3,\"covered_blocks\":1,\"uncovered_blocks\":2,\"total_statements\":6,\"covered_statements\":2,\"uncovered_statements\":4,\"gaps\":[{\"file\":\"example/a.go\",\"start_line\":20,\"start_column\":1,\"end_line\":21,\"end_column\":2,\"statements\":3},{\"file\":\"example/b.go\",\"start_line\":5,\"start_column\":1,\"end_line\":5,\"end_column\":9,\"statements\":1}]}\n"
+	want := "{\"schema\":\"railguard/go-coverage-gaps/v1\",\"mode\":\"set\",\"total_blocks\":3,\"covered_blocks\":1,\"uncovered_blocks\":2,\"total_statements\":6,\"covered_statements\":2,\"uncovered_statements\":4,\"gaps\":[{\"file\":\"example/a.go\",\"start_line\":20,\"start_column\":1,\"end_line\":21,\"end_column\":2,\"statements\":3},{\"file\":\"example/b.go\",\"start_line\":5,\"start_column\":1,\"end_line\":5,\"end_column\":9,\"statements\":1}]}\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}

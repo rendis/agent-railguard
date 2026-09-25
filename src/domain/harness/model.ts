@@ -17,6 +17,7 @@ export interface ExecutableProbeResult {
 }
 
 export interface ExecutableProbe {
+  /** Pass no arguments to detect presence without executing the command. */
   probe(command: string, args: readonly string[]): Promise<ExecutableProbeResult>;
 }
 
@@ -31,7 +32,7 @@ export interface HarnessInspection {
 }
 
 export interface HarnessSurface {
-  readonly role: "instructions" | "skills" | "agents" | "mcp";
+  readonly role: "instructions" | "skills" | "agents" | "mcp" | "hooks";
   readonly path: RelativePosixPath;
   readonly kind: "absent" | "file" | "directory" | "symlink" | "unsafe";
 }

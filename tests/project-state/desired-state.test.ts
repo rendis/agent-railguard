@@ -3,7 +3,7 @@ import { FilesystemCatalog } from "../../src/catalog/filesystem-catalog.js";
 import { DesiredStateModule } from "../../src/project-state/desired-state.js";
 import { languageId } from "../../src/domain/shared/types.js";
 
-const catalogFile = new URL("../../ai-harness.yaml", import.meta.url).pathname;
+const catalogFile = new URL("../../railguard.yaml", import.meta.url).pathname;
 
 describe("DesiredStateModule", () => {
   it("normalizes equivalent draft and YAML input to identical portable state", async () => {
@@ -33,7 +33,7 @@ describe("DesiredStateModule", () => {
     const fromYaml = module.evaluate(
       {
         kind: "yaml",
-        source: `schema: ai-harness/project/v1
+        source: `schema: railguard/project/v1
 targets: [codex]
 selections:
   - inputs:
@@ -50,7 +50,7 @@ selections:
 
     expect(fromDraft.state).toEqual(fromYaml.state);
     expect(fromDraft.digest).toBe(fromYaml.digest);
-    expect(fromDraft.bytes.toString()).toBe(`schema: ai-harness/project/v1
+    expect(fromDraft.bytes.toString()).toBe(`schema: railguard/project/v1
 targets:
   - codex
 selections:
@@ -69,7 +69,7 @@ selections:
 
     expect(result.kind).toBe("ready");
     if (result.kind === "ready") {
-      expect(result.bytes.toString()).toBe(`schema: ai-harness/project/v1
+      expect(result.bytes.toString()).toBe(`schema: railguard/project/v1
 targets: []
 selections: []
 `);
@@ -157,7 +157,7 @@ selections: []
     const unsafe = module.evaluate(
       {
         kind: "yaml",
-        source: `schema: ai-harness/project/v1
+        source: `schema: railguard/project/v1
 targets: &targets [codex]
 selections: *targets
 `,
@@ -167,7 +167,7 @@ selections: *targets
     const unknownField = module.evaluate(
       {
         kind: "yaml",
-        source: `schema: ai-harness/project/v1
+        source: `schema: railguard/project/v1
 targets: []
 selections: []
 installed: true

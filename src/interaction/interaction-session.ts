@@ -5,7 +5,7 @@ import {
   type DefaultApplicationRuntime,
 } from "../application/composition-root.js";
 import type {
-  AiHarnessCases,
+  RailguardCases,
   ApplicationEvent,
   ComponentSelectionDraft,
   ScanResult,
@@ -17,7 +17,6 @@ import type {
 import type { RecommendationSet } from "../domain/recommendation/model.js";
 import type { CatalogComponent } from "../domain/catalog/model.js";
 import type { ResolutionResult } from "../domain/resolution/model.js";
-import type { ProjectPlanningContext } from "../domain/project/model.js";
 import {
   compareUtf8,
   type ComponentRef,
@@ -67,7 +66,7 @@ export interface DefaultInteractionSessionOptions {
 }
 
 export class DefaultInteractionSession implements InteractionSession {
-  readonly #application: AiHarnessCases;
+  readonly #application: RailguardCases;
   readonly #operationId: string;
   readonly #subscribers = new Set<InteractionSubscriber>();
   #snapshot: InteractionSnapshot;
@@ -82,7 +81,7 @@ export class DefaultInteractionSession implements InteractionSession {
   #taskScope: string | null = null;
 
   public constructor(
-    application: AiHarnessCases,
+    application: RailguardCases,
     options: DefaultInteractionSessionOptions = {},
   ) {
     this.#application = application;
@@ -120,8 +119,6 @@ export class DefaultInteractionSession implements InteractionSession {
           return this.#composeDraft(action);
         case "request-plan":
           return await this.#requestPlan(action.mode);
-        case "resolve-plan-blocker":
-          return await this.#resolvePlanBlocker(action.code, action.resolution);
         case "load-plan":
           return await this.#loadPlan(action.root, action.plan);
         case "request-managed-plan":
@@ -262,7 +259,6 @@ export class DefaultInteractionSession implements InteractionSession {
 
   async #requestPlan(
     mode: "reconcile" | "repair" | "remove",
-    context: ProjectPlanningContext = Object.freeze({ conflictResolutions: Object.freeze([]) }),
   ): Promise<InteractionSnapshot> {
     const scan = this.#requireReadyScan();
     if (this.#snapshot.draft === null) {
@@ -279,14 +275,10 @@ export class DefaultInteractionSession implements InteractionSession {
             this.#selections,
             this.#targets,
             mode,
-            context,
           ),
     );
     this.#plan = preparation.plan?.kind === "ready" ? preparation.plan : null;
-    const diagnostics = [
-      ...preparation.resolution.diagnostics,
-      ...(preparation.plan?.diagnostics ?? []),
-    ];
+    const diagnostics = preparation.diagnostics;
     this.#emit({
       type: "plan-ready",
       plan: planView(
@@ -304,26 +296,6 @@ export class DefaultInteractionSession implements InteractionSession {
       this.#emitState("reviewing");
     }
     return this.#snapshot;
-  }
-
-  async #resolvePlanBlocker(
-    code: "quality.make.target-collision",
-    resolution: "replace",
-  ): Promise<InteractionSnapshot> {
-    if (this.#snapshot.phase !== "reviewing") {
-      throw new TypeError("A reviewed blocked plan is required before resolving a blocker");
-    }
-    if (!this.#snapshot.diagnostics.some(
-      (diagnostic) =>
-        diagnostic.code === code &&
-        diagnostic.resolutions?.some((candidate) => candidate.action === resolution) === true,
-    )) {
-      throw new TypeError(`The active plan does not contain blocker ${code}`);
-    }
-    const mode = this.#snapshot.plan?.mode ?? "reconcile";
-    return await this.#requestPlan(mode, {
-      conflictResolutions: Object.freeze([Object.freeze({ code, action: resolution })]),
-    });
   }
 
   async #requestManagedPlan(
@@ -628,7 +600,7 @@ export class DefaultInteractionSession implements InteractionSession {
 
   #emit(event: InteractionEventPayload): void {
     const complete = Object.freeze({
-      schema: "ai-harness/interaction-event/v1" as const,
+      schema: "railguard/interaction-event/v1" as const,
       operation_id: this.#operationId,
       sequence: ++this.#sequence,
       ...event,
@@ -975,9 +947,6 @@ function diagnosticViews(diagnostics: readonly Diagnostic[]): readonly Diagnosti
         evidence: diagnostic.evidence,
         impact: diagnostic.impact,
         action: diagnostic.action,
-        ...(diagnostic.resolutions === undefined
-          ? {}
-          : { resolutions: diagnostic.resolutions }),
       }),
     ),
   );
