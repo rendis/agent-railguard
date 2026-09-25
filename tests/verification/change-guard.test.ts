@@ -101,6 +101,17 @@ describe("ChangeCheckProvider", () => {
     ]);
   });
 
+  it("accepts a protected configuration the change adds", async () => {
+    const { root, git } = await repository({ "a.go": "package a\n" });
+    await git("checkout", "-q", "-b", "feature");
+    await mkdir(join(root, ".railguard"));
+    await writeFile(join(root, ".railguard/project.yaml"), "schema: railguard/project/v1\n");
+
+    const outcome = await provider().run("change-integrity", await request(root, { protected_paths: [".railguard/project.yaml"] }));
+
+    expect(outcome.status).toBe("passed");
+  });
+
   it("passes a finding a person accepted with a commit trailer", async () => {
     const { root, git } = await repository({ "a.go": "package a\n" });
     await git("checkout", "-q", "-b", "feature");

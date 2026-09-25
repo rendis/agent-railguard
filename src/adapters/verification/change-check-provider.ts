@@ -57,7 +57,10 @@ export class ChangeCheckProvider implements CheckProvider {
     const findings: string[] = [];
     for (const [path, lines] of changes.files) {
       if (matchesAnyGlob(path, protectedPaths)) {
-        findings.push(`${path}: protected quality configuration changed`);
+        // Adding a configuration weakens nothing; changing one the base already had can.
+        if (await this.#existsAtBase(request.repositoryRoot, changes.base, path)) {
+          findings.push(`${path}: protected quality configuration changed`);
+        }
         continue;
       }
       const content = await readText(request.repositoryRoot, path);
@@ -73,7 +76,7 @@ export class ChangeCheckProvider implements CheckProvider {
       summary: `${findings.length} change(s) weaken what the checks can see`,
       details: [
         ...findings,
-        "Fix the cause instead. Only a person may accept this on purpose, with a `Railguard-Allow: change-integrity: <reason>` trailer in a commit of this branch.",
+        "Fix the cause instead. Only a person may accept this on purpose, with a `Railguard-Allow: change-integrity: <reason>` trailer in a commit of this branch (`git commit --no-verify` for that commit).",
       ],
     });
   }
@@ -98,6 +101,12 @@ export class ChangeCheckProvider implements CheckProvider {
         "Split the change into smaller deliveries. A person may accept it with a `Railguard-Allow: change-size: <reason>` trailer.",
       ],
     });
+  }
+
+  async #existsAtBase(root: string, base: string | null, path: string): Promise<boolean> {
+    if (base === null) return false;
+    const result = await this.process.run("git", ["cat-file", "-e", `${base}:${path}`], { cwd: root, timeoutMs: 30_000 });
+    return result.exitCode === 0;
   }
 
   async #unlessAllowed(
