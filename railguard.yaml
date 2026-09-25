@@ -14,7 +14,7 @@ catalog:
 
     configure-go-quality:
       version: 0.1.0
-      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair one managed `make check` and `make verify` interface, and select strict assurance profiles with explicit repository scopes when required. Product and test findings belong to behavioral workflows; this skill remains read-only Assess during review.
+      details: Use when canonical Go quality configuration or commands are missing or invalid. Assess, create or repair the pins, native configs and scopes behind `railguard check` and `railguard verify`, and select strict assurance profiles with explicit repository scopes when required. Product and test findings belong to behavioral workflows; this skill remains read-only Assess during review.
       source: skills/configure-go-quality
       applies:
         languages: [go]
