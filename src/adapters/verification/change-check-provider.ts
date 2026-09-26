@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, normalize, posix, sep } from "node:path";
 import { sha256 } from "../../domain/shared/types.js";
 import {
@@ -26,7 +26,7 @@ import type {
 } from "../../domain/verification/checks.js";
 import { readActiveHandoffs } from "./knowledge-os-handoffs.js";
 
-const maxScannedBytes = 2 * 1024 * 1024;
+const maxScannedBytes = 16 * 1024 * 1024;
 
 /** Stack-independent checks that judge the shape of a change rather than its code. */
 export class ChangeCheckProvider implements CheckProvider {
@@ -64,8 +64,13 @@ export class ChangeCheckProvider implements CheckProvider {
         }
         continue;
       }
-      const content = await readText(request.repositoryRoot, path);
-      if (content !== null) findings.push(...suppressionFindings(path, content, lines));
+      const content = await readChanged(request.repositoryRoot, path);
+      if (content === null || isBinary(content)) continue;
+      if (content.length > maxScannedBytes) {
+        findings.push(`${path}: too large to scan for suppressions (over ${maxScannedBytes / 1024 / 1024} MiB)`);
+        continue;
+      }
+      findings.push(...suppressionFindings(path, content.toString("utf8"), lines));
     }
     for (const path of changes.deleted) {
       if (isTestFile(path)) findings.push(`${path}: test file deleted`);
@@ -88,9 +93,14 @@ export class ChangeCheckProvider implements CheckProvider {
     const counted: { readonly path: string; readonly lines: number }[] = [];
     for (const [path, lines] of changes.files) {
       if (isTestFile(path) || matchesAnyGlob(path, excluded)) continue;
-      const content = lines === "all" ? await readText(request.repositoryRoot, path) : "";
-      if (content === null) continue;
-      counted.push({ path, lines: changedLineCount(content, lines) });
+      if (lines !== "all") {
+        counted.push({ path, lines: lines.size });
+        continue;
+      }
+      // A binary file has no reviewable lines; every text file counts, however large.
+      const content = await readChanged(request.repositoryRoot, path);
+      if (content === null || isBinary(content)) continue;
+      counted.push({ path, lines: changedLineCount(content.toString("utf8"), lines) });
     }
     const total = counted.reduce((sum, file) => sum + file.lines, 0);
     if (total <= limit) return passed(`${total} changed line(s) outside tests, within ${limit}`);
@@ -280,15 +290,18 @@ function instructions(handoffs: readonly ActiveHandoff[], changes: ChangeSet): r
   ];
 }
 
-async function readText(root: string, path: string): Promise<string | null> {
+/** Content of a changed path, or null when it is not a readable file (a submodule, for example). */
+async function readChanged(root: string, path: string): Promise<Buffer | null> {
   try {
-    const absolute = join(root, path);
-    if ((await stat(absolute)).size > maxScannedBytes) return null;
-    const content = await readFile(absolute, "utf8");
-    return content.includes("\0") ? null : content;
+    return await readFile(join(root, path));
   } catch {
     return null;
   }
+}
+
+/** Git's own heuristic: a NUL byte in the first 8000 bytes marks the file as binary. */
+function isBinary(content: Buffer): boolean {
+  return content.subarray(0, 8000).includes(0);
 }
 
 function evidenceExists(root: string, reference: string): boolean {

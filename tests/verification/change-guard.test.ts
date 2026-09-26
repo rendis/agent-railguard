@@ -141,6 +141,28 @@ describe("ChangeCheckProvider", () => {
     expect(within.status).toBe("passed");
     expect(over).toMatchObject({ status: "failed", details: ["b.go: 5", expect.stringContaining("Split the change")] });
   });
+
+  it("counts every new text file however large and skips only binary files", async () => {
+    const { root, git } = await repository({ "a.go": "package a\n" });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "large.go"), `${"x".repeat(1023)}\n`.repeat(3 * 1024));
+    await writeFile(join(root, "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x0a, 0x0a]));
+    await writeFile(join(root, "late-nul.go"), `package a\n${"// padding\n".repeat(1000)}\0\n`);
+
+    const outcome = await provider().run("change-size", await request(root, { max_changed_lines: ["400"] }));
+
+    expect(outcome).toMatchObject({ status: "failed", details: ["large.go: 3072", "late-nul.go: 1002", expect.any(String)] });
+  });
+
+  it("fails integrity for a text file too large to scan", async () => {
+    const { root, git } = await repository({ "a.go": "package a\n" });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "huge.go"), `${"x".repeat(1023)}\n`.repeat(17 * 1024));
+
+    const outcome = await provider().run("change-integrity", await request(root));
+
+    expect(outcome).toMatchObject({ status: "failed", details: [expect.stringMatching(/^huge\.go: too large to scan/u), expect.any(String)] });
+  });
 });
 
 describe("ChangeReview", () => {
