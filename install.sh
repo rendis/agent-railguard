@@ -35,6 +35,10 @@ platform() {
     x86_64|amd64) arch="x64" ;;
     *) fail "unsupported architecture: $(uname -m)" ;;
   esac
+  # A shell translated by Rosetta reports x86_64 on Apple silicon; install the native binary.
+  if [ "$os-$arch" = "darwin-x64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
+    arch="arm64"
+  fi
   printf '%s-%s' "$os" "$arch"
 }
 
@@ -42,6 +46,13 @@ sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
   else fail "sha256sum or shasum is required to verify the download"
+  fi
+}
+
+download() {
+  if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then wget -q --tries=3 -O "$2" "$1"
+  else fail "curl or wget is required to download railguard"
   fi
 }
 
@@ -58,9 +69,21 @@ install_binary() {
   esac
 }
 
+# The checksum only proves the download matches the release; the attestation proves the release
+# workflow of $REPO built it. It needs an authenticated GitHub CLI, so it is checked when available.
+verify_provenance() {
+  if [ -n "${RAILGUARD_DOWNLOAD_URL:-}" ]; then
+    say "custom download URL: build provenance not checked"
+  elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh attestation verify "$1" --repo "$REPO" >/dev/null || fail "build provenance of $(basename "$1") did not verify against $REPO"
+    say "verified build provenance against $REPO"
+  else
+    say "checksum verified; build provenance not checked (needs an authenticated gh: gh attestation verify)"
+  fi
+}
+
 install_release() {
   local asset base expected actual
-  command -v curl >/dev/null 2>&1 || fail "curl is required"
   asset="railguard-$(platform)"
   if [ -n "${RAILGUARD_DOWNLOAD_URL:-}" ]; then
     base="${RAILGUARD_DOWNLOAD_URL%/}"
@@ -74,12 +97,13 @@ install_release() {
   fi
   WORK_DIR="$(mktemp -d)"
   say "downloading $asset from $base"
-  curl -fsSL --retry 3 -o "$WORK_DIR/$asset" "$base/$asset" || fail "download failed: $base/$asset"
-  curl -fsSL --retry 3 -o "$WORK_DIR/SHA256SUMS" "$base/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
+  download "$base/$asset" "$WORK_DIR/$asset" || fail "download failed: $base/$asset"
+  download "$base/SHA256SUMS" "$WORK_DIR/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
   expected="$(awk -v name="$asset" '$2 == name {print $1}' "$WORK_DIR/SHA256SUMS")"
   [ -n "$expected" ] || fail "SHA256SUMS has no entry for $asset"
   actual="$(sha256_of "$WORK_DIR/$asset")"
   [ "$expected" = "$actual" ] || fail "checksum mismatch for $asset (expected $expected, got $actual)"
+  verify_provenance "$WORK_DIR/$asset"
   install_binary "$WORK_DIR/$asset"
 }
 
