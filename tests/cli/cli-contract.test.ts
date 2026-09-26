@@ -399,7 +399,7 @@ describe.sequential("production CLI contract", () => {
       await writeFile(draft, `Falla en ${repository.root}.\n`);
       const leaked = await cli(["issue", "--check", draft, "--cwd", repository.root], environment);
       expect(leaked.code).toBe(8);
-      expect(leaked.stdout).toContain(`${draft}:1:10 ruta absoluta: ${repository.root}`);
+      expect(leaked.stdout).toContain(`${draft}:1:10 absolute path: ${repository.root}`);
       expect((await cli(["issue", "bug", "--check", draft])).code).toBe(2);
       expect((await cli(["issue", "--check", join(workspace, "missing.md")])).code).toBe(2);
       await writeFile(launcher, pinned);
