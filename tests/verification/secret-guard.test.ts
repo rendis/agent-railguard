@@ -203,6 +203,7 @@ describe("secret-exposure", () => {
     expect(uncommitted.slice(uncommitted.indexOf("--") + 1).filter(Boolean)).toEqual(["notes.txt"]);
     for (const args of [committed, uncommitted]) {
       expect(args).toEqual(expect.arrayContaining(["--redact", "--ignore-gitleaks-allow", "--exit-code", "0"]));
+      expect(args[args.indexOf("--confidence") + 1]).toBe("medium");
       expect(args.some((arg) => arg.startsWith("--validation"))).toBe(false);
     }
   });

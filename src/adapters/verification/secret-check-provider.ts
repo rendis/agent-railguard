@@ -162,6 +162,8 @@ export class SecretCheckProvider implements CheckProvider {
       "--config", config,
       "--gitleaks-ignore-path", ignored,
       "--ignore-gitleaks-allow",
+      // Only generic guesses such as generic-password start at low; every provider rule is higher.
+      "--confidence", "medium",
       "--redact",
       "--no-banner",
       "--no-color",
