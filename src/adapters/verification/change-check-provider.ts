@@ -82,7 +82,7 @@ export class ChangeCheckProvider implements CheckProvider {
       summary: `${findings.length} change(s) weaken what the checks can see`,
       details: [
         ...findings,
-        "Fix the cause instead. Only a person may accept what the branch holds so far, with a `Railguard-Allow: change-integrity: <reason>` trailer in a commit (`git commit --no-verify` for that commit).",
+        "Fix the cause instead. Never add a `Railguard-Allow` trailer yourself: only a person may accept what the branch holds so far, with `Railguard-Allow: change-integrity: <reason>` in a commit they make (`git commit --no-verify` for that commit).",
       ],
     };
   }
@@ -109,7 +109,7 @@ export class ChangeCheckProvider implements CheckProvider {
       summary: `${total} changed line(s) outside tests exceed the reviewable limit of ${limit}`,
       details: [
         ...counted.sort((left, right) => right.lines - left.lines).slice(0, 10).map((file) => `${file.path}: ${file.lines}`),
-        "Split the change into smaller deliveries. A person may accept what the branch holds so far with a `Railguard-Allow: change-size: <reason>` trailer.",
+        "Split the change into smaller deliveries. Never add a `Railguard-Allow` trailer yourself: only a person may accept what the branch holds so far, with `Railguard-Allow: change-size: <reason>` in a commit they make.",
       ],
     };
   }
