@@ -15,10 +15,22 @@
   <a href="https://rendis.github.io/agent-railguard/"><b>▶ Open the visual guide</b></a>
 </p>
 
-**Railguard** (`railguard`) configures a Git repository so coding agents such as Claude Code, Codex
-and Cursor work with specialized skills and inside deterministic quality guardrails. Every action
-of the agent goes through checks; when one fails, the reason goes back to the agent, which fixes it
-before it reaches your branch.
+**Railguard** (`railguard`) gives code written by coding agents a quality floor that does not depend
+on someone reading every line of it.
+
+## Why
+
+Agents write a growing share of the code, and people review less of it line by line: review does not
+scale with what agents produce. An agent under pressure also takes shortcuts. It silences a linter,
+deletes the test that fails, or says "done" while the checks are red, and a skimmed diff lets that
+through.
+
+Railguard moves that part of quality from trusting review to verifying it mechanically. It
+configures a Git repository so Claude Code, Codex and Cursor work with specialized skills and inside
+deterministic guardrails. Every action of the agent goes through checks; when one fails, the reason
+goes back to the agent, which fixes it before it reaches your branch. What a check can decide, a
+check decides. People keep what only a person can judge: design, semantics and whether the change
+is the right one.
 
 The [visual guide](https://rendis.github.io/agent-railguard/) walks through this loop step by step,
 with what happens underneath each node: the hook that runs, the file involved and Railguard's real

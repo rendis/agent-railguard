@@ -323,7 +323,7 @@ Fix what fails instead.</pre>
     </ol>
   </section>
 
-  <footer data-i18n="foot">Los mensajes y archivos se capturaron ejecutando Railguard 0.1.10 sobre un repositorio Go de ejemplo.</footer>
+  <footer data-i18n="foot">Los mensajes y archivos son la salida real de Railguard sobre un repositorio Go de ejemplo. Un test los compara con cada versión y falla si dejan de coincidir.</footer>
 </main>
 
 <script>
@@ -353,7 +353,7 @@ Fix what fails instead.</pre>
     's1.t': 'See what is there', 's1.d': 'Stack, Git and installed agents. It changes nothing.',
     's2.t': 'Review the plan', 's2.d': 'Every file that will be written.',
     's3.t': 'Apply and commit', 's3.d': 'The Railguard version is pinned for the whole team.',
-    foot: 'The messages and files were captured by running Railguard 0.1.10 on an example Go repository.',
+    foot: 'The messages and files are Railguard’s real output on an example Go repository. A test compares them with every release and fails when they stop matching.',
   };
   const ES = {};
   document.querySelectorAll('[data-i18n]').forEach(n => { ES[n.dataset.i18n] = n.innerHTML; });
@@ -497,7 +497,7 @@ Fix what fails instead.</pre>
       es: 'stop-check ejecuta check --changed: sólo lo que tocó el cambio desde main. Si fallara, el turno no terminaría, hasta tres veces.',
       en: 'stop-check runs check --changed: only what the change touched since main. If it failed, the turn would not end, up to three times.',
       blocks: [{ lbl: 'railguard check --changed', code:
-`  <span class="ok">ok</span>   change-guard/integrity  No suppression, deleted test …
+`  <span class="ok">ok</span>   change-guard/integrity  No suppression, removed test …
   <span class="ok">ok</span>   go-architecture/imports  Dependency rules hold
   <span class="ok">ok</span>   go-quality/format  2 Go file(s) formatted
   <span class="ok">ok</span>   go-quality/vet  go vet passed for ./internal/orders
