@@ -30,13 +30,22 @@ import {
   type ProjectedUnit,
 } from "../../../domain/projection/model.js";
 
+/** The engine release a repository's launcher pins. */
+export interface EngineRelease {
+  readonly version: string;
+  /** GitHub `owner/repo` whose releases publish the binaries. */
+  readonly repository: string;
+}
+
 export class QualityProjector implements ProjectArtifactProjector {
   readonly #executableProbe: ExecutableProbe;
   readonly #gitHooks: GitHookInventory;
+  readonly #engine: EngineRelease;
 
-  public constructor(executableProbe: ExecutableProbe, gitHooks: GitHookInventory) {
+  public constructor(executableProbe: ExecutableProbe, gitHooks: GitHookInventory, engine: EngineRelease) {
     this.#executableProbe = executableProbe;
     this.#gitHooks = gitHooks;
+    this.#engine = engine;
   }
 
   public async project(
@@ -86,7 +95,16 @@ export class QualityProjector implements ProjectArtifactProjector {
         diagnostics.push(gitHooksUnreadableDiagnostic(error));
       }
     }
-    const intents: ArtifactIntent[] = [];
+    const intents: ArtifactIntent[] = [
+      Object.freeze({
+        kind: "file",
+        owner: "railguard:launcher",
+        scopeRoot: relativePosixPath(".railguard/bin"),
+        path: relativePosixPath(launcherPath),
+        bytes: new ReadonlyBytes(Buffer.from(launcherBody(this.#engine), "utf8")),
+        mode: 0o755,
+      }),
+    ];
     for (const [event, eventGates] of groupGatesByEvent(gates)) {
       intents.push(
         Object.freeze({
@@ -132,6 +150,14 @@ export class QualityProjector implements ProjectArtifactProjector {
           kind: "local-effect",
           ownershipId: "project.git-gates.activation",
           sources: Object.freeze(gates.map((gate) => gate.ref)),
+          intent,
+        });
+      }
+      if (intent.path === launcherPath) {
+        return Object.freeze({
+          kind: "artifact",
+          ownershipId: "project.launcher",
+          sources: Object.freeze([...profiles, ...gates, ...agentHooks].map((component) => component.ref)),
           intent,
         });
       }
@@ -212,7 +238,93 @@ function groupGatesByEvent(
     ] as const);
 }
 
+const launcherPath = ".railguard/bin/railguard";
 const agentStopScriptPath = ".railguard/agent-hooks/stop";
+
+/** Exit status of the launcher when the pinned engine cannot be obtained. */
+const engineUnavailable = 127;
+
+/**
+ * Runs the engine version this repository pins: the cached release binary, a `railguard` on PATH
+ * of exactly that version, or the release downloaded once and verified against its SHA256SUMS.
+ * Only stderr is used, so a hook's stdout protocol passes through untouched.
+ */
+function launcherBody(engine: EngineRelease): string {
+  return `#!/bin/sh
+# Managed by Railguard: runs the railguard version this repository pins.
+set -eu
+version=${engine.version}
+repository=${engine.repository}
+
+fail() {
+  printf 'railguard %s is not available: %s\n' "$version" "$1" >&2
+  printf 'Authenticate with gh auth login, or install this version with RAILGUARD_VERSION=%s and the Railguard install.sh.\n' "$version" >&2
+  exit ${engineUnavailable}
+}
+
+case "$(uname -s)" in
+  Darwin) os=darwin ;;
+  Linux) os=linux ;;
+  *) fail "unsupported operating system $(uname -s)" ;;
+esac
+case "$(uname -m)" in
+  arm64|aarch64) arch=arm64 ;;
+  x86_64|amd64) arch=x64 ;;
+  *) fail "unsupported architecture $(uname -m)" ;;
+esac
+# A shell translated by Rosetta reports x86_64 on Apple silicon; use the native binary.
+if [ "$os-$arch" = darwin-x64 ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+  arch=arm64
+fi
+asset="railguard-$os-$arch"
+cache="\${XDG_CACHE_HOME:-$HOME/.cache}/railguard/$version"
+
+if [ -x "$cache/railguard" ]; then
+  exec "$cache/railguard" "$@"
+fi
+installed="$(command -v railguard 2>/dev/null || true)"
+if [ -n "$installed" ] && ! [ "$installed" -ef "$0" ] && [ "$("$installed" --version 2>/dev/null || true)" = "$version" ]; then
+  exec "$installed" "$@"
+fi
+
+download() {
+  if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$2" "$1"
+  elif command -v wget >/dev/null 2>&1; then wget -q --tries=3 -O "$2" "$1"
+  else return 1
+  fi
+}
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+printf 'railguard: downloading %s %s\n' "$version" "$asset" >&2
+if [ -n "\${RAILGUARD_DOWNLOAD_URL:-}" ]; then
+  base="\${RAILGUARD_DOWNLOAD_URL%/}"
+  { download "$base/$asset" "$work/$asset" && download "$base/SHA256SUMS" "$work/SHA256SUMS"; } </dev/null \
+    || fail "could not download $base/$asset"
+elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  gh release download "v$version" --repo "$repository" --pattern "$asset" --pattern SHA256SUMS --dir "$work" \
+    </dev/null >/dev/null 2>&1 || fail "gh could not download release v$version of $repository"
+else
+  base="https://github.com/$repository/releases/download/v$version"
+  { download "$base/$asset" "$work/$asset" && download "$base/SHA256SUMS" "$work/SHA256SUMS"; } </dev/null \
+    || fail "could not download $base/$asset (a private repository needs gh auth login)"
+fi
+expected="$(awk -v name="$asset" '$2 == name {print $1}' "$work/SHA256SUMS")"
+[ -n "$expected" ] && [ "$expected" = "$(sha256 "$work/$asset")" ] || fail "checksum mismatch for $asset"
+mkdir -p "$cache"
+chmod 0755 "$work/$asset"
+mv -f "$work/$asset" "$cache/.railguard.$$"
+mv -f "$cache/.railguard.$$" "$cache/railguard"
+rm -rf "$work"
+trap - EXIT
+exec "$cache/railguard" "$@"
+`;
+}
 
 /**
  * Called by every harness's stop hook with the harness id. It delegates to the engine, which owns
@@ -224,17 +336,19 @@ function agentStopBody(hooks: readonly CatalogAgentHookComponent[]): string {
     "#!/bin/sh",
     "# Managed by Railguard: runs when a coding agent tries to finish its turn.",
     'cd "$(git rev-parse --show-toplevel)" || exit 0',
-    "if command -v railguard >/dev/null 2>&1; then",
-    `  exec railguard hook stop --harness "$1" --operation ${operation}`,
+    "status=0",
+    `${launcherPath} hook stop --harness "$1" --operation ${operation} || status=$?`,
+    `if [ "$status" -eq ${engineUnavailable} ]; then`,
+    '  echo "Railguard is unavailable; this change was not verified." >&2',
+    "  exit 0",
     "fi",
-    'echo "railguard is not installed; this change was not verified." >&2',
-    "exit 0",
+    'exit "$status"',
     "",
   ].join("\n");
 }
 
 /**
- * The hook only delegates to the installed engine, so it judges the same change as agents and CI.
+ * The hook only delegates to the pinned engine, so it judges the same change as agents and CI.
  * Without the engine it warns and lets Git continue; CI remains the authoritative gate.
  */
 function hookBody(
@@ -245,13 +359,15 @@ function hookBody(
   return [
     "#!/bin/sh",
     "# Managed by Railguard.",
-    "set -eu",
-    'cd "$(git rev-parse --show-toplevel)"',
-    "if ! command -v railguard >/dev/null 2>&1; then",
-    `  echo "railguard is not installed; skipping the ${event} ${operation}." >&2`,
+    "set -u",
+    'cd "$(git rev-parse --show-toplevel)" || exit 1',
+    "status=0",
+    `${launcherPath} ${operation} --changed || status=$?`,
+    `if [ "$status" -eq ${engineUnavailable} ]; then`,
+    `  echo "Railguard is unavailable; skipping the ${event} ${operation}." >&2`,
     "  exit 0",
     "fi",
-    `exec railguard ${operation} --changed`,
+    'exit "$status"',
     "",
   ].join("\n");
 }

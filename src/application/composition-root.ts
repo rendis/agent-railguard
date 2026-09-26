@@ -36,6 +36,7 @@ import { DefaultReconciler } from "../domain/reconciliation/reconciler.js";
 import { DefaultRepositoryAssessment } from "../domain/repository/assessment.js";
 import { DefaultResolver } from "../domain/resolution/resolver.js";
 import { DurableProjectPlanner } from "../domain/transaction/project-planner.js";
+import { engineVersion, releaseRepository } from "./engine-release.js";
 import { RailguardApplication } from "./railguard-application.js";
 import { McpSessionCoordinator } from "./mcp-session-coordinator.js";
 import type { ApplicationEventSink } from "./model.js";
@@ -106,7 +107,10 @@ export async function createDefaultApplication(
     projectors: [
       new SharedSkillProjector(),
       new InstructionProjector(),
-      new QualityProjector(executableProbe, new NodeGitHookInventory()),
+      new QualityProjector(executableProbe, new NodeGitHookInventory(), {
+        version: engineVersion,
+        repository: releaseRepository,
+      }),
     ],
     projectionCoordinator: new DefaultProjectProjectionCoordinator(),
     planner: new DurableProjectPlanner(gitConfig),

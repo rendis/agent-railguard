@@ -10,11 +10,6 @@ if (outdir === undefined || outdir.length === 0) {
 }
 
 await mkdir(outdir, { recursive: true });
-const sourcePackage = JSON.parse(await readFile("package.json", "utf8"));
-const buildVersion = process.env.RAILGUARD_BUILD_VERSION ?? sourcePackage.version;
-if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(buildVersion)) {
-  throw new TypeError(`RAILGUARD_BUILD_VERSION must be stable SemVer: ${buildVersion}`);
-}
 const embeddedContent = await contentSnapshot(["railguard.yaml", "skills"]);
 const nativeModules = new Set(builtinModules.map((moduleName) => moduleName.replace(/^node:/, "")));
 
@@ -29,7 +24,6 @@ const result = await build({
   target: "node24",
   define: {
     "process.env.DEV": '"false"',
-    __RAILGUARD_VERSION__: JSON.stringify(buildVersion),
     __RAILGUARD_CONTENT__: JSON.stringify(embeddedContent),
   },
   banner: {

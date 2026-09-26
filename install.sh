@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install or update the railguard binary.
 #
-#   curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | bash
+#   gh api repos/rendis/agent-railguard/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
 #   bash install.sh --local        # build and install from this checkout (requires Node, pnpm and Bun)
 #
 # Environment:
@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-DEFAULT_REPO=""
+DEFAULT_REPO="rendis/agent-railguard"
 REPO="${RAILGUARD_REPO:-$DEFAULT_REPO}"
 VERSION="${RAILGUARD_VERSION:-latest}"
 INSTALL_DIR="${RAILGUARD_INSTALL_DIR:-$HOME/.local/bin}"
@@ -71,10 +71,14 @@ install_binary() {
 
 # The checksum only proves the download matches the release; the attestation proves the release
 # workflow of $REPO built it. It needs an authenticated GitHub CLI, so it is checked when available.
+gh_ready() {
+  command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1
+}
+
 verify_provenance() {
   if [ -n "${RAILGUARD_DOWNLOAD_URL:-}" ]; then
     say "custom download URL: build provenance not checked"
-  elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  elif gh_ready; then
     gh attestation verify "$1" --repo "$REPO" >/dev/null || fail "build provenance of $(basename "$1") did not verify against $REPO"
     say "verified build provenance against $REPO"
   else
@@ -85,20 +89,26 @@ verify_provenance() {
 install_release() {
   local asset base expected actual
   asset="railguard-$(platform)"
-  if [ -n "${RAILGUARD_DOWNLOAD_URL:-}" ]; then
-    base="${RAILGUARD_DOWNLOAD_URL%/}"
+  WORK_DIR="$(mktemp -d)"
+  if [ -z "${RAILGUARD_DOWNLOAD_URL:-}" ] && gh_ready; then
+    # gh downloads from private repositories too; without a tag it takes the latest release.
+    local tag=()
+    [ "$VERSION" = "latest" ] || tag=("v$VERSION")
+    say "downloading $asset from $REPO with gh"
+    gh release download ${tag[@]+"${tag[@]}"} --repo "$REPO" --pattern "$asset" --pattern SHA256SUMS --dir "$WORK_DIR" \
+      || fail "gh could not download $asset from $REPO"
   else
-    [ -n "$REPO" ] || fail "set RAILGUARD_REPO=<owner>/<repo> to choose the release source"
-    if [ "$VERSION" = "latest" ]; then
+    if [ -n "${RAILGUARD_DOWNLOAD_URL:-}" ]; then
+      base="${RAILGUARD_DOWNLOAD_URL%/}"
+    elif [ "$VERSION" = "latest" ]; then
       base="https://github.com/$REPO/releases/latest/download"
     else
       base="https://github.com/$REPO/releases/download/v$VERSION"
     fi
+    say "downloading $asset from $base"
+    download "$base/$asset" "$WORK_DIR/$asset" || fail "download failed: $base/$asset (a private repository needs gh auth login)"
+    download "$base/SHA256SUMS" "$WORK_DIR/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
   fi
-  WORK_DIR="$(mktemp -d)"
-  say "downloading $asset from $base"
-  download "$base/$asset" "$WORK_DIR/$asset" || fail "download failed: $base/$asset"
-  download "$base/SHA256SUMS" "$WORK_DIR/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
   expected="$(awk -v name="$asset" '$2 == name {print $1}' "$WORK_DIR/SHA256SUMS")"
   [ -n "$expected" ] || fail "SHA256SUMS has no entry for $asset"
   actual="$(sha256_of "$WORK_DIR/$asset")"

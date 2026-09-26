@@ -112,12 +112,13 @@ describe("InstructionProjector", () => {
       const automation = sections.find((section) => section.id === "automation.mapping")?.body;
       expect(automation).toContain("## Git automation");
       expect(automation).toContain(
-        "`pre-commit-check`: Before committing, `railguard check --changed` runs automatically; run it yourself to reproduce a failure.",
+        "`pre-commit-check`: Before committing, `.railguard/bin/railguard check --changed` runs automatically; run it yourself to reproduce a failure.",
       );
       expect(automation).toContain("Treat hook failures as local feedback");
 
       const quality = sections.find((section) => section.id === "quality.mapping")?.body;
       expect(quality).toContain("## Verification");
+      expect(quality).toContain("Run Railguard as `.railguard/bin/railguard`, which uses the version this repository pins");
       expect(quality).toContain(
         "`go-quality`: Run `railguard check --changed` while developing and `railguard verify --changed` before delivery for Go changes.",
       );

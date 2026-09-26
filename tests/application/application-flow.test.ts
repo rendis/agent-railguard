@@ -359,7 +359,9 @@ describe("RailguardApplication", () => {
       }
       expect(prepared.plan.operations.map((operation) => operation.path)).toEqual([
         ".railguard",
+        ".railguard/bin",
         ".railguard/hooks",
+        ".railguard/bin/railguard",
         ".railguard/hooks/pre-commit",
         ".railguard/hooks/pre-push",
         "AGENTS.md",

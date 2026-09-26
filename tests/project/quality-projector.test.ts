@@ -44,6 +44,8 @@ const availableWithoutVersionCommands: ExecutableProbe = {
   },
 };
 
+const engine = { version: "1.2.3", repository: "example/railguard" };
+
 const noHooks: GitHookInventory = {
   async executableDefaultHooks() {
     return [];
@@ -75,6 +77,7 @@ describe("QualityProjector", () => {
       const projection = await new QualityProjector(
         availableWithoutVersionCommands,
         noHooks,
+        engine,
       ).project(resolution, catalogResult.catalog, snapshot);
 
       expect(projection.diagnostics).not.toContainEqual(
@@ -111,7 +114,7 @@ describe("QualityProjector", () => {
         },
       };
 
-      const projection = await new QualityProjector(missing, noHooks).project(
+      const projection = await new QualityProjector(missing, noHooks, engine).project(
         resolution,
         catalogResult.catalog,
         snapshot,
@@ -128,7 +131,7 @@ describe("QualityProjector", () => {
     }
   });
 
-  it("selecting a verification profile alone projects no files", async () => {
+  it("a verification profile alone projects only the launcher that pins the engine", async () => {
     const repository = await createTempRepository({});
     try {
       const catalogResult = await new FilesystemCatalog({
@@ -152,13 +155,20 @@ describe("QualityProjector", () => {
       if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
       const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
 
-      const projection = await new QualityProjector(available, noHooks).project(
+      const projection = await new QualityProjector(available, noHooks, engine).project(
         resolution,
         catalogResult.catalog,
         snapshot,
       );
 
-      expect(projection.units).toEqual([]);
+      expect(projection.units.map((unit) => unit.ownershipId)).toEqual(["project.launcher"]);
+      const launcher = projection.units[0];
+      const text = launcher?.kind === "artifact" && launcher.intent.kind === "file"
+        ? Buffer.from(launcher.intent.bytes.copy()).toString("utf8")
+        : "";
+      expect(launcher).toMatchObject({ intent: { path: ".railguard/bin/railguard", mode: 0o755 } });
+      expect(text).toContain("version=1.2.3\nrepository=example/railguard\n");
+      expect(launcher?.sources).toEqual([...profiles].sort());
     } finally {
       await repository.cleanup();
     }
@@ -188,7 +198,7 @@ describe("QualityProjector", () => {
       if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
       const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
 
-      const projection = await new QualityProjector(available, noHooks).project(
+      const projection = await new QualityProjector(available, noHooks, engine).project(
         resolution,
         catalogResult.catalog,
         snapshot,
@@ -202,7 +212,7 @@ describe("QualityProjector", () => {
       );
       expect(hook?.kind === "artifact" && hook.intent.kind === "file"
         ? Buffer.from(hook.intent.bytes.copy()).toString("utf8")
-        : "").toContain("railguard verify --changed");
+        : "").toContain(".railguard/bin/railguard verify --changed");
       expect(
         projection.units.some((unit) => unit.kind === "artifact" && unit.intent.kind === "managed-section"),
       ).toBe(false);

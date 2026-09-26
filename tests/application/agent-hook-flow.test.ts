@@ -35,7 +35,8 @@ describe("agent stop hook", () => {
       expect(JSON.parse(await readFile(join(repository.root, ".cursor/hooks.json"), "utf8")).hooks.stop[0].command)
         .toBe(".railguard/agent-hooks/stop cursor");
       const script = join(repository.root, ".railguard/agent-hooks/stop");
-      expect(await readFile(script, "utf8")).toContain('exec railguard hook stop --harness "$1" --operation check');
+      expect(await readFile(script, "utf8")).toContain('.railguard/bin/railguard hook stop --harness "$1" --operation check');
+      expect((await stat(join(repository.root, ".railguard/bin/railguard"))).mode & 0o111).not.toBe(0);
       expect((await stat(script)).mode & 0o111).not.toBe(0);
 
       const managed = await runtime.application.scan(repository.root);

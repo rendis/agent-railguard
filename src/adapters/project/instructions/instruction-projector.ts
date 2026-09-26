@@ -195,7 +195,7 @@ function groupInstruction(
     case "automation":
       return "Treat hook failures as local feedback. Reproduce a failure with the same canonical command and fix its cause; local hooks do not replace CI.";
     case "quality":
-      return "Use the canonical project commands below; their exit status is the mechanical verdict.";
+      return "Use the canonical project commands below; their exit status is the mechanical verdict. Run Railguard as `.railguard/bin/railguard`, which uses the version this repository pins; `railguard` in skills and descriptions means that launcher.";
   }
 }
 
@@ -230,10 +230,10 @@ function mappingGuidance(
       return component.description;
     case "git-gate": {
       const timing = component.event === "pre-commit" ? "Before committing" : "Before pushing";
-      return `${timing}, \`railguard ${component.operation} --changed\` runs automatically; run it yourself to reproduce a failure.`;
+      return `${timing}, \`.railguard/bin/railguard ${component.operation} --changed\` runs automatically; run it yourself to reproduce a failure.`;
     }
     case "agent-hook":
-      return `When you finish a turn, \`railguard ${component.operation} --changed\` runs and any failure comes back to you; fix it instead of weakening tests or checks.`;
+      return `When you finish a turn, \`.railguard/bin/railguard ${component.operation} --changed\` runs and any failure comes back to you; fix it instead of weakening tests or checks.`;
     default:
       return component.description;
   }

@@ -27,6 +27,7 @@ import {
 } from "./cli/output.js";
 import { runStopHook } from "./application/agent-stop-hook.js";
 import { createDefaultApplication } from "./application/composition-root.js";
+import { engineVersion } from "./application/engine-release.js";
 import {
   encodeVerificationReport,
   label,
@@ -45,8 +46,7 @@ import type { CatalogComponent } from "./domain/catalog/model.js";
 import { clackUi } from "./tui/clack-ui.js";
 import { runWizard } from "./tui/wizard.js";
 
-declare const __RAILGUARD_VERSION__: string;
-const version = __RAILGUARD_VERSION__;
+const version = engineVersion;
 const reviewRecordExitCodes = Object.freeze({ recorded: 0, invalid: 2, blocked: 5, "not-met": 8 });
 
 const program = new Command()
