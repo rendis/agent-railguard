@@ -6,7 +6,6 @@ import projectStateSchema from "../../schemas/project-state.v1.schema.json" with
 
 const digest = `sha256:${"a".repeat(64)}`;
 const otherDigest = `sha256:${"b".repeat(64)}`;
-const operationId = "123e4567-e89b-42d3-a456-426614174000";
 
 const project = {
   schema: "railguard/project/v1",

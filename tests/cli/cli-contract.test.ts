@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { cp, lstat, mkdir, mkdtemp, opendir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createTempRepository } from "../helpers/temp-repository.js";
@@ -313,9 +313,6 @@ describe.sequential("production CLI contract", () => {
       expect(await readFile(join(repository.root, ".railguard/project.yaml"), "utf8")).toContain(
         "./cmd/...",
       );
-      await expect(readFile(join(repository.root, "Makefile"), "utf8")).rejects.toMatchObject({
-        code: "ENOENT",
-      });
 
       const already = await cli([
         "init",

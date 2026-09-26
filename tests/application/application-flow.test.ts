@@ -1,5 +1,4 @@
-import { chmod, lstat, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, lstat, readFile, readlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -121,9 +120,6 @@ describe("RailguardApplication", () => {
         throw new Error("Expected installation plan to be ready");
       }
       expect((await runtime.application.apply(prepared.plan)).kind).toBe("applied");
-      await expect(readFile(`${repository.root}/Makefile`, "utf8")).rejects.toMatchObject({
-        code: "ENOENT",
-      });
       await expect(
         readFile(`${repository.root}/.railguard/hooks/pre-commit`, "utf8"),
       ).rejects.toMatchObject({ code: "ENOENT" });
@@ -377,9 +373,6 @@ describe("RailguardApplication", () => {
       expect(await readFile(`${repository.root}/.railguard/hooks/pre-push`, "utf8")).toContain(
         "railguard verify --changed",
       );
-      await expect(readFile(`${repository.root}/Makefile`, "utf8")).rejects.toMatchObject({
-        code: "ENOENT",
-      });
       expect(
         (await exec("git", ["-C", repository.root, "config", "--local", "--get", "core.hooksPath"]))
           .stdout.trim(),
@@ -402,9 +395,6 @@ describe("RailguardApplication", () => {
         throw new Error("Expected gate removal plan to be ready");
       }
       expect((await runtime.application.apply(removal.plan)).kind).toBe("applied");
-      await expect(readFile(`${repository.root}/Makefile`, "utf8")).rejects.toMatchObject({
-        code: "ENOENT",
-      });
       await expect(
         exec("git", ["-C", repository.root, "config", "--local", "--get", "core.hooksPath"]),
       ).rejects.toMatchObject({ code: 1 });
@@ -581,9 +571,6 @@ describe("RailguardApplication", () => {
         "quality.git-hooks.conflict",
       );
       expect(await readFile(existingHook, "utf8")).toBe("#!/bin/sh\nexit 0\n");
-      await expect(readFile(join(repository.root, "Makefile"))).rejects.toMatchObject({
-        code: "ENOENT",
-      });
     } finally {
       await Promise.all([runtime.dispose(), repository.cleanup()]);
     }

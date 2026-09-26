@@ -5,7 +5,6 @@ import type {
 } from "../../domain/catalog/model.js";
 import {
   compareDiagnostics,
-  relativePosixPath,
   type Diagnostic,
   type LanguageId,
 } from "../../domain/shared/types.js";

@@ -23,7 +23,7 @@ import { CommandInputError } from "./command-runner.js";
 /** Set for every engine started by Railguard itself, so it never delegates again. */
 const launchedVariable = "RAILGUARD_LAUNCHED";
 
-export function latestReleaseSource(): LatestRelease {
+function latestReleaseSource(): LatestRelease {
   return new GitHubLatestRelease(new NodeProcessRunner(), releaseRepository);
 }
 

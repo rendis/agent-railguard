@@ -24,7 +24,6 @@ import type {
   DurableMutationEngine,
   DurableApplyOptions,
   DurableProjectPlanning,
-  ReadyDesiredState,
 } from "../domain/transaction/model.js";
 import {
   DesiredStateModule,

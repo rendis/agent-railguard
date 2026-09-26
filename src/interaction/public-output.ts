@@ -198,7 +198,7 @@ export function publicRepository(
   });
 }
 
-export function publicDraft(
+function publicDraft(
   draft: NonNullable<InteractionSnapshot["draft"]>,
 ): PublicDraftView {
   return Object.freeze({

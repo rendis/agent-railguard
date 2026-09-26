@@ -38,7 +38,6 @@ import type {
   DurableProjectPlanRequest,
   DurableProjectPlanning,
   ReadyPortableLock,
-  TransactionFileState,
   TransactionOperation,
 } from "./model.js";
 

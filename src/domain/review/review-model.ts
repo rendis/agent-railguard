@@ -154,10 +154,6 @@ export function buildReviewModel(input: {
   });
 }
 
-function shellSingleQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
 function reviewComponent(
   resolved: ResolvedComponent,
   component: CatalogComponent,

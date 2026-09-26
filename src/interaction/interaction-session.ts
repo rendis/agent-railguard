@@ -65,7 +65,7 @@ export interface DefaultInteractionSessionOptions {
   readonly attachApplicationEvents?: AttachApplicationEvents;
 }
 
-export class DefaultInteractionSession implements InteractionSession {
+class DefaultInteractionSession implements InteractionSession {
   readonly #application: RailguardCases;
   readonly #operationId: string;
   readonly #subscribers = new Set<InteractionSubscriber>();

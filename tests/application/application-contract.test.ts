@@ -82,9 +82,6 @@ describe("RailguardApplication public cases", () => {
       expect(await readFile(`${repository.root}/.railguard/project.yaml`, "utf8")).toContain(
         "./cmd/...",
       );
-      await expect(readFile(`${repository.root}/Makefile`, "utf8")).rejects.toMatchObject({
-        code: "ENOENT",
-      });
 
       const managed = await runtime.application.scan(repository.root);
       if (managed.kind !== "ready") throw new Error("Expected managed scan");

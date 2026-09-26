@@ -23,7 +23,6 @@ import {
   semVer,
   type Diagnostic,
   type ComponentRef,
-  type HarnessTargetId,
 } from "../../../domain/shared/types.js";
 import {
   projectProjectionTargetId,

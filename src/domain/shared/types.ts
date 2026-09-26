@@ -21,7 +21,6 @@ const semVerPattern =
 const languageIdPattern = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const capabilityIdPattern = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 const targetIdPattern = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-const digestPattern = /^sha256:[0-9a-f]{64}$/;
 
 export function componentRef(value: string): ComponentRef {
   if (!componentRefPattern.test(value)) {
@@ -87,12 +86,6 @@ export function relativePosixPath(
   return value as RelativePosixPath;
 }
 
-export function sha256Digest(value: string): Sha256Digest {
-  if (!digestPattern.test(value)) {
-    throw new TypeError(`Invalid SHA-256 digest: ${value}`);
-  }
-  return value as Sha256Digest;
-}
 
 export function sha256(value: string | Uint8Array): Sha256Digest {
   return `sha256:${createHash("sha256").update(value).digest("hex")}` as Sha256Digest;

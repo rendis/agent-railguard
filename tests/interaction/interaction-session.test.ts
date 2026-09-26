@@ -1,8 +1,7 @@
 import { execFile } from "node:child_process";
-import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ExecutableProbe } from "../../src/domain/harness/model.js";
 import {
   componentRef,
@@ -28,16 +27,6 @@ const probe: ExecutableProbe = {
 const codex = harnessTargetId("codex");
 const goHexagonal = componentRef("skill:develop-go-hexagonal-service");
 const execute = promisify(execFile);
-const originalAsciiMode = process.env.RAILGUARD_ASCII;
-
-beforeAll(() => {
-  process.env.RAILGUARD_ASCII = "0";
-});
-
-afterAll(() => {
-  if (originalAsciiMode === undefined) delete process.env.RAILGUARD_ASCII;
-  else process.env.RAILGUARD_ASCII = originalAsciiMode;
-});
 
 describe("production shared CLI/TUI interaction contract", () => {
   it("preserves preflight diagnostics when planning stops before creating a plan", async () => {

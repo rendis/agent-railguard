@@ -41,7 +41,7 @@ export function scanSummary(snapshot: InteractionSnapshot): string {
   return lines.join("\n");
 }
 
-export function projectState(snapshot: InteractionSnapshot): string {
+function projectState(snapshot: InteractionSnapshot): string {
   const repository = snapshot.repository;
   if (repository === null) return "unknown";
   if (repository.management === "uninitialized") return "not configured by Railguard";

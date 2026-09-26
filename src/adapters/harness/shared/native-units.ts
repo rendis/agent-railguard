@@ -3,7 +3,6 @@ import type { ProjectionIdentity, ProjectedUnit } from "../../../domain/projecti
 import {
   ReadonlyBytes,
   compareUtf8,
-  harnessTargetId,
   relativePosixPath,
   semVer,
   sha256,
@@ -116,8 +115,4 @@ export function normalizedPrompt(value: string): string {
 
 export function componentId(ref: ComponentRef): string {
   return ref.slice(ref.indexOf(":") + 1);
-}
-
-export function target(value: string): HarnessTargetId {
-  return harnessTargetId(value);
 }

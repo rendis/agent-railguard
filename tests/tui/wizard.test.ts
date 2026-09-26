@@ -129,19 +129,19 @@ describe("interactive wizard", () => {
   }, 60_000);
 
   it("builds and applies exactly the plan the CLI builds for the same request", async () => {
-    const headlessRepository = await goRepository();
+    const cliRepository = await goRepository();
     const wizardRepository = await goRepository();
     const everything: ExecutableProbe = {
       async probe(command) {
         return { detected: true, path: `/test/bin/${command}`, version: "test", diagnostics: [] };
       },
     };
-    const headlessRuntime = await createInteractionRuntime({ executableProbe: everything });
+    const cliRuntime = await createInteractionRuntime({ executableProbe: everything });
     const wizardRuntime = await createInteractionRuntime({ executableProbe: everything });
     try {
-      const headless = await runProductCommand(headlessRuntime, {
+      const cliRun = await runProductCommand(cliRuntime, {
         command: "init",
-        root: headlessRepository.root,
+        root: cliRepository.root,
         recommended: true,
         add: [],
         targets: [harnessTargetId("codex")],
@@ -150,7 +150,7 @@ describe("interactive wizard", () => {
       });
       const script = scriptedUi([
         { select: "configure" },
-        { pick: headless.result.direct_selections },
+        { pick: cliRun.result.direct_selections },
         { select: "targets" },
         { pick: ["codex"] },
         { select: "apply" },
@@ -165,14 +165,14 @@ describe("interactive wizard", () => {
       };
       await runWizard(session, wizardRepository.root, script.ui, "test");
 
-      expect(headless.result.direct_selections.length).toBeGreaterThan(0);
-      expect(approved).toEqual([headless.result.plan?.plan_id]);
+      expect(cliRun.result.direct_selections.length).toBeGreaterThan(0);
+      expect(approved).toEqual([cliRun.result.plan?.plan_id]);
       expect(script.shown.join("\n")).toContain("Result   succeeded");
     } finally {
       await Promise.all([
-        headlessRuntime.dispose(),
+        cliRuntime.dispose(),
         wizardRuntime.dispose(),
-        headlessRepository.cleanup(),
+        cliRepository.cleanup(),
         wizardRepository.cleanup(),
       ]);
     }

@@ -8,7 +8,7 @@ import { lazyValidator } from "../../shared/schema-validator.js";
 const resultValidator = lazyValidator(resultSchema, [planSchema]);
 const eventValidator = lazyValidator(eventSchema, [planSchema, resultSchema]);
 
-export class PublicContractValidationError extends TypeError {
+class PublicContractValidationError extends TypeError {
   public constructor(
     readonly contract: "result" | "event",
     readonly issues: readonly string[],
@@ -18,7 +18,7 @@ export class PublicContractValidationError extends TypeError {
   }
 }
 
-export function assertPublicResult<Value>(value: Value): Value {
+function assertPublicResult<Value>(value: Value): Value {
   const validateResult = resultValidator();
   if (!validateResult(value)) {
     throw new PublicContractValidationError(
@@ -29,7 +29,7 @@ export function assertPublicResult<Value>(value: Value): Value {
   return value;
 }
 
-export function assertPublicEvent<Value>(value: Value): Value {
+function assertPublicEvent<Value>(value: Value): Value {
   const validateEvent = eventValidator();
   if (!validateEvent(value)) {
     throw new PublicContractValidationError(
