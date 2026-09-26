@@ -1,5 +1,6 @@
 import type {
   CatalogAgentComponent,
+  CatalogAgentHookComponent,
   CatalogMcpIntegrationComponent,
   CatalogSnapshot,
 } from "../../../domain/catalog/model.js";
@@ -15,6 +16,7 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentGuardScript,
   agentStopScript,
   componentId,
   nativeFileUnit,
@@ -77,21 +79,7 @@ export class CodexAdapter implements HarnessAdapter {
               target: this.id,
               role: "hook",
               path: ".codex/hooks.json",
-              text: stablePrettyJson({
-                hooks: {
-                  Stop: [
-                    {
-                      hooks: [
-                        {
-                          type: "command",
-                          command: `"$(git rev-parse --show-toplevel)/${agentStopScript}" codex`,
-                          timeout: 900,
-                        },
-                      ],
-                    },
-                  ],
-                },
-              }),
+              text: stablePrettyJson({ hooks: codexHooks(components.agentHooks) }),
               sources: components.agentHooks.map((hook) => hook.ref),
             }),
           ]),
@@ -101,6 +89,26 @@ export class CodexAdapter implements HarnessAdapter {
       units: Object.freeze(units),
     });
   }
+}
+
+/** Hook commands resolve the repository from the session's working directory, as Codex advises. */
+function codexHooks(hooks: readonly CatalogAgentHookComponent[]): Readonly<Record<string, unknown>> {
+  const command = (script: string) => `"$(git rev-parse --show-toplevel)/${script}" codex`;
+  return {
+    ...(hooks.some((hook) => hook.event === "pre-action")
+      ? {
+          PreToolUse: [
+            {
+              matcher: "^(Bash|apply_patch)$",
+              hooks: [{ type: "command", command: command(agentGuardScript), timeout: 60 }],
+            },
+          ],
+        }
+      : {}),
+    ...(hooks.some((hook) => hook.event === "stop")
+      ? { Stop: [{ hooks: [{ type: "command", command: command(agentStopScript), timeout: 900 }] }] }
+      : {}),
+  };
 }
 
 function renderMcpServer(mcp: CatalogMcpIntegrationComponent): string {

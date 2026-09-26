@@ -1,5 +1,6 @@
 import type {
   CatalogAgentComponent,
+  CatalogAgentHookComponent,
   CatalogMcpIntegrationComponent,
   CatalogSnapshot,
 } from "../../../domain/catalog/model.js";
@@ -15,6 +16,7 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentGuardScript,
   agentStopScript,
   componentId,
   nativeFileUnit,
@@ -84,10 +86,7 @@ export class CursorAdapter implements HarnessAdapter {
           target: this.id,
           role: "hook",
           path: ".cursor/hooks.json",
-          text: stablePrettyJson({
-            version: 1,
-            hooks: { stop: [{ command: `${agentStopScript} cursor`, loop_limit: 3 }] },
-          }),
+          text: stablePrettyJson({ version: 1, hooks: cursorHooks(components.agentHooks) }),
           sources: components.agentHooks.map((hook) => hook.ref),
         }),
       );
@@ -95,6 +94,18 @@ export class CursorAdapter implements HarnessAdapter {
     units.sort((left, right) => compareUtf8(left.ownershipId, right.ownershipId));
     return Object.freeze({ identity: nativeProjectionIdentity(this.id, agentHookHarnessCapabilities), units: Object.freeze(units) });
   }
+}
+
+/** Project hooks run from the project root, so the scripts are addressed relative to it. */
+function cursorHooks(hooks: readonly CatalogAgentHookComponent[]): Readonly<Record<string, unknown>> {
+  return {
+    ...(hooks.some((hook) => hook.event === "pre-action")
+      ? { preToolUse: [{ command: `${agentGuardScript} cursor`, matcher: "Shell|Write|Delete", timeout: 60 }] }
+      : {}),
+    ...(hooks.some((hook) => hook.event === "stop")
+      ? { stop: [{ command: `${agentStopScript} cursor`, loop_limit: 3 }] }
+      : {}),
+  };
 }
 
 function renderMcpServer(mcp: CatalogMcpIntegrationComponent): Readonly<Record<string, unknown>> {

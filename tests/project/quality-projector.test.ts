@@ -1,4 +1,7 @@
-import { resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { NodeRepositoryInventory } from "../../src/adapters/platform/repository-inventory/node-repository-inventory.js";
 import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
@@ -272,6 +275,59 @@ describe("QualityProjector", () => {
       expect(
         projection.units.some((unit) => unit.kind === "artifact" && unit.intent.kind === "managed-section"),
       ).toBe(false);
+    } finally {
+      await repository.cleanup();
+    }
+  });
+  it("writes the pre-action guard with the protected paths the repository selected", async () => {
+    const repository = await createTempRepository({});
+    try {
+      const catalogResult = await new FilesystemCatalog({
+        catalogFile: resolve("railguard.yaml"),
+        supportedLanguages: [languageId("go")],
+      }).load();
+      if (catalogResult.kind !== "ready") throw new Error("Expected ready catalog");
+      const changeGuard = componentRef("verification-profile:change-guard");
+      const resolution = new DefaultResolver().resolve({
+        catalog: catalogResult.catalog,
+        directSelections: [componentRef("agent-hook:action-guard"), changeGuard],
+        projectUnits: [],
+        targets: [{
+          target: harnessTargetId("cursor"),
+          capabilities: [capabilityId("project.instructions"), capabilityId("project.agent-hooks")],
+        }],
+      });
+      if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
+      const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
+
+      const projection = await new QualityProjector(available, noHooks, engine, []).project(
+        resolution,
+        catalogResult.catalog,
+        snapshot,
+        { projectUnits: [] } as never,
+        [],
+        new Map([[changeGuard, { protected_paths: [".golangci.*", "it's config/**"] }]]),
+      );
+
+      const unit = projection.units.find((candidate) => candidate.ownershipId === "project.agent-hook.guard");
+      expect(unit?.sources).toEqual([componentRef("agent-hook:action-guard"), changeGuard]);
+      expect(projection.units.some((candidate) => candidate.ownershipId === "project.agent-hook.stop")).toBe(false);
+      const script = unit?.kind === "artifact" && unit.intent.kind === "file" ? Buffer.from(unit.intent.bytes.copy()).toString("utf8") : "";
+
+      // Run the generated script against a launcher that records its arguments.
+      const run = promisify(execFile);
+      await run("git", ["init", "-q"], { cwd: repository.root });
+      await mkdir(join(repository.root, ".railguard/bin"), { recursive: true });
+      await writeFile(join(repository.root, ".railguard/guard"), script, { mode: 0o755 });
+      const launcher = join(repository.root, ".railguard/bin/railguard");
+      await writeFile(launcher, '#!/bin/sh\nprintf "%s\\n" "$@"\n');
+      await chmod(launcher, 0o755);
+      expect((await run(join(repository.root, ".railguard/guard"), ["cursor"], { cwd: repository.root })).stdout.split("\n")).toEqual([
+        "hook", "guard", "--harness", "cursor", "--protect", ".golangci.*", "it's config/**", "",
+      ]);
+      await writeFile(launcher, "#!/bin/sh\nexit 127\n");
+      expect((await run(join(repository.root, ".railguard/guard"), ["cursor"], { cwd: repository.root })).stdout).toBe('{"permission":"allow"}\n');
+      expect((await run(join(repository.root, ".railguard/guard"), ["codex"], { cwd: repository.root })).stdout).toBe("");
     } finally {
       await repository.cleanup();
     }

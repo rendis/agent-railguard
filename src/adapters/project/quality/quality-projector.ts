@@ -15,13 +15,19 @@ import type {
   GitHookInventory,
 } from "../../../domain/project/model.js";
 import type { CheckProvider } from "../../../domain/verification/checks.js";
-import { planFullSteps, renderVerifyScript, verifyScriptPath } from "../../../domain/verification/verify-script.js";
+import {
+  planFullSteps,
+  profileInputs,
+  renderVerifyScript,
+  verifyScriptPath,
+} from "../../../domain/verification/verify-script.js";
 import type { RepositoryAssessmentResult, RepositorySnapshot } from "../../../domain/repository/model.js";
 import type { ReadyResolution } from "../../../domain/resolution/model.js";
 import {
   ReadonlyBytes,
   compareDiagnostics,
   compareUtf8,
+  componentRef,
   relativePosixPath,
   harnessTargetId,
   semVer,
@@ -74,6 +80,8 @@ export class QualityProjector implements ProjectArtifactProjector {
     const agentHooks = components.filter(
       (component): component is CatalogAgentHookComponent => component.kind === "agent-hook",
     );
+    const stopHooks = agentHooks.filter((hook) => hook.event === "stop");
+    const guardHooks = agentHooks.filter((hook) => hook.event === "pre-action");
     if (profiles.length === 0 && gates.length === 0 && agentHooks.length === 0) {
       return emptyProjection();
     }
@@ -141,14 +149,30 @@ export class QualityProjector implements ProjectArtifactProjector {
         }),
       );
     }
-    if (agentHooks.length > 0) {
+    if (stopHooks.length > 0) {
       intents.push(
         Object.freeze({
           kind: "file",
           owner: "agent-hooks:stop",
           scopeRoot: relativePosixPath(".railguard/agent-hooks"),
           path: relativePosixPath(agentStopScriptPath),
-          bytes: new ReadonlyBytes(Buffer.from(agentStopBody(agentHooks), "utf8")),
+          bytes: new ReadonlyBytes(Buffer.from(agentStopBody(stopHooks), "utf8")),
+          mode: 0o755,
+        }),
+      );
+    }
+    if (guardHooks.length > 0) {
+      const changeGuard = profiles.find((profile) => profile.ref === changeGuardRef);
+      const protectedPaths = changeGuard === undefined
+        ? []
+        : profileInputs(changeGuard, selectionInputs.get(changeGuard.ref)).protected_paths ?? [];
+      intents.push(
+        Object.freeze({
+          kind: "file",
+          owner: "agent-hooks:guard",
+          scopeRoot: relativePosixPath(".railguard/agent-hooks"),
+          path: relativePosixPath(agentGuardScriptPath),
+          bytes: new ReadonlyBytes(Buffer.from(agentGuardBody(protectedPaths), "utf8")),
           mode: 0o755,
         }),
       );
@@ -195,7 +219,16 @@ export class QualityProjector implements ProjectArtifactProjector {
         return Object.freeze({
           kind: "artifact",
           ownershipId: "project.agent-hook.stop",
-          sources: Object.freeze(agentHooks.map((hook) => hook.ref)),
+          sources: Object.freeze(stopHooks.map((hook) => hook.ref)),
+          intent,
+        });
+      }
+      if (intent.path === agentGuardScriptPath) {
+        const changeGuard = profiles.some((profile) => profile.ref === changeGuardRef) ? [componentRef(changeGuardRef)] : [];
+        return Object.freeze({
+          kind: "artifact",
+          ownershipId: "project.agent-hook.guard",
+          sources: Object.freeze([...guardHooks.map((hook) => hook.ref), ...changeGuard].sort(compareUtf8)),
           intent,
         });
       }
@@ -269,6 +302,37 @@ function groupGatesByEvent(
 }
 
 const agentStopScriptPath = ".railguard/agent-hooks/stop";
+const agentGuardScriptPath = ".railguard/agent-hooks/guard";
+const changeGuardRef = "verification-profile:change-guard";
+
+/**
+ * Called by every harness's pre-action hook with the harness id, before the agent runs a command or
+ * edits a file. The protected paths are written here so the engine decides without loading the
+ * catalog. Without the engine the action proceeds; Cursor needs an explicit allow to do so.
+ */
+function agentGuardBody(protectedPaths: readonly string[]): string {
+  const protect = protectedPaths.length === 0
+    ? ""
+    : ` --protect ${[...protectedPaths].sort(compareUtf8).map(shellQuote).join(" ")}`;
+  return [
+    "#!/bin/sh",
+    "# Managed by Railguard: runs before a coding agent runs a command or edits a file.",
+    'cd "$(git rev-parse --show-toplevel)" || exit 0',
+    "status=0",
+    `${launcherPath} hook guard --harness "$1"${protect} || status=$?`,
+    `if [ "$status" -eq ${engineUnavailable} ]; then`,
+    '  echo "Railguard is unavailable; this action was not checked." >&2',
+    '  if [ "$1" = cursor ]; then echo \'{"permission":"allow"}\'; fi',
+    "  exit 0",
+    "fi",
+    'exit "$status"',
+    "",
+  ].join("\n");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 /**
  * Called by every harness's stop hook with the harness id. It delegates to the engine, which owns

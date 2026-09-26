@@ -87,13 +87,17 @@ export interface CatalogGitGateComponent extends CatalogComponentBase {
   readonly operation: "check" | "verify";
 }
 
-/** A coding-agent lifecycle hook that runs a verification operation on the change. */
+/**
+ * A coding-agent lifecycle hook: `stop` runs a verification operation on the change before the
+ * agent finishes; `pre-action` refuses a command or file edit that would bypass the guardrails.
+ */
 export interface CatalogAgentHookComponent extends CatalogComponentBase {
   readonly kind: "agent-hook";
   readonly trust: "local-agent-execution";
   readonly payload: null;
-  readonly event: "stop";
-  readonly operation: "check" | "verify";
+  readonly event: "stop" | "pre-action";
+  /** The verification stage a `stop` hook runs; null for a hook that does not verify. */
+  readonly operation: "check" | "verify" | null;
 }
 
 export interface CatalogMcpIntegrationComponent extends CatalogComponentBase {

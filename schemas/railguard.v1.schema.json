@@ -286,7 +286,16 @@
     "agentHook": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "description", "details", "event", "operation"],
+      "required": ["version", "description", "details", "event"],
+      "oneOf": [
+        {
+          "properties": { "event": { "const": "stop" }, "operation": { "enum": ["check", "verify"] } },
+          "required": ["operation"]
+        },
+        {
+          "properties": { "event": { "const": "pre-action" }, "operation": false }
+        }
+      ],
       "properties": {
         "version": {
           "$ref": "#/$defs/semver"
@@ -299,7 +308,7 @@
         },
         "details": { "$ref": "#/$defs/details" },
         "event": {
-          "enum": ["stop"]
+          "enum": ["stop", "pre-action"]
         },
         "operation": {
           "enum": ["check", "verify"]

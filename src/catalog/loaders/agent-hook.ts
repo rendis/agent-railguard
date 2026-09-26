@@ -11,8 +11,8 @@ export interface AgentHookDefinition {
   readonly version: string;
   readonly description: string;
   readonly details: string;
-  readonly event: "stop";
-  readonly operation: "check" | "verify";
+  readonly event: "stop" | "pre-action";
+  readonly operation?: "check" | "verify";
   readonly relations?: readonly RelationDefinition[];
 }
 
@@ -27,7 +27,7 @@ export function loadAgentHook(id: string, definition: AgentHookDefinition): Load
       description: definition.description,
       details: definition.details,
       event: definition.event,
-      operation: definition.operation,
+      operation: definition.operation ?? null,
       relations,
     }),
   );
@@ -44,7 +44,7 @@ export function loadAgentHook(id: string, definition: AgentHookDefinition): Load
     relations,
     payload: null,
     event: definition.event,
-    operation: definition.operation,
+    operation: definition.operation ?? null,
     integrity: inlineIntegrity(ref, version, definitionDigest, payloadDigest),
   });
   return Object.freeze({

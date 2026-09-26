@@ -165,6 +165,68 @@ describe("Harness adapter contract", () => {
       await repository.cleanup();
     }
   });
+  it.each(cases.filter(({ id }) => id !== "vscode" && id !== "opencode"))(
+    "$id calls the pre-action guard before commands and file edits, next to the stop hook",
+    async ({ id, adapter }) => {
+      const catalog = await loadCatalog();
+      const repository = await createTempRepository({});
+      try {
+        const inspection = await adapter().inspect(await new NodeRepositoryInventory().snapshot(repository.root));
+        const result = new DefaultResolver().resolve({
+          catalog,
+          directSelections: [componentRef("agent-hook:action-guard"), componentRef("agent-hook:stop-check")],
+          projectUnits: [],
+          targets: [{ target: inspection.target, capabilities: inspection.capabilities }],
+        });
+        if (result.kind !== "ready") throw new Error("Expected ready resolution");
+        const hooks = Object.fromEntries(adapter().project(result, catalog).units.flatMap((unit) => {
+          if (unit.kind !== "artifact") return [];
+          if (unit.intent.kind === "json-member") return [[unit.intent.pointer.join("."), unit.intent.value]];
+          if (unit.intent.kind === "file" && unit.intent.path.endsWith("hooks.json")) {
+            return [[unit.intent.path, JSON.parse(Buffer.from(unit.intent.bytes.copy()).toString("utf8"))]];
+          }
+          return [];
+        }));
+
+        const expected = {
+          "claude-code": {
+            "hooks.PreToolUse": [{
+              matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit",
+              hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/.railguard/agent-hooks/guard claude-code', timeout: 60 }],
+            }],
+            "hooks.Stop": [{
+              hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/.railguard/agent-hooks/stop claude-code', timeout: 900 }],
+            }],
+          },
+          codex: {
+            ".codex/hooks.json": {
+              hooks: {
+                PreToolUse: [{
+                  matcher: "^(Bash|apply_patch)$",
+                  hooks: [{ type: "command", command: '"$(git rev-parse --show-toplevel)/.railguard/agent-hooks/guard" codex', timeout: 60 }],
+                }],
+                Stop: [{
+                  hooks: [{ type: "command", command: '"$(git rev-parse --show-toplevel)/.railguard/agent-hooks/stop" codex', timeout: 900 }],
+                }],
+              },
+            },
+          },
+          cursor: {
+            ".cursor/hooks.json": {
+              version: 1,
+              hooks: {
+                preToolUse: [{ command: ".railguard/agent-hooks/guard cursor", matcher: "Shell|Write|Delete", timeout: 60 }],
+                stop: [{ command: ".railguard/agent-hooks/stop cursor", loop_limit: 3 }],
+              },
+            },
+          },
+        }[id as "claude-code" | "codex" | "cursor"];
+        expect(hooks).toEqual(expected);
+      } finally {
+        await repository.cleanup();
+      }
+    },
+  );
 });
 
 function resolveNative(catalog: CatalogSnapshot, target: string) {

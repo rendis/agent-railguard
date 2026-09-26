@@ -35,7 +35,8 @@ import {
 import { activateDeclaredGitGates } from "./cli/git-gate-activation.js";
 import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
-import { runStopHook } from "./application/agent-stop-hook.js";
+import { guardAction } from "./application/agent-action-guard.js";
+import { runStopHook, type StopHookHarness } from "./application/agent-stop-hook.js";
 import { createDefaultApplication } from "./application/composition-root.js";
 import { engineVersion, releaseRepository } from "./application/engine-release.js";
 import {
@@ -308,9 +309,32 @@ review
     });
   });
 
-program
+const hook = program
   .command("hook", { hidden: true })
-  .description("Entry points called by managed agent hooks")
+  .description("Entry points called by managed agent hooks");
+
+hook
+  .command("guard")
+  .description("Refuse an agent command or file edit that would bypass the guardrails")
+  .requiredOption("--harness <harness>", "claude-code, codex or cursor")
+  .option("--protect <globs...>", "repository paths the agent must not edit", [])
+  .action(async (_options, command: Command) => {
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const harness = hookHarness(options.harness);
+      const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+      const response = guardAction({
+        harness,
+        root: await realpath(rootFrom(options)),
+        input,
+        protectedPaths: options.protect as readonly string[],
+      });
+      process.stdout.write(response.stdout);
+      process.stderr.write(response.stderr);
+    });
+  });
+
+hook
   .command("stop")
   .description("Block a coding agent from finishing while its change fails verification")
   .requiredOption("--harness <harness>", "claude-code, codex or cursor")
@@ -318,11 +342,8 @@ program
   .action(async (_options, command: Command) => {
     await direct(async () => {
       const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-      const harness = String(options.harness);
+      const harness = hookHarness(options.harness);
       const stage = String(options.operation);
-      if (harness !== "claude-code" && harness !== "codex" && harness !== "cursor") {
-        throw new CommandInputError(`Unsupported hook harness: ${harness}`);
-      }
       if (stage !== "check" && stage !== "verify") {
         throw new CommandInputError(`Unsupported hook operation: ${stage}`);
       }
@@ -693,6 +714,14 @@ function outputFormat(
 
 function baseFrom(options: Readonly<Record<string, unknown>>): string | undefined {
   return options.base === undefined ? undefined : requiredString(options.base, "--base");
+}
+
+function hookHarness(value: unknown): StopHookHarness {
+  const harness = String(value);
+  if (harness !== "claude-code" && harness !== "codex" && harness !== "cursor") {
+    throw new CommandInputError(`Unsupported hook harness: ${harness}`);
+  }
+  return harness;
 }
 
 function rootFrom(options: Readonly<Record<string, unknown>>): string {

@@ -411,6 +411,12 @@ catalog:
       event: stop
       operation: check
 
+    action-guard:
+      version: 0.1.0
+      description: Refuse agent commands and file edits that would bypass the guardrails, before they run.
+      details: "Adds a pre-action hook to Claude Code, Codex and Cursor. Before the agent runs a shell command, it refuses skipping Git hooks (--no-verify), writing a Railguard-Allow trailer and changing core.hooksPath; before the agent edits, adds or deletes a file with its file tools, it refuses paths under .railguard/, .git/, the Codex and Cursor hook files and the protected paths of change-guard. The refusal comes back to the agent with its reason. It is a guardrail, not a sandbox: a harness may run tools that skip hooks, and commands that write files are judged afterwards by change-guard. Codex asks each developer to trust the hook once."
+      event: pre-action
+
   instruction-fragments:
     agents-mapping:
       version: 0.1.0
@@ -468,6 +474,9 @@ catalog:
         - kind: includes
           target: agent:go-reviewer
           reason: The foundation includes a focused Go review workflow.
+        - kind: includes
+          target: agent-hook:action-guard
+          reason: The foundation refuses agent actions that would bypass the guardrails before they run.
         - kind: includes
           target: agent-hook:stop-check
           reason: The foundation keeps agents working until their change passes the fast checks.

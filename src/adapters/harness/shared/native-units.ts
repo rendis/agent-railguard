@@ -98,8 +98,9 @@ export function nativeJsonMemberUnit(input: {
   });
 }
 
-/** Path of the managed script every agent hook calls; see the quality projector. */
+/** Paths of the managed scripts each harness's agent hooks call; see the quality projector. */
 export const agentStopScript = ".railguard/agent-hooks/stop";
+export const agentGuardScript = ".railguard/agent-hooks/guard";
 
 export function stablePrettyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
