@@ -81,6 +81,13 @@ if git commit -qm "feat: token" > "$work/secret.log" 2>&1; then fail "the commit
 grep -q 'secret(s) exposed by the change' "$work/secret.log" || { cat "$work/secret.log" >&2; fail "secret-guard did not report the token"; }
 [ -n "$(find "$HOME/.cache/railguard/tools/betterleaks" -name betterleaks.exe 2>/dev/null)" ] \
   || fail "Betterleaks was not installed in the tool cache"
+# A secret that skipped the hook still fails once it is only in a commit of the branch.
+git checkout -q -b leaked
+git commit -q --no-verify -m "feat: token"
+git rm -q internal/core/token.go
+.railguard/bin/railguard check --changed --plain > "$work/history.log" 2>&1 && fail "check passed with a secret in a commit"
+grep -q 'github-pat in commit' "$work/history.log" || { cat "$work/history.log" >&2; fail "secret-guard did not find the committed token"; }
+git checkout -q -f main && git branch -q -D leaked
 git reset -q --hard HEAD
 
 mkdir -p "$(git rev-parse --absolute-git-dir)/railguard"

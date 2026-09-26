@@ -1,8 +1,9 @@
 import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   changesAt,
+  parseAddedLines,
   type ChangedLines,
   type ChangeSet,
   type ChangeSetReader,
@@ -61,6 +62,7 @@ const configFiles = [".betterleaks.toml", ".gitleaks.toml"];
 const ignoreFiles = [".betterleaksignore", ".gitleaksignore"];
 const defaultConfig = "[extend]\nuseDefault = true\n";
 const pathsPerScan = 200;
+const maxHistoryBytes = 8 * 1024 * 1024 - 1;
 const scanTimeoutMs = 600_000;
 
 interface Finding {
@@ -68,7 +70,6 @@ interface Finding {
   readonly File: string;
   readonly StartLine: number;
   readonly EndLine: number;
-  readonly Commit: string;
   readonly Fingerprint: string;
 }
 
@@ -111,11 +112,9 @@ export class SecretCheckProvider implements CheckProvider {
       const findings: string[] = [];
       // An agent's single edit is judged in the working tree only; commits are judged with the change.
       if (scope.base !== null && request.paths === undefined) {
-        const committed = await this.#betterleaks(executable, root, ["git", `--log-opts=${scope.base}..HEAD`, ...options, "."], request.signal);
+        const committed = await this.#committed(executable, root, scope.base, options, work, request.signal);
         if ("error" in committed) return scanFailed(committed.error);
-        for (const finding of committed.findings) {
-          findings.push(`${finding.File}:${finding.StartLine}: ${finding.RuleID} in commit ${finding.Commit.slice(0, 12)} (fingerprint ${finding.Fingerprint})`);
-        }
+        findings.push(...committed.findings);
       }
       // Committed content is judged above; this covers what is still only in the working tree.
       const pending = scope.base === null
@@ -148,6 +147,58 @@ export class SecretCheckProvider implements CheckProvider {
   }
 
   /**
+   * Secrets the branch's commits add. Betterleaks' own `git` mode reads the same `git log -p -U0`
+   * but isolates Git's configuration with `GIT_CONFIG_GLOBAL=NUL`, which Git for Windows 2.55
+   * rejects. Each commit's added lines are written at their line numbers into a file under
+   * `<commit>/<path>` and scanned as files instead, which works the same on every platform.
+   */
+  async #committed(
+    executable: string,
+    root: string,
+    base: string,
+    options: readonly string[],
+    work: string,
+    signal: AbortSignal | undefined,
+  ): Promise<{ readonly findings: readonly string[] } | { readonly error: string }> {
+    const log = await this.process.run(
+      "git",
+      ["-c", "core.quotePath=false", "log", "-p", "--unified=0", "--no-merges", "--no-renames", "--no-ext-diff",
+        "--no-color", "--format=%x00%H", `${base}..HEAD`, "--"],
+      { cwd: root, timeoutMs: scanTimeoutMs, ...(signal === undefined ? {} : { signal }) },
+    );
+    if (log.exitCode !== 0) return { error: log.stderr.trim() || "git log failed" };
+    if (Buffer.byteLength(log.stdout) >= maxHistoryBytes) {
+      return { error: `The commits since ${base.slice(0, 12)} add more than ${maxHistoryBytes / 1024 / 1024} MiB; scan them in smaller changes.` };
+    }
+    const history = join(work, "history");
+    const paths: string[] = [];
+    for (const entry of log.stdout.split("\0").slice(1)) {
+      const commit = entry.slice(0, entry.indexOf("\n"));
+      for (const [path, lines] of parseAddedLines(entry)) {
+        if (path.split("/").some((segment) => segment === ".." || segment === "")) continue;
+        const text = Array.from({ length: Math.max(...lines.keys()) }, (_, index) => lines.get(index + 1) ?? "");
+        await mkdir(dirname(join(history, commit, path)), { recursive: true });
+        await writeFile(join(history, commit, path), `${text.join("\n")}\n`);
+        paths.push(`${commit}/${path}`);
+      }
+    }
+    const findings: string[] = [];
+    for (let start = 0; start < paths.length; start += pathsPerScan) {
+      const chunk = paths.slice(start, start + pathsPerScan);
+      const scanned = await this.#betterleaks(executable, history, ["dir", ...options, "--", ...chunk], signal);
+      if ("error" in scanned) return scanned;
+      for (const finding of scanned.findings) {
+        const file = finding.File.replaceAll("\\", "/");
+        const separator = file.indexOf("/");
+        const commit = file.slice(0, separator);
+        const path = file.slice(separator + 1);
+        findings.push(`${path}:${finding.StartLine}: ${finding.RuleID} in commit ${commit.slice(0, 12)} (fingerprint ${commit}:${path}:${finding.RuleID}:${finding.StartLine})`);
+      }
+    }
+    return { findings };
+  }
+
+  /**
    * Flags shared by every scan. The configuration and ignore list come from the base, so a change
    * cannot exempt itself; inline allow comments are ignored for the same reason.
    */
@@ -157,7 +208,14 @@ export class SecretCheckProvider implements CheckProvider {
     await mkdir(ignored);
     await writeFile(config, (await this.#firstAtBase(root, base, configFiles))?.content ?? defaultConfig);
     const ignore = await this.#firstAtBase(root, base, ignoreFiles);
-    if (ignore !== null) await writeFile(join(ignored, ignore.name), ignore.content);
+    if (ignore !== null) {
+      // A commit fingerprint `<commit>:<path>:<rule>:<line>` matches the history file `<commit>/<path>`.
+      const history = ignore.content.split("\n").flatMap((line) => {
+        const match = /^([0-9a-f]{40}):(.+)$/u.exec(line.trim());
+        return match === null ? [] : [`${match[1]}/${match[2]}`];
+      });
+      await writeFile(join(ignored, ignore.name), [ignore.content.trimEnd(), ...history, ""].join("\n"));
+    }
     return [
       "--config", config,
       "--gitleaks-ignore-path", ignored,

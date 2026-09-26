@@ -126,6 +126,8 @@ describe("secret-exposure", () => {
       "#!/bin/sh",
       `out=${directory}`,
       'sub=$1',
+      '# Commit history is scanned as reconstructed files under a directory named history.',
+      'if [ "$(basename "$PWD")" = history ]; then sub=history; for f in $(find . -type f | sort); do printf "%s\\n" "${f#./}" >> "$out/history-files.txt"; cat "$f" >> "$out/history-files.txt"; done; fi',
       'printf "%s\\n" "$@" >> "$out/args-$sub.txt"',
       'prev=',
       'for arg in "$@"; do',
@@ -146,7 +148,7 @@ describe("secret-exposure", () => {
         return null;
       }
     };
-    const report = async (sub: "git" | "dir", findings: readonly object[]) =>
+    const report = async (sub: "history" | "dir", findings: readonly object[]) =>
       await writeFile(join(directory, `${sub}.json`), JSON.stringify(findings));
     return { directory, locator, read, report };
   }
@@ -184,7 +186,7 @@ describe("secret-exposure", () => {
   }
 
   const finding = (file: string, line: number, extra: Partial<Record<string, unknown>> = {}) => ({
-    RuleID: "github-pat", File: file, StartLine: line, EndLine: line, Commit: "", Fingerprint: `${file}:github-pat:${line}`,
+    RuleID: "github-pat", File: file, StartLine: line, EndLine: line, Fingerprint: `${file}:github-pat:${line}`,
     Match: "REDACTED", Secret: "REDACTED", ...extra,
   });
 
@@ -197,9 +199,12 @@ describe("secret-exposure", () => {
     const outcome = await check(repo.root, fake.locator);
 
     expect(outcome).toEqual({ status: "passed", summary: "No secret in the change", details: [] });
-    const committed = (await fake.read("args-git.txt"))?.split("\n") ?? [];
+    const committed = (await fake.read("args-history.txt"))?.split("\n") ?? [];
     const uncommitted = (await fake.read("args-dir.txt"))?.split("\n") ?? [];
-    expect(committed.slice(0, 2)).toEqual(["git", `--log-opts=${repo.base}..HEAD`]);
+    const head = await repo.git("rev-parse", "HEAD");
+    expect(committed[0]).toBe("dir");
+    expect(committed.slice(committed.indexOf("--") + 1).filter(Boolean)).toEqual([`${head}/app.go`]);
+    expect(await fake.read("history-files.txt")).toBe(`${head}/app.go\npackage app\n`);
     expect(uncommitted.slice(uncommitted.indexOf("--") + 1).filter(Boolean)).toEqual(["notes.txt"]);
     for (const args of [committed, uncommitted]) {
       expect(args).toEqual(expect.arrayContaining(["--redact", "--ignore-gitleaks-allow", "--exit-code", "0"]));
@@ -212,7 +217,7 @@ describe("secret-exposure", () => {
     const fake = await scanner();
     const repo = await repository();
     const leaked = await repo.commit("leak", { "config.go": "package config\n" });
-    await fake.report("git", [finding("config.go", 3, { Commit: leaked, Fingerprint: `${leaked}:config.go:github-pat:3` })]);
+    await fake.report("history", [finding(`${leaked}/config.go`, 3)]);
 
     const outcome = await check(repo.root, fake.locator);
 
@@ -245,8 +250,20 @@ describe("secret-exposure", () => {
 
     await check(repo.root, fake.locator);
 
-    expect(await fake.read("config-git.toml")).toBe("# base rules\n");
-    expect(await fake.read("ignore-git.txt")).toBe(".betterleaksignore\nbase-fingerprint\n");
+    expect(await fake.read("config-history.toml")).toBe("# base rules\n");
+    expect(await fake.read("ignore-history.txt")).toBe(".betterleaksignore\nbase-fingerprint\n");
+  });
+
+  it("places each commit's added lines at their line numbers and translates commit fingerprints", async () => {
+    const fake = await scanner();
+    const sha = "a".repeat(40);
+    const repo = await repository({ "settings.env": "A=1\nB=2\nC=3\n", ".betterleaksignore": `${sha}:x.env:rule:1\nplain.env:rule:2\n` });
+    const changed = await repo.commit("change", { "settings.env": "A=1\nB=2\nC=changed\nD=4\n" });
+
+    await check(repo.root, fake.locator);
+
+    expect(await fake.read("history-files.txt")).toBe(`${changed}/settings.env\n\n\nC=changed\nD=4\n`);
+    expect(await fake.read("ignore-history.txt")).toBe(`.betterleaksignore\n${sha}:x.env:rule:1\nplain.env:rule:2\n${sha}/x.env:rule:1\n`);
   });
 
   it("extends the default rules when the base keeps no configuration", async () => {
@@ -256,8 +273,8 @@ describe("secret-exposure", () => {
 
     await check(repo.root, fake.locator);
 
-    expect(await fake.read("config-git.toml")).toBe("[extend]\nuseDefault = true\n");
-    expect(await fake.read("ignore-git.txt")).toBeNull();
+    expect(await fake.read("config-history.toml")).toBe("[extend]\nuseDefault = true\n");
+    expect(await fake.read("ignore-history.txt")).toBeNull();
   });
 
   it("judges only what follows a commit where a person accepted the finding", async () => {
@@ -266,11 +283,13 @@ describe("secret-exposure", () => {
     await repo.commit("leak", { "a.go": "package a\n" });
     await repo.git("commit", "--allow-empty", "-qm", "accept\n\nRailguard-Allow: secret-exposure: test fixture key");
     const accepted = await repo.git("rev-parse", "HEAD");
+    const later = await repo.commit("later", { "b.go": "package b\n" });
 
     const outcome = await check(repo.root, fake.locator);
 
     expect(outcome.summary).toBe(`No secret in the change since ${accepted.slice(0, 12)} (accepted: test fixture key)`);
-    expect((await fake.read("args-git.txt"))?.split("\n")[1]).toBe(`--log-opts=${accepted}..HEAD`);
+    const scanned = (await fake.read("args-history.txt"))?.split("\n") ?? [];
+    expect(scanned.slice(scanned.indexOf("--") + 1).filter(Boolean)).toEqual([`${later}/b.go`]);
   });
 
   it("judges an agent's edit in the working tree only, without the commit history", async () => {
@@ -288,7 +307,7 @@ describe("secret-exposure", () => {
     });
 
     expect(outcome.details[0]).toBe("edited.env:1: github-pat, not committed (fingerprint edited.env:github-pat:1)");
-    expect(await fake.read("args-git.txt")).toBeNull();
+    expect(await fake.read("args-history.txt")).toBeNull();
     const scanned = (await fake.read("args-dir.txt"))?.split("\n") ?? [];
     expect(scanned.slice(scanned.indexOf("--") + 1).filter(Boolean)).toEqual(["edited.env"]);
   });

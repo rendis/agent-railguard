@@ -160,6 +160,31 @@ export function parseUnifiedDiff(diff: string): {
   return { files, deleted };
 }
 
+/**
+ * The text of every added line in `git diff --unified=0` output, by new-side file and line number.
+ * Deleted files and binary changes contribute nothing.
+ */
+export function parseAddedLines(diff: string): ReadonlyMap<string, ReadonlyMap<number, string>> {
+  const files = new Map<string, Map<number, string>>();
+  let current: Map<number, string> | null = null;
+  let next = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      current = null;
+    } else if (line.startsWith("+++ ")) {
+      const path = diffPath(line.slice(4));
+      current = path === null ? null : files.get(path) ?? new Map<number, string>();
+      if (path !== null && current !== null) files.set(path, current);
+    } else if (line.startsWith("@@ ")) {
+      next = Number(/^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line)?.[1] ?? 0);
+    } else if (line.startsWith("+") && current !== null && next > 0) {
+      current.set(next, line.slice(1));
+      next += 1;
+    }
+  }
+  return files;
+}
+
 function diffPath(value: string): string | null {
   const path = value.split("\t")[0] ?? value;
   if (path === "/dev/null") return null;

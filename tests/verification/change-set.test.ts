@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeChangeSetReader } from "../../src/adapters/platform/git/node-change-set-reader.js";
 import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
-import { changedFilesInUnit, parseUnifiedDiff } from "../../src/domain/verification/checks.js";
+import { changedFilesInUnit, parseAddedLines, parseUnifiedDiff } from "../../src/domain/verification/checks.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
 
 const execute = promisify(execFile);
@@ -115,3 +115,35 @@ async function repository(files: Readonly<Record<string, string>>): Promise<stri
 async function git(root: string, ...args: string[]): Promise<void> {
   await execute("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: root });
 }
+
+describe("parseAddedLines", () => {
+  it("keeps the text of added lines by new-side line number, across hunks and quoted paths", () => {
+    const diff = [
+      "diff --git a/app.go b/app.go",
+      "--- a/app.go",
+      "+++ b/app.go",
+      "@@ -2 +2 @@",
+      "-old",
+      "+new",
+      "@@ -9,0 +10,2 @@",
+      "+ten",
+      "+eleven",
+      "diff --git a/gone.go b/gone.go",
+      "--- a/gone.go",
+      "+++ /dev/null",
+      "@@ -1 +0,0 @@",
+      "-bye",
+      'diff --git "a/dir/with space.txt" "b/dir/with space.txt"',
+      "--- /dev/null",
+      '+++ "b/dir/with space.txt"',
+      "@@ -0,0 +1 @@",
+      "+hello",
+      "\\ No newline at end of file",
+    ].join("\n");
+
+    expect(parseAddedLines(diff)).toEqual(new Map([
+      ["app.go", new Map([[2, "new"], [10, "ten"], [11, "eleven"]])],
+      ["dir/with space.txt", new Map([[1, "hello"]])],
+    ]));
+  });
+});
