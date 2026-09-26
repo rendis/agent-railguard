@@ -19,6 +19,12 @@ import {
 } from "./cli/command-runner.js";
 import type { CommandRun } from "./cli/command-result.js";
 import {
+  delegateToPinnedEngine,
+  printUpdateNotice,
+  runRefreshLatest,
+  runUpdate,
+} from "./cli/engine-updates.js";
+import {
   internalErrorRun,
   invalidInputRun,
   renderProgress,
@@ -58,6 +64,19 @@ const program = new Command()
   .option("--plain", "render human output without terminal styling", false)
   .showHelpAfterError()
   .exitOverride();
+
+// A global railguard runs every command with the engine version the repository pins.
+program.hook("preAction", (_program, actionCommand) => {
+  if (actionCommand.name() === "refresh-latest") return;
+  const options = actionCommand.optsWithGlobals() as Readonly<Record<string, unknown>>;
+  const status = delegateToPinnedEngine(rootFrom(options), process.argv.slice(2));
+  if (status !== null) process.exit(status);
+});
+
+const commandsWithoutUpdateNotice = new Set(["stop", "refresh-latest", "update"]);
+program.hook("postAction", async (_program, actionCommand) => {
+  if (!commandsWithoutUpdateNotice.has(actionCommand.name())) await printUpdateNotice();
+});
 
 addReadOptions(program.command("scan").description("Inspect this repository without changing it"))
   .action(async (_options, command) => {
@@ -316,6 +335,42 @@ program
         await runtime.dispose();
       }
     });
+  });
+
+addFormat(
+  program
+    .command("update")
+    .description("Move this repository to the latest Railguard release")
+    .option("--check", "report whether a newer release exists", false)
+    .option("--plan-only", "review the update without applying it", false)
+    .option("--yes", "pin the new version and apply its content", false)
+    .option("--to <version>", "pin this exact release instead of the latest, also to go back"),
+  ["text", "json"],
+).action(async (_options, command: Command) => {
+  await direct(async () => {
+    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+    const selected = [Boolean(options.check), Boolean(options.planOnly), Boolean(options.yes)];
+    if (selected.filter(Boolean).length !== 1) {
+      throw new CommandInputError("update requires exactly one of --check, --plan-only or --yes");
+    }
+    const to = options.to === undefined ? undefined : String(options.to);
+    if (to !== undefined && !/^\d+\.\d+\.\d+$/u.test(to)) {
+      throw new CommandInputError(`--to requires a release version such as 0.2.0, not ${to}`);
+    }
+    process.exitCode = await runUpdate({
+      root: rootFrom(options),
+      action: selected[0] ? "check" : selected[1] ? "plan" : "apply",
+      to,
+      format: outputFormat(options, ["text", "json"]) === "json" ? "json" : "text",
+    });
+  });
+});
+
+program
+  .command("refresh-latest", { hidden: true })
+  .description("Record the latest release for the update notice")
+  .action(async () => {
+    await runRefreshLatest();
   });
 
 addFormat(program.command("doctor").description("Run read-only project diagnostics"))
@@ -762,7 +817,11 @@ Project content update:
   railguard sync --check|--plan-only|--yes reconciles skills, configurations, managed
   sections and hooks in the repository with the current content.
 Engine update:
-  Re-run the install script to replace the railguard binary with the latest release.
+  Each configured repository pins its engine in .railguard/bin/railguard, and a global
+  railguard runs commands with that pinned version. railguard update --check|--plan-only|--yes
+  moves the repository to the latest release; re-run the install script to update the
+  global command itself. A notice on stderr reports a newer release, checked once a day in
+  the background (disabled in CI or with RAILGUARD_NO_UPDATE_CHECK=1).
 
 Exit codes:
   0 ready/succeeded/no changes; 2 invalid input; 3 invalid scope; 4 readiness blocked;
@@ -827,6 +886,18 @@ Examples:
   railguard repair --yes --format ndjson
 
 Effect: restores only drifted Railguard-owned files, blocks and managed sections.`));
+  command(root, "update").addHelpText("after", `
+Examples:
+  railguard update --check
+  railguard update --plan-only
+  railguard update --yes
+  railguard update --yes --to 0.1.0
+
+Effect: the target release, downloaded and verified like the launcher does, runs sync; it
+rewrites .railguard/bin/railguard with its version and applies the content it ships as one
+reviewable change of the repository. Exit codes: 0 applied or already current; 2 invalid
+input; 4 release unavailable; 6 a newer release exists (--check).
+Output: --format text|json.`);
   command(root, "doctor").addHelpText("after", commonReadHelp(`
 Examples:
   railguard doctor --cwd . --format json

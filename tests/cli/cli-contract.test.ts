@@ -48,8 +48,9 @@ describe.sequential("production CLI contract", () => {
     expect(syncHelp).toContain("--plan-only");
     expect(syncHelp).toContain("--yes");
 
-    expect(rootHelp).toContain("Re-run the install script");
-    expect(rootHelp).not.toMatch(/^\s+update\b/m);
+    expect(rootHelp).toContain("re-run the install script");
+    expect(rootHelp).toContain("railguard update --check|--plan-only|--yes");
+    expect(rootHelp).toMatch(/^\s+update \[options\]\s+Move this repository to the latest Railguard/m);
 
     const mcpHelp = (await cli(["mcp", "--help"])).stdout;
     expect(mcpHelp).toContain("never read or");
@@ -353,6 +354,61 @@ describe.sequential("production CLI contract", () => {
     }
   }, 30_000);
 
+  it("updates a repository to another release and runs every command with its pinned engine", async () => {
+    const repository = await goRepository("engine-update");
+    const workspace = await mkdtemp(join(tmpdir(), "railguard-cli-update-"));
+    try {
+      const init = await cli(["init", "--add", "verification-profile:go-quality", "--harness", "codex", "--yes", "--cwd", repository.root]);
+      expect(init.code, init.stderr).toBe(0);
+      const launcher = join(repository.root, ".railguard/bin/railguard");
+      const pinned = await readFile(launcher, "utf8");
+      expect(pinned).toContain("version=0.1.0\n");
+
+      const release = join(workspace, "release");
+      const asset = `railguard-${process.platform}-${process.arch}`;
+      const engine = '#!/bin/sh\nif [ "$1" = --version ]; then echo 9.9.9; exit 0; fi\necho "engine 9.9.9 ran $*"\n';
+      await mkdir(release);
+      await writeFile(join(release, asset), engine);
+      await writeFile(join(release, "SHA256SUMS"), `${sha256(engine).slice("sha256:".length)}  ${asset}\n`);
+      const environment = { XDG_CACHE_HOME: join(workspace, "cache"), RAILGUARD_DOWNLOAD_URL: `file://${release}` };
+
+      const check = await cli(["update", "--check", "--to", "9.9.9", "--cwd", repository.root], environment);
+      expect(check).toMatchObject({ code: 6, stdout: "Railguard 9.9.9 is available; this repository runs 0.1.0.\n" });
+
+      const update = await cli(["update", "--yes", "--to", "9.9.9", "--cwd", repository.root], environment);
+      expect(update.code, update.stderr).toBe(0);
+      expect(update.stdout).toBe(`engine 9.9.9 ran sync --yes --cwd ${repository.root} --format text\n`);
+
+      await writeFile(launcher, pinned.replace("version=0.1.0", "version=9.9.9"));
+      const delegated = await cli(["status", "--cwd", repository.root], environment);
+      expect(delegated).toMatchObject({ code: 0, stdout: `engine 9.9.9 ran status --cwd ${repository.root}\n` });
+      await writeFile(launcher, pinned);
+
+      await mkdir(join(workspace, "cache", "railguard"), { recursive: true });
+      await writeFile(join(workspace, "cache", "railguard", "latest.json"), JSON.stringify({ checked_at: Date.now(), latest: "9.9.9" }));
+      const notified = await cli(["status", "--cwd", repository.root, "--format", "json"], { ...environment, RAILGUARD_NO_UPDATE_CHECK: "", CI: "" });
+      expect(notified.stderr).toContain("railguard: Railguard 9.9.9 is available; this repository runs 0.1.0.");
+      expect(JSON.parse(notified.stdout)).toMatchObject({ command: "status" });
+      const quietInCi = await cli(["status", "--cwd", repository.root], { ...environment, RAILGUARD_NO_UPDATE_CHECK: "", CI: "true" });
+      expect(quietInCi.stderr).not.toContain("is available");
+    } finally {
+      await Promise.all([repository.cleanup(), rm(workspace, { recursive: true, force: true })]);
+    }
+  }, 60_000);
+
+  it("rejects an update outside a configured repository or to a malformed version", async () => {
+    const repository = await goRepository("update-input");
+    try {
+      const unconfigured = await cli(["update", "--yes", "--to", "1.0.0", "--cwd", repository.root]);
+      expect(unconfigured.code).toBe(2);
+      expect(unconfigured.stderr).toContain("run install.sh again");
+      expect((await cli(["update", "--yes", "--to", "latest", "--cwd", repository.root])).code).toBe(2);
+      expect((await cli(["update", "--cwd", repository.root])).code).toBe(2);
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
   it("supports catalog, doctor and repair queries", async () => {
     const repository = await goRepository("queries");
     try {
@@ -543,7 +599,7 @@ async function cli(
     const result = await execute(process.execPath, [cliPath, ...args], {
       cwd: resolve("."),
       maxBuffer: 16 * 1024 * 1024,
-      env: { ...process.env, NO_COLOR: "1", ...environment },
+      env: { ...process.env, NO_COLOR: "1", RAILGUARD_NO_UPDATE_CHECK: "1", ...environment },
     });
     return { code: 0, stdout: result.stdout, stderr: result.stderr };
   } catch (error) {

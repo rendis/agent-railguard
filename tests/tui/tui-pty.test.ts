@@ -68,7 +68,7 @@ function startPty(control: string, args: readonly string[]) {
   const child = spawn("python3", [
     ptyRunner, "--columns", "140", "--rows", "40", "--resize-file", resizeFile, "--",
     process.execPath, cli, ...args,
-  ], { cwd: resolve("."), env: { ...process.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"] });
+  ], { cwd: resolve("."), env: { ...process.env, NO_COLOR: "1", RAILGUARD_NO_UPDATE_CHECK: "1" }, stdio: ["pipe", "pipe", "pipe"] });
   let output = "";
   let answered = 0;
   child.stdout.setEncoding("utf8");

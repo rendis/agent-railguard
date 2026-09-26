@@ -12,7 +12,7 @@ try {
   await execute("git", ["init", "--quiet", repository]);
   const { stdout } = await execute(process.execPath, [
     resolve("dist/cli.js"), "scan", "--cwd", repository, "--format", "json",
-  ]);
+  ], { env: { ...process.env, RAILGUARD_NO_UPDATE_CHECK: "1" } });
   const result = JSON.parse(stdout);
   if (result.verdict !== "READY" || !result.repository?.languages?.includes("go")) {
     throw new Error(`Bundled CLI failed its Go project scan smoke test: ${stdout}`);

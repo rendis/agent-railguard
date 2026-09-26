@@ -195,7 +195,7 @@ function groupInstruction(
     case "automation":
       return "Treat hook failures as local feedback. Reproduce a failure with the same canonical command and fix its cause; local hooks do not replace CI.";
     case "quality":
-      return "Use the canonical project commands below; their exit status is the mechanical verdict. Run Railguard as `.railguard/bin/railguard`, which uses the version this repository pins; `railguard` in skills and descriptions means that launcher.";
+      return "Use the canonical project commands below; their exit status is the mechanical verdict. Run Railguard as `.railguard/bin/railguard`, which uses the version this repository pins; `railguard` in skills and descriptions means that launcher. When Railguard reports a newer release, tell the user and ask whether you should run `.railguard/bin/railguard update --yes` or they prefer to do it; never update without asking.";
   }
 }
 
