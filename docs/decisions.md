@@ -50,11 +50,11 @@ GitHub Release. There is no other distribution or content channel.
 ### D-004 — Installation with a script
 
 ```bash
-gh api repos/rendis/agent-railguard/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+curl -fsSL https://raw.githubusercontent.com/rendis/agent-railguard/main/install.sh | bash
 ```
 
-While the repository is private, the script and the releases are downloaded with an
-authenticated `gh`; once it is public, `curl` or `wget` are enough. `install.sh` detects
+The script and the releases are downloaded with `curl` or `wget`; with an authenticated `gh`,
+through `gh`, which also verifies the build provenance. `install.sh` detects
 the platform, downloads the binary and `SHA256SUMS` from the release, rejects any
 checksum that differs and replaces `~/.local/bin/railguard` atomically. Running it again
 updates to the latest release; `RAILGUARD_VERSION` pins a version. For development,

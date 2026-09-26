@@ -16,9 +16,8 @@ and Cursor work with specialized skills and inside deterministic quality guardra
 of the agent goes through checks; when one fails, the reason goes back to the agent, which fixes it
 before it reaches your branch.
 
-The [visual guide](docs/guide/index.html) walks through this loop step by step, with what happens
-underneath each node: the hook that runs, the file involved and Railguard's real output. Open it in
-a browser from a clone.
+The [visual guide](https://rendis.github.io/agent-railguard/) walks through this loop step by step, with what happens underneath
+each node: the hook that runs, the file involved and Railguard's real output.
 
 ## Where it checks
 
@@ -57,12 +56,12 @@ Do not skip the Git hooks: they run the checks this repository requires. Fix wha
 ## Installation
 
 ```bash
-gh api repos/rendis/agent-railguard/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+curl -fsSL https://raw.githubusercontent.com/rendis/agent-railguard/main/install.sh | bash
 ```
 
 Installs a self-contained binary (engine + catalog + skills) into `~/.local/bin` after verifying
-its SHA-256. It works on macOS, Linux and Windows (from Git Bash, with Git for Windows). While the
-repository is private it needs an authenticated `gh`. A repository is updated with
+its SHA-256, and with an authenticated `gh` also its build provenance. It works on macOS, Linux and
+Windows (from Git Bash, with Git for Windows). A repository is updated with
 `railguard update --yes`; every command tells you when a new release is out. Details in
 [Installation and updates](docs/installation.md).
 
@@ -116,7 +115,7 @@ describes what Railguard did, without company, project or personal data. See
 
 ## Documentation
 
-- Start: [visual guide](docs/guide/index.html) · [installation and updates](docs/installation.md) · [interactive wizard](docs/tui.md) · [CLI, formats and exit codes](docs/cli.md)
+- Start: [visual guide](https://rendis.github.io/agent-railguard/) · [installation and updates](docs/installation.md) · [interactive wizard](docs/tui.md) · [CLI, formats and exit codes](docs/cli.md)
 - Understand: [quality guardrails](docs/guardrails.md) · [security model](docs/security.md) · [MCP authentication and Atlassian](docs/mcp-authentication.md) · [product decisions](docs/decisions.md)
 - When something fails: [troubleshooting and recovery](docs/troubleshooting.md) · [reporting a bug or proposing an improvement](docs/reporting-issues.md)
 - Contribute: [catalog authoring](docs/catalog-authoring.md) · [status and next steps](docs/status.md)

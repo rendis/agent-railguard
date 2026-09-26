@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install or update the railguard binary.
 #
-#   gh api repos/rendis/agent-railguard/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+#   curl -fsSL https://raw.githubusercontent.com/rendis/agent-railguard/main/install.sh | bash
 #   bash install.sh --local        # build and install from this checkout (requires Node, pnpm and Bun)
 #
 # Environment:

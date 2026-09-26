@@ -6,11 +6,11 @@ Railguard is a single executable per platform that includes the engine and the p
 ## Install or update
 
 ```bash
-gh api repos/rendis/agent-railguard/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+curl -fsSL https://raw.githubusercontent.com/rendis/agent-railguard/main/install.sh | bash
 ```
 
-The repository is private for now: the script and the releases are downloaded with an
-authenticated `gh` (`gh auth login`). Once it is public, `curl` or `wget` will be enough.
+It needs `curl` or `wget`. With an authenticated `gh` (`gh auth login`), the script downloads the
+release through `gh` and also verifies its build provenance.
 
 The script:
 
@@ -20,10 +20,11 @@ The script:
 2. downloads with `curl` or `wget` the `railguard-<os>-<arch>` (with `.exe` on Windows) and
    `SHA256SUMS` from the GitHub Release;
 3. rejects the installation if the checksum does not match;
-4. with an authenticated `gh` and a public repository, also verifies the build's provenance
-   attestation (`gh attestation verify`) and rejects the installation if it does not match the
-   repository. GitHub does not offer attestations on private repositories of a personal account:
-   there, and without `gh`, it says so and continues with the checksum;
+4. with an authenticated `gh`, also verifies the build's provenance attestation
+   (`gh attestation verify`) and rejects the installation if it does not match the repository.
+   Without `gh` it says so and continues with the checksum. Releases before `v0.1.14` were
+   published while the repository was private and carry no attestation: install one of them with
+   `RAILGUARD_VERSION` from a shell without an authenticated `gh`;
 5. atomically replaces `~/.local/bin/railguard` and shows the installed version;
 6. warns if the install directory is not on `PATH`. It does not edit shell files.
 

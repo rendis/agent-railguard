@@ -25,9 +25,10 @@ explicit resolutions available. There is no need to interpret free-form logs.
   Retry; if it persists, report it with `railguard issue bug`.
 - `railguard: command not found`: add `~/.local/bin` (or `RAILGUARD_INSTALL_DIR`) to
   `PATH`.
-- `gh could not download` or `download failed … (a private repository needs gh auth
-  login)`: while the repository is private, releases require an authenticated `gh`
-  (`gh auth login`) with access to `rendis/agent-railguard`.
+- `gh could not download` or `download failed …`: check the network and that the release exists
+  (`RAILGUARD_VERSION` without the `v`).
+- `build provenance of … did not verify`: the release has no attestation for this repository.
+  Releases before `v0.1.14` have none; install them from a shell without an authenticated `gh`.
 
 ## Engine not available in a repository
 
@@ -43,9 +44,8 @@ launcher `checksum mismatch` saves nothing to the cache.
 
 ## Updates
 
-- `railguard update` exits with `4` if it cannot determine or fetch the release: without
-  an authenticated `gh` it cannot see the releases of a private repository. `--to X.Y.Z`
-  avoids querying the latest release, but the download still needs access.
+- `railguard update` exits with `4` if it cannot determine or fetch the release. `--to X.Y.Z`
+  avoids querying the latest release, but the download still needs network access.
 - The new-version notice is stored in `~/.cache/railguard/latest.json`; deleting it forces
   a new query. `RAILGUARD_NO_UPDATE_CHECK=1` disables it.
 
