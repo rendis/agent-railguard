@@ -210,6 +210,13 @@ export class VerificationService {
   }
 }
 
+/** The failed checks of a report as `profile/check`, such as `secret-guard/secrets`. */
+export function failedChecks(report: VerificationReport): readonly string[] {
+  return report.results
+    .filter((result) => result.outcome.status === "failed")
+    .map((result) => `${result.profile.slice(result.profile.indexOf(":") + 1)}/${result.check}`);
+}
+
 function stepOutcome(step: FullStep, result: ProcessResult): CheckOutcome {
   const text = `${result.stdout}\n${result.stderr}`.trim();
   const all = text.length === 0 ? [] : text.split("\n");

@@ -1,3 +1,4 @@
+import type { GuardRule } from "../domain/activity/model.js";
 import { matchesAnyGlob } from "../domain/verification/change-guard.js";
 import type { StopHookHarness } from "./agent-stop-hook.js";
 import { parseToolAction, type ToolAction } from "./agent-tool-input.js";
@@ -15,6 +16,8 @@ export interface ActionGuardRequest {
 export interface ActionGuardResponse {
   readonly stdout: string;
   readonly stderr: string;
+  /** The rule that refused the action, or null when it may proceed. */
+  readonly refused: GuardRule | null;
 }
 
 /**
@@ -33,35 +36,49 @@ const trailerReason =
  */
 export function guardAction(request: ActionGuardRequest): ActionGuardResponse {
   const action = parseToolAction(request.harness, request.input, request.root);
-  const reason = action === null ? null : refusal(action, request);
-  return respond(request.harness, reason);
+  const refused = action === null ? null : refusal(action, request);
+  return { ...respond(request.harness, refused?.reason ?? null), refused: refused?.rule ?? null };
 }
 
-function refusal(action: ToolAction, request: ActionGuardRequest): string | null {
+interface Refusal {
+  readonly rule: GuardRule;
+  readonly reason: string;
+}
+
+function refusal(action: ToolAction, request: ActionGuardRequest): Refusal | null {
   if (action.kind === "shell") return shellRefusal(action.command);
   for (const repositoryPath of action.paths) {
     if (matchesAnyGlob(repositoryPath, guardrailPaths)) {
-      return `${repositoryPath} belongs to the guardrails or to Git itself. Leave it to the user; Railguard changes it through \`railguard sync\`.`;
+      return {
+        rule: "guardrail-path",
+        reason: `${repositoryPath} belongs to the guardrails or to Git itself. Leave it to the user; Railguard changes it through \`railguard sync\`.`,
+      };
     }
     if (matchesAnyGlob(repositoryPath, request.protectedPaths)) {
-      return `${repositoryPath} is a protected quality configuration. Fix the code instead of changing the rules; if the rule itself is wrong, ask the user to change it.`;
+      return {
+        rule: "protected-path",
+        reason: `${repositoryPath} is a protected quality configuration. Fix the code instead of changing the rules; if the rule itself is wrong, ask the user to change it.`,
+      };
     }
   }
   return null;
 }
 
-function shellRefusal(command: string): string | null {
-  if (/railguard-allow/iu.test(command)) return trailerReason;
+function shellRefusal(command: string): Refusal | null {
+  if (/railguard-allow/iu.test(command)) return { rule: "allow-trailer", reason: trailerReason };
   if (/(?:^|\s)--no-verify(?:\s|$)/u.test(command) || /\bgit\b.*\bcommit\b.*\s-n(?:\s|$)/u.test(command)) {
-    return "Do not skip the Git hooks: they run the checks this repository requires. Fix what fails instead.";
+    return {
+      rule: "skip-hooks",
+      reason: "Do not skip the Git hooks: they run the checks this repository requires. Fix what fails instead.",
+    };
   }
   if (/core\.hookspath/iu.test(command) && !/\bgit\s+config\s+(?:--get|--get-all|--list|-l)\b/u.test(command)) {
-    return "Do not change core.hooksPath: it activates the Git hooks this repository requires.";
+    return { rule: "hooks-path", reason: "Do not change core.hooksPath: it activates the Git hooks this repository requires." };
   }
   return null;
 }
 
-function respond(harness: StopHookHarness, reason: string | null): ActionGuardResponse {
+function respond(harness: StopHookHarness, reason: string | null): Omit<ActionGuardResponse, "refused"> {
   if (harness === "cursor") {
     // Cursor treats a permission hook without valid JSON as a refusal, so allowing is explicit.
     const payload = reason === null

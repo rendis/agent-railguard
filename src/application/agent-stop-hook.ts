@@ -1,11 +1,12 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { ActivityLog, AgentHarness } from "../domain/activity/model.js";
 import { sha256 } from "../domain/shared/types.js";
 import type { CheckStage } from "../domain/verification/checks.js";
 import type { UnverifiedChanges } from "../domain/verification/unverified-change.js";
-import type { VerificationReport, VerificationService } from "./verification-service.js";
+import { failedChecks, type VerificationReport, type VerificationService } from "./verification-service.js";
 
-export type StopHookHarness = "claude-code" | "codex" | "cursor";
+export type StopHookHarness = AgentHarness;
 
 export interface StopHookRequest {
   readonly harness: StopHookHarness;
@@ -38,6 +39,7 @@ export async function runStopHook(
   verification: Pick<VerificationService, "run">,
   render: (report: VerificationReport) => string,
   unverified: Pick<UnverifiedChanges, "record" | "clear">,
+  activity: Pick<ActivityLog, "append">,
 ): Promise<StopHookResponse> {
   const input = parseInput(request.input);
   if (request.harness === "cursor" && input.status !== undefined && input.status !== "completed") {
@@ -62,6 +64,7 @@ export async function runStopHook(
   const maxRetries = request.maxRetries ?? defaultMaxRetries;
   if (attempts > maxRetries) {
     await rm(counter, { force: true });
+    await activity.append(request.root, { type: "stop-unverified", harness: request.harness, checks: failedChecks(report) });
     await unverified.record(request.root, {
       schema: "railguard/unverified/v1",
       stage: request.stage,
@@ -78,6 +81,7 @@ export async function runStopHook(
   }
   await mkdir(request.stateDirectory, { recursive: true, mode: 0o700 });
   await writeFile(counter, String(attempts));
+  await activity.append(request.root, { type: "stop-blocked", harness: request.harness, checks: failedChecks(report) });
   const reason = truncate([
     `Railguard \`${request.stage} --changed\` failed for this change (attempt ${attempts} of ${maxRetries}).`,
     "Fix every failure below without weakening tests or checks, then finish again.",

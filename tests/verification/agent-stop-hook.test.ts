@@ -8,6 +8,7 @@ import { NodeProcessRunner } from "../../src/adapters/platform/process/node-proc
 import { UnverifiedChangeStore } from "../../src/adapters/verification/unverified-change-store.js";
 import { runSessionStartHook } from "../../src/application/agent-session-start.js";
 import { runStopHook, type StopHookHarness } from "../../src/application/agent-stop-hook.js";
+import type { AgentActivity } from "../../src/domain/activity/model.js";
 import type { UnverifiedChange, UnverifiedChanges } from "../../src/domain/verification/unverified-change.js";
 import type {
   VerificationReport,
@@ -58,8 +59,13 @@ describe("runStopHook", () => {
   it("remembers a change left unverified until a later run passes, and tells the next session", async () => {
     const state = await stateDirectory();
     const store = memoryStore();
+    const activity: AgentActivity[] = [];
+    const recorder = { async append(_root: string, entry: AgentActivity) { activity.push(entry); } };
     const verification = fakeVerification(["failed", "failed", "failed", "failed", "passed"]);
-    for (let attempt = 0; attempt < 4; attempt += 1) await hook("codex", verification, { session_id: "s" }, state, store);
+    for (let attempt = 0; attempt < 4; attempt += 1) await hook("codex", verification, { session_id: "s" }, state, store, recorder);
+
+    expect(activity.map((entry) => entry.type)).toEqual(["stop-blocked", "stop-blocked", "stop-blocked", "stop-unverified"]);
+    expect(activity[3]).toEqual({ type: "stop-unverified", harness: "codex", checks: ["secret-guard/secrets"] });
 
     expect(store.change).toMatchObject({
       schema: "railguard/unverified/v1",
@@ -132,6 +138,7 @@ async function hook(
   input: Readonly<Record<string, unknown>>,
   state?: string,
   unverified: Pick<UnverifiedChanges, "record" | "clear"> = memoryStore(),
+  activity: { append(root: string, entry: AgentActivity): Promise<void> } = { async append() {} },
 ) {
   return await runStopHook(
     {
@@ -144,6 +151,7 @@ async function hook(
     verification,
     (report) => `REPORT ${report.verdict}`,
     unverified,
+    activity,
   );
 }
 

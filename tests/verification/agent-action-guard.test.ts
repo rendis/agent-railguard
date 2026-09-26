@@ -48,6 +48,10 @@ describe("action guard", () => {
     expect(shell("git -c core.hooksPath=/tmp commit -m x")).toContain("core.hooksPath");
     expect(shell("git config --get core.hooksPath")).toBeNull();
     expect(shell("git commit -m 'feat: add client'")).toBeNull();
+    const rule = (command: string) => guard("codex", root, { tool_name: "Bash", tool_input: { command } }).refused;
+    expect([
+      rule("git push --no-verify"), rule("echo 'Railguard-Allow: x: y'"), rule("git config core.hooksPath x"), rule("ls"),
+    ]).toEqual(["skip-hooks", "allow-trailer", "hooks-path", null]);
     expect(shell("go test ./...")).toBeNull();
   });
 
@@ -63,6 +67,9 @@ describe("action guard", () => {
       "config/.golangci.yml is a protected quality configuration",
     );
     expect(write(join(spelled, "config/.golangci.yml"))).toBeNull();
+    const rule = (path: string) =>
+      guard("claude-code", root, { tool_name: "Write", tool_input: { file_path: join(root, path) } }, [".golangci.*"]).refused;
+    expect([rule(".railguard/lock.json"), rule(".golangci.yml"), rule("main.go")]).toEqual(["guardrail-path", "protected-path", null]);
     expect(write(join(spelled, "internal/app.go"), [".golangci.*"])).toBeNull();
     expect(write(join(tmpdir(), "outside", ".railguard/project.yaml"))).toBeNull();
     expect(
@@ -88,7 +95,7 @@ describe("action guard", () => {
     expect(denial(patch("*** Begin Patch\n*** Update File: a.go\n*** Move to: .railguard/bin/railguard\n*** End Patch\n"))).toContain(
       ".railguard/bin/railguard belongs to the guardrails",
     );
-    expect(patch("*** Begin Patch\n*** Add File: src/new.go\n+package src\n*** End Patch\n")).toEqual({ stdout: "", stderr: "" });
+    expect(patch("*** Begin Patch\n*** Add File: src/new.go\n+package src\n*** End Patch\n")).toEqual({ stdout: "", stderr: "", refused: null });
     expect(denial(guard("codex", root, { tool_name: "Bash", tool_input: { command: "git commit --no-verify" } }))).toContain(
       "Do not skip the Git hooks",
     );
@@ -108,6 +115,6 @@ describe("action guard", () => {
     );
     expect(JSON.parse(guard("cursor", root, { tool_name: "Shell", tool_input: { command: "ls" } }).stdout)).toEqual({ permission: "allow" });
     expect(guardAction({ harness: "cursor", root, input: "not json", protectedPaths: [] }).stdout).toBe('{"permission":"allow"}\n');
-    expect(guardAction({ harness: "claude-code", root, input: "", protectedPaths: [] })).toEqual({ stdout: "", stderr: "" });
+    expect(guardAction({ harness: "claude-code", root, input: "", protectedPaths: [] })).toEqual({ stdout: "", stderr: "", refused: null });
   });
 });

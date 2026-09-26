@@ -1,6 +1,7 @@
+import type { ActivityLog } from "../domain/activity/model.js";
 import type { StopHookHarness } from "./agent-stop-hook.js";
 import { parseToolAction } from "./agent-tool-input.js";
-import type { VerificationReport, VerificationService } from "./verification-service.js";
+import { failedChecks, type VerificationReport, type VerificationService } from "./verification-service.js";
 
 /**
  * Checks that judge a single file on their own and run in well under a second, so an agent learns
@@ -19,6 +20,7 @@ export async function runEditFeedbackHook(
   request: { readonly harness: StopHookHarness; readonly root: string; readonly input: string },
   verification: Pick<VerificationService, "run">,
   render: (report: VerificationReport) => string,
+  activity: Pick<ActivityLog, "append">,
 ): Promise<string> {
   const quiet = request.harness === "cursor" ? "{}\n" : "";
   const action = parseToolAction(request.harness, request.input, request.root);
@@ -31,6 +33,7 @@ export async function runEditFeedbackHook(
     kinds: editFeedbackKinds,
   });
   if (report.verdict !== "failed") return quiet;
+  await activity.append(request.root, { type: "edit-flagged", harness: request.harness, checks: failedChecks(report) });
   const text = [
     `Railguard found problems in ${action.paths.join(", ")} right after your edit. Fix the cause now instead of hiding it:`,
     "",

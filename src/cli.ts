@@ -35,11 +35,13 @@ import {
 import { activateDeclaredGitGates } from "./cli/git-gate-activation.js";
 import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
+import { buildActivityReport } from "./application/activity-report.js";
 import { guardAction } from "./application/agent-action-guard.js";
 import { runEditFeedbackHook } from "./application/agent-edit-feedback.js";
 import { runSessionStartHook } from "./application/agent-session-start.js";
 import { runStopHook, type StopHookHarness } from "./application/agent-stop-hook.js";
-import { createDefaultApplication, createUnverifiedChanges } from "./application/composition-root.js";
+import { createDefaultApplication, createLocalRecords } from "./application/composition-root.js";
+import { encodeActivityReport, renderActivityReport } from "./cli/activity-report-output.js";
 import { engineVersion, releaseRepository } from "./application/engine-release.js";
 import {
   encodeVerificationReport,
@@ -325,12 +327,11 @@ hook
       const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
       const harness = hookHarness(options.harness);
       const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
-      const response = guardAction({
-        harness,
-        root: await realpath(rootFrom(options)),
-        input,
-        protectedPaths: options.protect as readonly string[],
-      });
+      const root = await realpath(rootFrom(options));
+      const response = guardAction({ harness, root, input, protectedPaths: options.protect as readonly string[] });
+      if (response.refused !== null) {
+        await createLocalRecords().activity.append(root, { type: "action-refused", harness, rule: response.refused });
+      }
       process.stdout.write(response.stdout);
       process.stderr.write(response.stderr);
     });
@@ -351,6 +352,7 @@ hook
           { harness, root: await realpath(rootFrom(options)), input },
           runtime.verification,
           (report) => renderVerificationReport(report, true),
+          createLocalRecords().activity,
         ));
       } finally {
         await runtime.dispose();
@@ -367,7 +369,7 @@ hook
       const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
       const harness = hookHarness(options.harness);
       process.stdout.write(
-        await runSessionStartHook(harness, rootFrom(options), createUnverifiedChanges()),
+        await runSessionStartHook(harness, rootFrom(options), createLocalRecords().unverified),
       );
     });
   });
@@ -386,6 +388,7 @@ hook
         throw new CommandInputError(`Unsupported hook operation: ${stage}`);
       }
       const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+      const records = createLocalRecords();
       const runtime = await createDefaultApplication();
       try {
         const response = await runStopHook(
@@ -398,7 +401,8 @@ hook
           },
           runtime.verification,
           (report) => renderVerificationReport(report, true),
-          runtime.unverified,
+          records.unverified,
+          records.activity,
         );
         process.stdout.write(response.stdout);
         process.stderr.write(response.stderr);
@@ -407,6 +411,25 @@ hook
       }
     });
   });
+
+addFormat(
+  program
+    .command("report")
+    .description("Summarize accepted findings and agent hook activity on this clone")
+    .option("--since <date>", "count only from this date on (YYYY-MM-DD)"),
+  ["text", "json"],
+).action(async (_options, command: Command) => {
+  await direct(async () => {
+    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+    const format = outputFormat(options, ["text", "json"]);
+    const since = options.since === undefined ? null : String(options.since);
+    if (since !== null && !/^\d{4}-\d{2}-\d{2}$/u.test(since)) {
+      throw new CommandInputError(`--since requires a date such as 2026-09-01, not ${since}`);
+    }
+    const report = await buildActivityReport(rootFrom(options), since, createLocalRecords());
+    process.stdout.write(format === "json" ? encodeActivityReport(report) : renderActivityReport(report));
+  });
+});
 
 addFormat(
   program
@@ -734,7 +757,7 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
       format === "text" ? renderVerificationReport(report, plain) : encodeVerificationReport(report),
     );
     process.exitCode = verificationExitCodes[report.verdict];
-    if (report.mode === "changed" && report.verdict === "passed") await runtime.unverified.clear(root);
+    if (report.mode === "changed" && report.verdict === "passed") await createLocalRecords().unverified.clear(root);
   } finally {
     await runtime.dispose();
   }
