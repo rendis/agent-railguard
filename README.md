@@ -11,13 +11,18 @@
   <img src="https://img.shields.io/badge/license-MIT-676C75?style=flat-square" alt="License: MIT">
 </p>
 
+<p align="center">
+  <a href="https://rendis.github.io/agent-railguard/"><b>▶ Open the visual guide</b></a>
+</p>
+
 **Railguard** (`railguard`) configures a Git repository so coding agents such as Claude Code, Codex
 and Cursor work with specialized skills and inside deterministic quality guardrails. Every action
 of the agent goes through checks; when one fails, the reason goes back to the agent, which fixes it
 before it reaches your branch.
 
-The [visual guide](https://rendis.github.io/agent-railguard/) walks through this loop step by step, with what happens underneath
-each node: the hook that runs, the file involved and Railguard's real output.
+The [visual guide](https://rendis.github.io/agent-railguard/) walks through this loop step by step,
+with what happens underneath each node: the hook that runs, the file involved and Railguard's real
+output.
 
 ## Where it checks
 
