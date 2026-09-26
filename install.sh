@@ -78,6 +78,8 @@ gh_ready() {
 verify_provenance() {
   if [ -n "${RAILGUARD_DOWNLOAD_URL:-}" ]; then
     say "custom download URL: build provenance not checked"
+  elif gh_ready && [ "$(gh repo view "$REPO" --json isPrivate --jq .isPrivate 2>/dev/null)" = "true" ]; then
+    say "checksum verified; GitHub publishes no build provenance for a private repository"
   elif gh_ready; then
     gh attestation verify "$1" --repo "$REPO" >/dev/null || fail "build provenance of $(basename "$1") did not verify against $REPO"
     say "verified build provenance against $REPO"
