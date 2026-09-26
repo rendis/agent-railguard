@@ -63,8 +63,9 @@ export function goFullCheck(kind: string, request: FullCheckRequest): FullCheck 
         '  rm -f "$report"',
         "  set --",
         "  [ ! -f .gremlins.yaml ] || set -- --config .gremlins.yaml",
-        `  ${run("gremlins")} "$@" unleash -o "$report" "$package"`,
-        '  [ -s "$report" ] || { echo "Gremlins produced no report for $package" >&2; exit 1; }',
+        `  ${run("gremlins")} "$@" unleash -o "$report" "$package" || { echo "Gremlins failed for $package" >&2; exit 1; }`,
+        // A package without statements, such as one that only declares types, has no mutant.
+        '  [ -s "$report" ] || continue',
         `  lived=$(grep -Eo '"status"[[:space:]]*:[[:space:]]*"(LIVED|NOT_COVERED)"' "$report" | wc -l)`,
         "  survivors=$((survivors + lived))",
         "done",

@@ -270,11 +270,13 @@ class GoUnit {
           [...tool.prefix, "gremlins", ...config, "unleash", "--silent", "-o", report, packagePattern(dir)],
           60 * minute,
         );
+        if (result.exitCode !== 0) return failed(`Gremlins failed for ${packagePattern(dir)}`, output(result));
         let parsed: GremlinsReport;
         try {
           parsed = JSON.parse(await readFile(report, "utf8")) as GremlinsReport;
         } catch {
-          return failed(`Gremlins produced no report for ${packagePattern(dir)}`, output(result));
+          // Gremlins succeeds without a report when the package has no statement to mutate.
+          continue;
         }
         for (const file of parsed.files ?? []) {
           const path = mutationFile(file.file_name, dir, modulePath, this.#dir);
