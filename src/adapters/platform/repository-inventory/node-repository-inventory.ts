@@ -19,6 +19,7 @@ import {
   sha256,
   type RelativePosixPath,
 } from "../../../domain/shared/types.js";
+import { posixFileModes } from "../file-mode/file-mode.js";
 
 export interface RepositoryInventoryOptions {
   readonly maxEntries?: number;
@@ -57,6 +58,7 @@ class CapturedRepositorySnapshot implements RepositorySnapshot {
     public readonly fingerprint: ReturnType<typeof sha256>,
     public readonly entries: readonly RepositoryEntry[],
     files: ReadonlyMap<RelativePosixPath, { readonly bytes: ReadonlyBytes; readonly mode: number }>,
+    public readonly posixModes: boolean = posixFileModes,
   ) {
     this.#files = files;
   }

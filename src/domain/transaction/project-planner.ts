@@ -521,7 +521,7 @@ function planWholeArtifact(
     if (
       entry?.kind === "file" &&
       entry.digest === projectedUnit.intent.bytes.digest() &&
-      entry.mode === projectedUnit.intent.mode
+      modeSatisfied(snapshot, entry.mode, projectedUnit.intent.mode)
     ) {
       return;
     }
@@ -942,6 +942,11 @@ function gitConfigDriftDiagnostic(current: string, expected: string): Diagnostic
   );
 }
 
+/** An observed mode satisfies the intended one; without POSIX permission bits (Windows) any does. */
+function modeSatisfied(snapshot: RepositorySnapshot, observed: number, intended: number): boolean {
+  return !snapshot.posixModes || observed === intended;
+}
+
 function planStateFile(
   snapshot: RepositorySnapshot,
   path: RelativePosixPath,
@@ -980,7 +985,7 @@ function planStateFile(
     );
     return;
   }
-  if (entry?.kind === "file" && entry.digest === afterBytes.digest() && entry.mode === 0o644) return;
+  if (entry?.kind === "file" && entry.digest === afterBytes.digest() && modeSatisfied(snapshot, entry.mode, 0o644)) return;
   operations.push(
     Object.freeze({
       kind: "write-file",

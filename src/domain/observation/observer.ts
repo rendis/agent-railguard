@@ -47,7 +47,7 @@ export class DefaultProjectObserver implements ProjectObserver {
     }
     for (const artifact of lock.artifacts) {
       const observed = artifact.kind === "file"
-        ? observeFile(artifact, entries.get(artifact.path), diagnostics)
+        ? observeFile(artifact, entries.get(artifact.path), diagnostics, snapshot.posixModes)
         : artifact.kind === "symlink"
           ? observeSymlink(artifact, entries.get(artifact.path), diagnostics)
           : artifact.kind === "json-member"
@@ -154,6 +154,7 @@ function observeFile(
   artifact: Extract<ManagedArtifactOwnership, { readonly kind: "file" }>,
   entry: RepositoryEntry | undefined,
   diagnostics: Diagnostic[],
+  posixModes: boolean,
 ): ObservedManagedUnit {
   if (entry === undefined) {
     return unit(artifact.ownership_id, "file", "missing", artifact.content_digest, null);
@@ -162,8 +163,9 @@ function observeFile(
     diagnostics.push(unsafeEntryDiagnostic(artifact, entry));
     return unit(artifact.ownership_id, "file", "unknown", artifact.content_digest, null);
   }
+  // Without permission bits (Windows) the executable bit cannot drift.
   const executable = (entry.mode & 0o111) !== 0;
-  const expectedExecutable = artifact.portable_mode === "executable";
+  const expectedExecutable = posixModes ? artifact.portable_mode === "executable" : executable;
   return unit(
     artifact.ownership_id,
     "file",

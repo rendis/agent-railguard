@@ -32,6 +32,7 @@ fail() {
 case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux) os=linux ;;
+  MINGW*|MSYS*|CYGWIN*) os=windows ;;
   *) fail "unsupported operating system $(uname -s)" ;;
 esac
 case "$(uname -m)" in
@@ -43,11 +44,18 @@ esac
 if [ "$os-$arch" = darwin-x64 ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
   arch=arm64
 fi
-asset="railguard-$os-$arch"
+# Git Bash on Windows on Arm runs emulated as x86_64; its system name keeps the native ARM64.
+exe=
+if [ "$os" = windows ]; then
+  exe=.exe
+  case "$(uname -s)" in *-ARM64) arch=arm64 ;; esac
+fi
+asset="railguard-$os-$arch$exe"
 cache="\${XDG_CACHE_HOME:-$HOME/.cache}/railguard/$version"
+engine="$cache/railguard$exe"
 
-if [ -x "$cache/railguard" ]; then
-  exec "$cache/railguard" "$@"
+if [ -x "$engine" ]; then
+  exec "$engine" "$@"
 fi
 installed="$(command -v railguard 2>/dev/null || true)"
 if [ -n "$installed" ] && ! [ "$installed" -ef "$0" ] && [ "$("$installed" --version 2>/dev/null || true)" = "$version" ]; then
@@ -85,11 +93,11 @@ expected="$(awk -v name="$asset" '$2 == name {print $1}' "$work/SHA256SUMS")"
 [ -n "$expected" ] && [ "$expected" = "$(sha256 "$work/$asset")" ] || fail "checksum mismatch for $asset"
 mkdir -p "$cache"
 chmod 0755 "$work/$asset"
-mv -f "$work/$asset" "$cache/.railguard.$$"
-mv -f "$cache/.railguard.$$" "$cache/railguard"
+mv -f "$work/$asset" "$cache/.railguard.$$$exe"
+mv -f "$cache/.railguard.$$$exe" "$engine"
 rm -rf "$work"
 trap - EXIT
-exec "$cache/railguard" "$@"
+exec "$engine" "$@"
 `;
 }
 

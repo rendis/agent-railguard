@@ -33,6 +33,8 @@ import type {
   TransactionOperation,
 } from "../../../domain/transaction/model.js";
 import { NodeRepositoryInventory } from "../repository-inventory/node-repository-inventory.js";
+import { posixFileModes, sameFileMode } from "../file-mode/file-mode.js";
+import { recordExecutableBits, type ExecutableBitRecorder } from "../git/executable-bits.js";
 
 type ReadyPlan = Extract<DurableProjectPlan, { readonly kind: "ready" }>;
 
@@ -51,6 +53,8 @@ export class NodeMutationEngine implements DurableMutationEngine {
   public constructor(
     private readonly gitConfig: GitConfigPort,
     private readonly events: DurableMutationEventSink = () => undefined,
+    // Only a file system without permission bits needs the Git index to carry them.
+    private readonly executableBits: ExecutableBitRecorder | null = posixFileModes ? null : recordExecutableBits,
   ) {}
 
   public async apply(
@@ -86,6 +90,7 @@ export class NodeMutationEngine implements DurableMutationEngine {
         await verifyOperation(plan.rootRealPath, operation, this.gitConfig);
       }
       this.#emit("verify", "completed", "Complete materialization verified");
+      await this.#recordExecutableBits(plan);
       const changedPaths = [...new Set(plan.operations.map((operation) => operation.path))].sort(compareUtf8);
       return result("applied", plan, operationId, [], changedPaths);
     } catch (error) {
@@ -126,6 +131,22 @@ export class NodeMutationEngine implements DurableMutationEngine {
           "Inspect `git status`, restore the listed paths with `git restore`, or run `railguard repair`.",
         ),
       ], []);
+    }
+  }
+
+  /** Best effort after the transaction committed: a failure leaves the files as written. */
+  async #recordExecutableBits(plan: ReadyPlan): Promise<void> {
+    if (this.executableBits === null) return;
+    const paths = plan.operations
+      .filter((operation) => operation.kind === "write-file" && (operation.mode & 0o111) !== 0)
+      .map((operation) => operation.path);
+    try {
+      const recorded = await this.executableBits(plan.rootRealPath, paths);
+      if (recorded.length > 0) {
+        this.#emit("verify", "completed", `Recorded the executable bit in the Git index: ${recorded.join(", ")}`);
+      }
+    } catch (error) {
+      this.#emit("verify", "failed", `Could not record the executable bit in the Git index: ${errorMessage(error)}`);
     }
   }
 
@@ -201,7 +222,7 @@ async function preflight(plan: ReadyPlan, gitConfig: GitConfigPort): Promise<Dia
         if (
           !entry.isDirectory() ||
           entry.isSymbolicLink() ||
-          (entry.mode & 0o777) !== operation.mode
+          !sameFileMode(entry.mode & 0o777, operation.mode)
         ) {
           throw new Error("directory precondition changed after review");
         }
@@ -403,7 +424,7 @@ async function verifyOperation(
   } else if (
     current === null ||
     current.digest !== operation.bytes.digest() ||
-    current.mode !== operation.mode
+    !sameFileMode(current.mode, operation.mode)
   ) {
     throw new Error(`Written file verification failed: ${operation.path}`);
   }
@@ -529,7 +550,7 @@ function matchesTransactionState(
 ): boolean {
   if (expected.kind === "absent") return current === null;
   if (expected.kind === "symlink") return false;
-  return current !== null && current.digest === expected.digest && current.mode === expected.mode;
+  return current !== null && current.digest === expected.digest && sameFileMode(current.mode, expected.mode);
 }
 
 function matchesSymlinkState(

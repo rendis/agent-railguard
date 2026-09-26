@@ -12,6 +12,7 @@ import {
 } from "../application/engine-update.js";
 import { GitHubLatestRelease } from "../adapters/platform/release/github-latest-release.js";
 import { NodeProcessRunner } from "../adapters/platform/process/node-process-runner.js";
+import { posixScript } from "../adapters/platform/process/posix-shell.js";
 import {
   engineUnavailable,
   launcherBody,
@@ -46,7 +47,8 @@ export function delegateToPinnedEngine(root: string, args: readonly string[]): n
   if (process.env[launchedVariable] === "1") return null;
   const pinned = repositoryPinnedVersion(root);
   if (pinned === null || pinned === engineVersion) return null;
-  const result = spawnSync(join(root, launcherPath), [...args], {
+  const launcher = posixScript(join(root, launcherPath));
+  const result = spawnSync(launcher.command, [...launcher.args, ...args], {
     stdio: "inherit",
     env: { ...process.env, [launchedVariable]: "1" },
   });
@@ -127,9 +129,10 @@ export async function runUpdate(request: UpdateRequest, source: LatestRelease = 
     const target = join(scratch, "railguard");
     await writeFile(target, launcherBody({ version: latest, repository: releaseRepository }));
     await chmod(target, 0o755);
+    const launcher = posixScript(target);
     const result = spawnSync(
-      target,
-      ["sync", request.action === "apply" ? "--yes" : "--plan-only", "--cwd", request.root, "--format", request.format],
+      launcher.command,
+      [...launcher.args, "sync", request.action === "apply" ? "--yes" : "--plan-only", "--cwd", request.root, "--format", request.format],
       { stdio: "inherit", env: { ...process.env, [launchedVariable]: "1" } },
     );
     if (result.status === engineUnavailable) return 4;

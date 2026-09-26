@@ -12,8 +12,10 @@ const targets = [
   { os: "darwin", arch: "x64" },
   { os: "linux", arch: "arm64" },
   { os: "linux", arch: "x64" },
+  { os: "windows", arch: "arm64" },
+  { os: "windows", arch: "x64" },
 ];
-const current = { os: process.platform, arch: process.arch };
+const current = { os: process.platform === "win32" ? "windows" : process.platform, arch: process.arch };
 const selected = process.argv.includes("--current")
   ? targets.filter((target) => target.os === current.os && target.arch === current.arch)
   : targets;
@@ -37,7 +39,7 @@ const scratch = await mkdtemp(join(tmpdir(), "railguard-bun-build-"));
 const checksums = [];
 try {
   for (const { os, arch } of selected) {
-    const name = `railguard-${os}-${arch}`;
+    const name = `railguard-${os}-${arch}${os === "windows" ? ".exe" : ""}`;
     const outfile = join(outdir, name);
     execFileSync(
       "bun",

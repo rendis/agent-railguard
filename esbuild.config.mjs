@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { builtinModules } from "node:module";
 import { chmod, lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
@@ -66,16 +67,24 @@ const cliSource = await readFile(cliPath, "utf8");
 await writeFile(cliPath, `#!/usr/bin/env node\n${cliSource}`);
 await chmod(cliPath, 0o755);
 
-/** Project content compiled into the build so a release binary needs no content channel. */
+/**
+ * Project content compiled into the build so a release binary needs no content channel. Paths use
+ * `/` on every platform; Windows keeps no executable bit, so there the Git index provides it.
+ */
 async function contentSnapshot(roots) {
   const paths = [];
   for (const root of roots) await collect(root, paths);
   paths.sort();
+  const indexExecutables = process.platform === "win32"
+    ? new Set(execFileSync("git", ["ls-files", "--stage", "-z", "--", ...roots], { encoding: "utf8" })
+      .split("\0").filter((entry) => entry.startsWith("100755 ")).map((entry) => entry.slice(entry.indexOf("\t") + 1)))
+    : null;
   const hash = createHash("sha256");
   const files = [];
   for (const path of paths) {
     const bytes = await readFile(path);
-    const mode = (await lstat(path)).mode & 0o111 ? 0o755 : 0o644;
+    const executable = indexExecutables === null ? ((await lstat(path)).mode & 0o111) !== 0 : indexExecutables.has(path);
+    const mode = executable ? 0o755 : 0o644;
     hash.update(`${path}\0${mode}\0`).update(bytes).update("\0");
     files.push({ path, mode, base64: bytes.toString("base64") });
   }
@@ -91,6 +100,6 @@ async function collect(path, output) {
   }
   for (const entry of await readdir(path)) {
     if (entry === ".DS_Store") continue;
-    await collect(join(path, entry), output);
+    await collect(`${path}/${entry}`, output);
   }
 }

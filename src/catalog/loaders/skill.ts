@@ -19,12 +19,12 @@ import {
   errorMessage,
   normalizeApplies,
   normalizeRelations,
-  normalizeSourceMode,
   type AppliesDefinition,
   type LoadedComponent,
   type RelationDefinition,
   type SourceFile,
 } from "./shared.js";
+import type { SourceModeOf } from "../source-modes.js";
 
 const maximumSkillDescriptionLength = 320;
 
@@ -40,6 +40,7 @@ export async function loadSkill(
   id: string,
   definition: SkillDefinition,
   authoringRoot: string,
+  modeOf: SourceModeOf,
 ): Promise<{
   readonly loaded: LoadedComponent | null;
   readonly diagnostics: readonly Diagnostic[];
@@ -71,7 +72,7 @@ export async function loadSkill(
   }
   let files: readonly SourceFile[];
   try {
-    files = await readComponentFiles(absoluteRoot, sourceDirectory);
+    files = await readComponentFiles(absoluteRoot, sourceDirectory, modeOf);
   } catch (error) {
     diagnostics.push(
       diagnostic({
@@ -245,6 +246,7 @@ export async function loadSkill(
 async function readComponentFiles(
   root: string,
   sourceDirectory: RelativePosixPath,
+  modeOf: SourceModeOf,
 ): Promise<readonly SourceFile[]> {
   const rootStat = await lstat(root);
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
@@ -279,7 +281,7 @@ async function readComponentFiles(
       if (!pathStat.isFile()) {
         throw new Error(`Payload entry must be a regular file: ${path}`);
       }
-      const portableMode = normalizeSourceMode(pathStat.mode & 0o777, path);
+      const portableMode = modeOf(absolutePath, pathStat.mode, path);
       const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
       const handle = await open(absolutePath, constants.O_RDONLY | noFollow);
       let bytes: Uint8Array;
@@ -289,7 +291,7 @@ async function readComponentFiles(
           !openedStat.isFile() ||
           openedStat.dev !== pathStat.dev ||
           openedStat.ino !== pathStat.ino ||
-          normalizeSourceMode(openedStat.mode & 0o777, path) !== portableMode
+          modeOf(absolutePath, openedStat.mode, path) !== portableMode
         ) {
           throw new Error(`Payload entry changed during read: ${path}`);
         }

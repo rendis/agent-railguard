@@ -18,8 +18,10 @@ export function goFullCheck(kind: string, request: FullCheckRequest): FullCheck 
     case "go-format":
       return script(
         'listed=$(gofmt -l .) || { echo "gofmt could not read the sources" >&2; exit 1; }',
-        // The Go tool ignores vendor, testdata and directories that start with . or _.
-        `unformatted=$(printf '%s\\n' "$listed" | awk -F/ 'NF { for (i = 1; i < NF; i++) if ($i == "vendor" || $i == "testdata" || $i ~ /^[._]/) next; print }')`,
+        // The Go tool ignores vendor, testdata and directories that start with . or _; gofmt on
+        // Windows separates paths with a backslash.
+        `unformatted=$(printf '%s\\n' "$listed" | tr '\\\\' / | awk -F/ 'NF { for (i = 1; i < NF; i++) if ($i == "vendor" || $i == "testdata" || $i ~ /^[._]/) next; print }') ||`,
+        '  { echo "gofmt output could not be filtered" >&2; exit 1; }',
         '[ -z "$unformatted" ] || { echo "Go files need gofmt -w:" >&2; echo "$unformatted" >&2; exit 1; }',
       );
     case "go-vet":

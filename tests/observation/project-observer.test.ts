@@ -71,6 +71,32 @@ describe("DefaultProjectObserver", () => {
     }
   });
 
+  it("does not report an executable bit drift where the file system has no permission bits", async () => {
+    const repository = await createTempRepository({
+      Makefile: `custom:\n\t@echo user-owned\n${appendedSection}`,
+      ".railguard/hooks/pre-commit": hook,
+    });
+    const gitConfig: GitConfigPort = {
+      async get() {
+        return { kind: "value", value: ".railguard/hooks" };
+      },
+      async set() {
+        throw new Error("observer must not mutate Git config");
+      },
+    };
+    try {
+      const posix = await new NodeRepositoryInventory().snapshot(repository.root);
+      const windows = { ...posix, posixModes: false, read: posix.read.bind(posix) };
+      const status = async (snapshot: typeof posix) => (await new DefaultProjectObserver(gitConfig).observe(snapshot, lock()))
+        .units.find((unit) => unit.ownershipId === "project.git-gate.pre-commit")?.status;
+
+      expect(await status(posix)).toBe("drifted");
+      expect(await status(windows)).toBe("clean");
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
   it("classifies missing and drifted units from current evidence", async () => {
     const changedSection = appendedSection.replace("@true", "@false");
     const repository = await createTempRepository({ Makefile: `custom:\n${changedSection}` });

@@ -95,6 +95,22 @@ describe("repository launcher", () => {
     expect(second).toMatchObject({ code: 0, stdout: "ran verify with \n", stderr: "" });
   });
 
+  it("runs the native Windows binary from Git Bash, which reports an emulated x86_64 on Arm", async () => {
+    const sandbox = await launcherSandbox();
+    await executable(join(sandbox.bin, "uname"), '#!/bin/sh\nif [ "$1" = -s ]; then echo MINGW64_NT-10.0-26200-ARM64; else echo x86_64; fi\n');
+    const release = join(sandbox.root, "release");
+    await mkdir(release);
+    const engine = fakeEngine("1.2.3");
+    await writeFile(join(release, "railguard-windows-arm64.exe"), engine);
+    await writeFile(join(release, "SHA256SUMS"), `${createHash("sha256").update(engine).digest("hex")}  railguard-windows-arm64.exe\n`);
+
+    const result = await sandbox.run(["status"], "", { RAILGUARD_DOWNLOAD_URL: `file://${release}` });
+
+    expect(result).toMatchObject({ code: 0, stdout: "ran status with \n" });
+    expect(result.stderr).toContain("downloading 1.2.3 railguard-windows-arm64.exe");
+    expect(await readdir(join(sandbox.cache, "railguard", "1.2.3"))).toEqual(["railguard.exe"]);
+  });
+
   it("refuses a download whose checksum does not match and caches nothing", async () => {
     const sandbox = await launcherSandbox();
     const release = join(sandbox.root, "release");

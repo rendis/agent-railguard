@@ -28,7 +28,8 @@ platform() {
   case "$(uname -s)" in
     Darwin) os="darwin" ;;
     Linux) os="linux" ;;
-    *) fail "unsupported operating system: $(uname -s). Use macOS, Linux or WSL." ;;
+    MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+    *) fail "unsupported operating system: $(uname -s). Use macOS, Linux, WSL or Git Bash on Windows." ;;
   esac
   case "$(uname -m)" in
     arm64|aarch64) arch="arm64" ;;
@@ -39,7 +40,14 @@ platform() {
   if [ "$os-$arch" = "darwin-x64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
     arch="arm64"
   fi
+  # Git Bash on Windows on Arm runs emulated as x86_64; its system name keeps the native ARM64.
+  case "$os-$(uname -s)" in windows-*-ARM64) arch="arm64" ;; esac
   printf '%s-%s' "$os" "$arch"
+}
+
+# Windows runs only files named .exe.
+executable_suffix() {
+  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) printf '.exe' ;; esac
 }
 
 sha256_of() {
@@ -57,15 +65,17 @@ download() {
 }
 
 install_binary() {
-  local source="$1"
+  local source="$1" target
+  target="$INSTALL_DIR/railguard$(executable_suffix)"
   mkdir -p "$INSTALL_DIR"
-  cp "$source" "$INSTALL_DIR/.railguard.tmp.$$"
-  chmod 0755 "$INSTALL_DIR/.railguard.tmp.$$"
-  mv -f "$INSTALL_DIR/.railguard.tmp.$$" "$INSTALL_DIR/railguard"
-  say "installed $("$INSTALL_DIR/railguard" --version) at $INSTALL_DIR/railguard"
+  cp "$source" "$INSTALL_DIR/.railguard.tmp.$$$(executable_suffix)"
+  chmod 0755 "$INSTALL_DIR/.railguard.tmp.$$$(executable_suffix)"
+  mv -f "$INSTALL_DIR/.railguard.tmp.$$$(executable_suffix)" "$target"
+  say "installed $("$target" --version) at $target"
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
-    *) say "add $INSTALL_DIR to your PATH, for example: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
+    *) say "add $INSTALL_DIR to your PATH, for example: export PATH=\"$INSTALL_DIR:\$PATH\""
+       [ -z "$(executable_suffix)" ] || say "for PowerShell and cmd too, add $(cygpath -w "$INSTALL_DIR" 2>/dev/null || echo "$INSTALL_DIR") to the user Path in the Windows environment variables" ;;
   esac
 }
 
@@ -90,7 +100,7 @@ verify_provenance() {
 
 install_release() {
   local asset base expected actual
-  asset="railguard-$(platform)"
+  asset="railguard-$(platform)$(executable_suffix)"
   WORK_DIR="$(mktemp -d)"
   if [ -z "${RAILGUARD_DOWNLOAD_URL:-}" ] && gh_ready; then
     # gh downloads from private repositories too; without a tag it takes the latest release.
@@ -127,7 +137,7 @@ install_local() {
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required for --local"
   done
   (cd "$root" && pnpm install --frozen-lockfile >/dev/null && node scripts/build-binaries.mjs --current)
-  install_binary "$root/dist/bin/railguard-$(platform)"
+  install_binary "$root/dist/bin/railguard-$(platform)$(executable_suffix)"
 }
 
 case "${1:-}" in

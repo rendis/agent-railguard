@@ -46,6 +46,8 @@ export interface RepositorySnapshot {
   readonly realRoot: string;
   readonly fingerprint: Sha256Digest;
   readonly entries: readonly RepositoryEntry[];
+  /** Whether file modes carry POSIX permission bits; Windows file systems have no executable bit. */
+  readonly posixModes: boolean;
   read(path: RelativePosixPath, maxBytes: number): Promise<SnapshotRead>;
 }
 

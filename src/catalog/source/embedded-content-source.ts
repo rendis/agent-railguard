@@ -6,6 +6,7 @@ import type {
   ResolvedContentSource,
 } from "./content-source.js";
 import { LocalContentSource } from "./local-content-source.js";
+import { executableManifest } from "../source-modes.js";
 
 /** Project content compiled into a release build: `railguard.yaml` plus `skills/`. */
 export interface EmbeddedContent {
@@ -59,8 +60,10 @@ export class EmbeddedContentSource implements ContentSource {
   }
 }
 
+/** Complete when the marker names this digest and the executable manifest exists, which older builds did not write. */
 async function isComplete(root: string, digest: string): Promise<boolean> {
   try {
+    await readFile(join(root, executableManifest));
     return (await readFile(join(root, completeMarker), "utf8")) === digest;
   } catch {
     return false;
@@ -81,6 +84,9 @@ async function materialize(root: string, content: EmbeddedContent): Promise<void
       await writeFile(destination, Buffer.from(file.base64, "base64"));
       await chmod(destination, file.mode);
     }
+    // Windows keeps no executable bit, so the manifest carries it for the catalog.
+    const executables = content.files.filter((file) => (file.mode & 0o111) !== 0).map((file) => `${file.path}\n`);
+    await writeFile(join(staging, executableManifest), executables.join(""));
     await writeFile(join(staging, completeMarker), content.digest);
     await rm(root, { recursive: true, force: true });
     try {

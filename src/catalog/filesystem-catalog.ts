@@ -33,7 +33,8 @@ import {
 } from "./loaders/instruction-fragment.js";
 import { loadMcp, type McpDefinition } from "./loaders/mcp.js";
 import { loadPack, type PackDefinition } from "./loaders/pack.js";
-import { diagnostic, errorMessage, normalizeSourceMode, type LoadedComponent, type SourceFile } from "./loaders/shared.js";
+import { diagnostic, errorMessage, type LoadedComponent, type SourceFile } from "./loaders/shared.js";
+import { sourceModes, type SourceModeOf } from "./source-modes.js";
 import { loadSkill, type SkillDefinition } from "./loaders/skill.js";
 import {
   loadVerificationProfile,
@@ -75,8 +76,10 @@ export class FilesystemCatalog implements Catalog {
 
   public async load(): Promise<CatalogLoadResult> {
     let source: SourceFile;
+    let modeOf: SourceModeOf;
     try {
-      source = await readRegularSourceFile(this.#catalogFile, relativePosixPath("railguard.yaml"));
+      modeOf = await sourceModes(this.#authoringRoot);
+      source = await readRegularSourceFile(this.#catalogFile, relativePosixPath("railguard.yaml"), modeOf);
       if (source.mode !== "100644") {
         throw new Error("railguard.yaml must use mode 100644");
       }
@@ -123,7 +126,7 @@ export class FilesystemCatalog implements Catalog {
     for (const [id, definition] of Object.entries(parsed.value.catalog.skills).sort(
       ([left], [right]) => compareUtf8(left, right),
     )) {
-      const result = await loadSkill(id, definition, this.#authoringRoot);
+      const result = await loadSkill(id, definition, this.#authoringRoot, modeOf);
       diagnostics.push(...result.diagnostics);
       if (result.loaded !== null) {
         loaded.push(result.loaded);
@@ -195,12 +198,13 @@ export class FilesystemCatalog implements Catalog {
 async function readRegularSourceFile(
   absolutePath: string,
   path: RelativePosixPath,
+  modeOf: SourceModeOf,
 ): Promise<SourceFile> {
   const pathStat = await lstat(absolutePath);
   if (pathStat.isSymbolicLink() || !pathStat.isFile()) {
     throw new Error(`Authoring source must be a regular file: ${path}`);
   }
-  const portableMode = normalizeSourceMode(pathStat.mode & 0o777, path);
+  const portableMode = modeOf(absolutePath, pathStat.mode, path);
   const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
   const handle = await open(absolutePath, constants.O_RDONLY | noFollow);
   let bytes: Uint8Array;
@@ -210,7 +214,7 @@ async function readRegularSourceFile(
       !openedStat.isFile() ||
       openedStat.dev !== pathStat.dev ||
       openedStat.ino !== pathStat.ino ||
-      normalizeSourceMode(openedStat.mode & 0o777, path) !== portableMode
+      modeOf(absolutePath, openedStat.mode, path) !== portableMode
     ) {
       throw new Error(`Authoring source changed during read: ${path}`);
     }
