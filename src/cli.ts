@@ -37,6 +37,7 @@ import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-dr
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
 import { buildActivityReport } from "./application/activity-report.js";
 import { guardAction } from "./application/agent-action-guard.js";
+import { isDuplicateCursorInvocation } from "./application/agent-tool-input.js";
 import { runEditFeedbackHook } from "./application/agent-edit-feedback.js";
 import { runSessionStartHook } from "./application/agent-session-start.js";
 import { runStopHook, type StopHookHarness } from "./application/agent-stop-hook.js";
@@ -328,6 +329,7 @@ hook
       const harness = hookHarness(options.harness);
       const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
       const root = await realpath(rootFrom(options));
+      if (isDuplicateCursorInvocation(harness, input, root)) return;
       const response = guardAction({ harness, root, input, protectedPaths: options.protect as readonly string[] });
       if (response.refused !== null) {
         await createLocalRecords().activity.append(root, { type: "action-refused", harness, rule: response.refused });
@@ -346,10 +348,12 @@ hook
       const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
       const harness = hookHarness(options.harness);
       const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+      const root = await realpath(rootFrom(options));
+      if (isDuplicateCursorInvocation(harness, input, root)) return;
       const runtime = await createDefaultApplication();
       try {
         process.stdout.write(await runEditFeedbackHook(
-          { harness, root: await realpath(rootFrom(options)), input },
+          { harness, root, input },
           runtime.verification,
           (report) => renderVerificationReport(report, true),
           createLocalRecords().activity,
@@ -368,6 +372,8 @@ hook
     await direct(async () => {
       const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
       const harness = hookHarness(options.harness);
+      const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+      if (isDuplicateCursorInvocation(harness, input, await realpath(rootFrom(options)))) return;
       process.stdout.write(
         await runSessionStartHook(harness, rootFrom(options), createLocalRecords().unverified),
       );
@@ -388,6 +394,7 @@ hook
         throw new CommandInputError(`Unsupported hook operation: ${stage}`);
       }
       const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+      if (isDuplicateCursorInvocation(harness, input, await realpath(rootFrom(options)))) return;
       const records = createLocalRecords();
       const runtime = await createDefaultApplication();
       try {

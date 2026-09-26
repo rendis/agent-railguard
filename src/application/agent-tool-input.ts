@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { StopHookHarness } from "./agent-stop-hook.js";
 
@@ -69,4 +69,26 @@ function realLocation(path: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Cursor also runs the hooks in `.claude/settings.json`, passing its own input. When the repository
+ * has Cursor's own Railguard hooks, those already handle the event, so the Claude Code copy invoked
+ * by Cursor does nothing instead of deciding, blocking and recording twice. Without them, the
+ * Claude Code copy is Cursor's only guardrail and runs.
+ */
+export function isDuplicateCursorInvocation(harness: StopHookHarness, source: string, root: string): boolean {
+  if (harness !== "claude-code") return false;
+  let value: unknown;
+  try {
+    value = JSON.parse(source);
+  } catch {
+    return false;
+  }
+  if (!isRecord(value) || typeof value.cursor_version !== "string") return false;
+  try {
+    return readFileSync(join(root, ".cursor", "hooks.json"), "utf8").includes(".railguard/agent-hooks/");
+  } catch {
+    return false;
+  }
 }

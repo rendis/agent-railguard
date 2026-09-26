@@ -1,8 +1,9 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { guardAction, type ActionGuardRequest } from "../../src/application/agent-action-guard.js";
+import { isDuplicateCursorInvocation } from "../../src/application/agent-tool-input.js";
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -116,5 +117,20 @@ describe("action guard", () => {
     expect(JSON.parse(guard("cursor", root, { tool_name: "Shell", tool_input: { command: "ls" } }).stdout)).toEqual({ permission: "allow" });
     expect(guardAction({ harness: "cursor", root, input: "not json", protectedPaths: [] }).stdout).toBe('{"permission":"allow"}\n');
     expect(guardAction({ harness: "claude-code", root, input: "", protectedPaths: [] })).toEqual({ stdout: "", stderr: "", refused: null });
+  });
+
+  it("leaves a Claude Code hook that Cursor runs to Cursor's own hook, when the repository has one", async () => {
+    const { root } = await repository();
+    const cursorInput = JSON.stringify({ cursor_version: "2026.09.26", hook_event_name: "preToolUse", tool_name: "Shell" });
+    const claudeInput = JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash" });
+
+    expect(isDuplicateCursorInvocation("claude-code", cursorInput, root)).toBe(false);
+    await mkdir(join(root, ".cursor"));
+    await writeFile(join(root, ".cursor/hooks.json"), '{"hooks":{"preToolUse":[{"command":".railguard/agent-hooks/guard cursor"}]}}');
+
+    expect(isDuplicateCursorInvocation("claude-code", cursorInput, root)).toBe(true);
+    expect(isDuplicateCursorInvocation("cursor", cursorInput, root)).toBe(false);
+    expect(isDuplicateCursorInvocation("claude-code", claudeInput, root)).toBe(false);
+    expect(isDuplicateCursorInvocation("claude-code", "not json", root)).toBe(false);
   });
 });

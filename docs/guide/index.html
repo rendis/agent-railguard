@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Railguard Guide</title>
+<meta name="description" content="Cómo Railguard revisa lo que hace un agente de código y le devuelve el motivo cuando algo falla.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root {
+    --bg: #F6F4EF;
+    --surface: #FFFFFF;
+    --ink: #1A1D23;
+    --ink-soft: #676C75;
+    --line: #DCD6CA;
+    --chip: #EEE9DF;
+    --flow: #2F5BEA;
+    --guard: #E0531F;
+    --warn: #C98A0E;
+    --fix: #6D4FD8;
+    --pass: #23905A;
+    --term: #1A1D23;
+    --term-ink: #E9E6DF;
+    --term-soft: #8E939C;
+    --mark: rgba(224, 83, 31, .34);
+    --add: #7FD4A4;
+    --del: #FF8A7A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #101319;
+      --surface: #181C24;
+      --ink: #E8E6E1;
+      --ink-soft: #9AA0AB;
+      --line: #2E3440;
+      --chip: #232933;
+      --flow: #7C98FF;
+      --guard: #FF7A45;
+      --warn: #F2B84B;
+      --fix: #A994FF;
+      --pass: #55C48C;
+      --term: #0B0D11;
+      --term-ink: #E8E6E1;
+      --term-soft: #7D8490;
+      --mark: rgba(255, 122, 69, .34);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #101319;
+    --surface: #181C24;
+    --ink: #E8E6E1;
+    --ink-soft: #9AA0AB;
+    --line: #2E3440;
+    --chip: #232933;
+    --flow: #7C98FF;
+    --guard: #FF7A45;
+    --warn: #F2B84B;
+    --fix: #A994FF;
+    --pass: #55C48C;
+    --term: #0B0D11;
+    --term-ink: #E8E6E1;
+    --term-soft: #7D8490;
+    --mark: rgba(255, 122, 69, .34);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 500 16px/1.55 "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 28px 16px 72px;
+  }
+  main { max-width: 1180px; margin: 0 auto; }
+  .narrow-sec { max-width: 960px; margin-left: auto; margin-right: auto; }
+  code, pre { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  code { font-size: .9em; background: var(--chip); padding: 1px 5px; border-radius: 5px; white-space: nowrap; }
+  button:focus-visible, a:focus-visible { outline: 3px solid var(--flow); outline-offset: 2px; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 40px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .brand svg { width: 28px; height: 28px; }
+  .seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); }
+  .seg button { font: 600 13px/1 "IBM Plex Mono", monospace; padding: 7px 11px; border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+  .hero { text-align: center; max-width: 720px; margin: 0 auto 36px; }
+  h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.08; letter-spacing: -.015em; margin: 0 0 14px; }
+  h2 { font-size: clamp(22px, 3.2vw, 28px); line-height: 1.2; margin: 0 0 8px; letter-spacing: -.01em; }
+  .lede { font-size: 18px; color: var(--ink-soft); margin: 0; }
+  section { margin-bottom: 88px; }
+  .sec-head { text-align: center; max-width: 640px; margin: 0 auto 28px; }
+
+  /* ---------- Stage: diagram + detail panel ---------- */
+  .stage { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .diagram { background: var(--surface); border: 1.5px solid var(--line); border-radius: 18px; padding: 20px 18px 16px; }
+  .loop svg { display: block; width: 100%; height: auto; }
+  .loop .narrow { display: none; max-width: 380px; margin: 0 auto; }
+  .loop text { font-family: "IBM Plex Sans", sans-serif; fill: var(--ink); }
+  .node { cursor: pointer; }
+  .n-bg { fill: var(--surface); stroke: var(--line); stroke-width: 2.5; transition: stroke .35s; }
+  .n-halo { opacity: 0; transition: opacity .35s; }
+  .n-icon { fill: none; stroke: var(--ink-soft); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; transition: stroke .35s; }
+  .n-label { font-weight: 700; fill: var(--ink-soft) !important; transition: fill .35s; }
+  .node:hover .n-bg { stroke: var(--ink-soft); }
+  .node.on .n-halo { opacity: 1; }
+  .node.on .n-label { fill: var(--ink) !important; }
+  .node.on .n-bg { stroke: var(--c); stroke-width: 3; }
+  .node.on .n-icon { stroke: var(--c); }
+  .edge { fill: none; stroke: var(--line); stroke-width: 2.5; }
+  .edge.dashed { stroke-dasharray: 2 7; stroke-linecap: round; }
+  /* The active edge is drawn over the base one, from source to target; its arrowhead appears when it arrives. */
+  .ink { fill: none; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+  .ink.draw { opacity: 1; stroke-dashoffset: 0; transition: stroke-dashoffset .6s cubic-bezier(.4, 0, .2, 1); }
+  .ink.drawn { opacity: 1; stroke-dashoffset: 0; }
+  .e-label { font: 600 11px "IBM Plex Mono", monospace; letter-spacing: .08em; fill: var(--ink-soft) !important; text-transform: uppercase; }
+  .e-label.on { fill: var(--c) !important; }
+
+  .player { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+  .dots { display: flex; gap: 6px; }
+  .dots button { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 0; background: var(--line); cursor: pointer; }
+  .dots button[aria-current="step"] { background: var(--ink); width: 26px; border-radius: 5px; }
+  .pp { height: 32px; padding: 0 12px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: 600 13px "IBM Plex Sans", sans-serif; cursor: pointer; }
+
+  .panel { background: var(--surface); border: 1.5px solid var(--line); border-radius: 18px; padding: 20px; min-height: 440px; display: flex; flex-direction: column; gap: 14px; }
+  .p-head { display: flex; align-items: center; gap: 12px; }
+  .p-icon { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 2.5px solid var(--c); flex: none; }
+  .p-icon svg { width: 22px; height: 22px; fill: none; stroke: var(--c); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .p-name { font-weight: 700; font-size: 19px; line-height: 1.2; }
+  .p-step { font: 600 11.5px/1 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin-top: 4px; }
+  .p-lead { margin: 0; font-size: 16px; }
+  .blk .lbl { font: 600 12px/1 "IBM Plex Mono", monospace; color: var(--ink-soft); margin-bottom: 6px; }
+  .blk pre {
+    margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--term); color: var(--term-ink);
+    font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  }
+  .blk pre mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2px; }
+  .blk pre .c { color: var(--term-soft); }
+  .blk pre .add { color: var(--add); }
+  .blk pre .del { color: var(--del); }
+  .blk pre .fail { color: var(--del); font-weight: 600; }
+  .blk pre .ok { color: var(--add); font-weight: 600; }
+  .panel.swap > * { animation: in .35s ease both; }
+  @keyframes in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- Five moments ---------- */
+  .moments { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; position: relative; }
+  .moments::before { content: ""; position: absolute; top: 17px; left: 10%; right: 10%; height: 3px; background: var(--line); }
+  .moments li { text-align: center; position: relative; }
+  .moments .num {
+    width: 38px; height: 38px; margin: 0 auto 12px; border-radius: 50%; background: var(--surface); border: 3px solid var(--guard);
+    display: grid; place-items: center; font: 700 14px "IBM Plex Mono", monospace; position: relative;
+  }
+  .moments li:last-child .num { background: var(--guard); color: var(--surface); }
+  .moments .name { font-weight: 700; }
+  .moments .what { font-size: 14px; color: var(--ink-soft); margin-top: 4px; }
+
+  /* ---------- Real replies ---------- */
+  .tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-bottom: 16px; }
+  .tabs button {
+    font: 600 14px "IBM Plex Sans", sans-serif; padding: 8px 14px; border-radius: 999px; cursor: pointer;
+    border: 1.5px solid var(--line); background: var(--surface); color: var(--ink-soft);
+  }
+  .tabs button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .tp { max-width: 760px; margin: 0 auto; background: var(--surface); border: 1.5px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .tp[hidden] { display: none; }
+  .tp .row { padding: 14px 18px; }
+  .tp .k { font: 600 11.5px/1 "IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 8px; }
+  .tp .act { font: 500 14px/1.5 "IBM Plex Mono", monospace; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .tp pre.out { margin: 0; padding: 14px 18px; background: var(--term); color: var(--term-ink); font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .tp mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2px; }
+  .tp .foot { padding: 12px 18px; font-size: 14px; color: var(--ink-soft); border-top: 1.5px solid var(--line); }
+
+  /* ---------- Start ---------- */
+  .start { max-width: 640px; margin: 0 auto; list-style: none; padding: 0; display: grid; gap: 14px; counter-reset: s; }
+  .start li { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; align-items: start; }
+  .start li::before {
+    counter-increment: s; content: counter(s); width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: var(--bg);
+    display: grid; place-items: center; font: 700 13px "IBM Plex Mono", monospace;
+  }
+  .start .t { font-weight: 700; }
+  .start .d { color: var(--ink-soft); font-size: 15px; }
+  .start pre { margin: 6px 0 0; padding: 10px 14px; border-radius: 8px; background: var(--term); color: var(--term-ink); font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
+
+  footer { text-align: center; font-size: 14px; color: var(--ink-soft); }
+
+  @media (max-width: 1000px) {
+    .stage { grid-template-columns: minmax(0, 1fr); }
+    .panel { min-height: 0; }
+  }
+  @media (max-width: 720px) {
+    .loop .wide { display: none; }
+    .loop .narrow { display: block; }
+    .diagram, .panel { padding: 16px 14px; }
+    .moments { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .moments::before { display: none; }
+    .moments li { display: grid; grid-template-columns: 38px minmax(0, 1fr); column-gap: 14px; text-align: left; padding-bottom: 18px; }
+    .moments li:not(:last-child)::after { content: ""; position: absolute; left: 17.5px; top: 38px; bottom: 0; width: 3px; background: var(--line); }
+    .moments li:last-child { padding-bottom: 0; }
+    .moments .num { margin: 0; grid-row: span 2; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="12" width="24" height="4" rx="2" fill="var(--guard)"/><circle cx="8" cy="14" r="5" fill="var(--surface)" stroke="var(--ink)" stroke-width="3"/><circle cx="20" cy="14" r="5" fill="var(--ink)"/></svg>
+      <span>Railguard</span>
+    </div>
+    <div class="seg" role="group" aria-label="Language">
+      <button data-lang="es" aria-pressed="true">ES</button>
+      <button data-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </header>
+
+  <!-- ============ The loop and its detail ============ -->
+  <section>
+    <div class="hero">
+      <h1 data-i18n="h1">El agente propone. Railguard comprueba.</h1>
+      <p class="lede" data-i18n="lede">Cada acción de un agente de código pasa por checks deterministas. Si algo falla, el motivo vuelve al agente y lo corrige antes de que llegue a tu rama.</p>
+    </div>
+
+    <div class="stage">
+      <div class="diagram">
+        <div class="loop" role="img" aria-labelledby="loop-alt">
+          <span id="loop-alt" hidden data-i18n="alt">Diagrama: tu tarea va al agente, el agente actúa, Railguard revisa la acción. Si falla, el motivo vuelve como feedback, el agente corrige y actúa de nuevo. Si pasa, el cambio queda verificado.</span>
+          <svg class="wide" aria-hidden="true"></svg>
+          <svg class="narrow" aria-hidden="true"></svg>
+        </div>
+        <div class="player">
+          <div class="dots" id="dots"></div>
+          <button class="pp" id="pp"></button>
+        </div>
+      </div>
+
+      <aside class="panel" id="panel" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <!-- ============ Where it checks ============ -->
+  <section class="narrow-sec">
+    <div class="sec-head">
+      <h2 data-i18n="m.title">Dónde revisa Railguard</h2>
+      <p class="lede" data-i18n="m.lede">Cinco momentos. Cada uno atrapa lo que se escapó del anterior.</p>
+    </div>
+    <ol class="moments">
+      <li><div class="num">1</div><div class="name" data-i18n="m1.n">Antes de actuar</div><div class="what" data-i18n="m1.w">Rechaza <code>--no-verify</code> y ediciones a los archivos de Railguard.</div></li>
+      <li><div class="num">2</div><div class="name" data-i18n="m2.n">Al editar</div><div class="what" data-i18n="m2.w">Avisa de supresiones, tests borrados y secretos.</div></li>
+      <li><div class="num">3</div><div class="name" data-i18n="m3.n">Al terminar el turno</div><div class="what" data-i18n="m3.w">El agente no termina con checks en rojo.</div></li>
+      <li><div class="num">4</div><div class="name" data-i18n="m4.n">Commit y push</div><div class="what" data-i18n="m4.w">Git no acepta el cambio si falla.</div></li>
+      <li><div class="num">5</div><div class="name">CI</div><div class="what" data-i18n="m5.w">Las mismas reglas, sin instalar Railguard. Nadie lo salta.</div></li>
+    </ol>
+  </section>
+
+  <!-- ============ Real replies ============ -->
+  <section class="narrow-sec">
+    <div class="sec-head">
+      <h2 data-i18n="r.title">Lo que recibe el agente</h2>
+      <p class="lede" data-i18n="r.lede">Respuestas reales de Railguard ante cuatro atajos típicos.</p>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" aria-controls="p1" id="t1" data-i18n="r1.tab">Callar un check</button>
+      <button role="tab" aria-selected="false" aria-controls="p2" id="t2" data-i18n="r2.tab">Terminar con un test roto</button>
+      <button role="tab" aria-selected="false" aria-controls="p3" id="t3" data-i18n="r3.tab">Borrar un test</button>
+      <button role="tab" aria-selected="false" aria-controls="p4" id="t4" data-i18n="r4.tab">Saltarse los hooks</button>
+    </div>
+
+    <div class="tp" role="tabpanel" id="p1" aria-labelledby="t1">
+      <div class="row"><div class="k" data-i18n="k.agent">El agente</div><p class="act">func Refund(o Order) (int, error) { <mark>//nolint:all</mark></p></div>
+<pre class="out">Railguard found problems in internal/orders/refund.go right after
+your edit. Fix the cause now instead of hiding it:
+
+  FAIL change-guard/integrity  1 change(s) weaken what the checks can see
+      internal/orders/refund.go:4: <mark>lint suppression</mark>: … //nolint:all</pre>
+      <div class="foot" data-i18n="r1.foot">Llega un segundo después de la edición, como contexto del agente.</div>
+    </div>
+    <div class="tp" role="tabpanel" id="p2" aria-labelledby="t2" hidden>
+      <div class="row"><div class="k" data-i18n="k.agent">El agente</div><p class="act" data-i18n="r2.act">«Listo, reembolsos implementados.»</p></div>
+<pre class="out">Railguard `check --changed` failed for this change (<mark>attempt 1 of 3</mark>).
+Fix every failure below without weakening tests or checks, then finish again.
+
+  FAIL go-quality/test  Tests failed for ./internal/orders
+      refund_test.go:17: <mark>Refund = 50, want 45 (10% restocking fee)</mark></pre>
+      <div class="foot" data-i18n="r2.foot">El turno no termina. Tras tres intentos, el cambio queda como no verificado y la próxima sesión lo recibe.</div>
+    </div>
+    <div class="tp" role="tabpanel" id="p3" aria-labelledby="t3" hidden>
+      <div class="row"><div class="k" data-i18n="k.agent">El agente</div><p class="act">git rm internal/orders/orders_test.go
+git commit -m "chore: remove flaky test"</p></div>
+<pre class="out">  FAIL change-guard/integrity  1 change(s) weaken what the checks can see
+      internal/orders/orders_test.go: <mark>test file deleted</mark>
+      Never add a `Railguard-Allow` trailer yourself: <mark>only a person may accept</mark>
+      what the branch holds so far.</pre>
+      <div class="foot" data-i18n="r3.foot">Lo detiene el pre-commit. Sólo una persona puede aceptarlo.</div>
+    </div>
+    <div class="tp" role="tabpanel" id="p4" aria-labelledby="t4" hidden>
+      <div class="row"><div class="k" data-i18n="k.agent">El agente</div><p class="act">git commit <mark>--no-verify</mark> -m "chore: remove flaky test"</p></div>
+<pre class="out">permissionDecision: <mark>deny</mark>
+Do not skip the Git hooks: they run the checks this repository requires.
+Fix what fails instead.</pre>
+      <div class="foot" data-i18n="r4.foot">El comando nunca se ejecuta.</div>
+    </div>
+  </section>
+
+  <!-- ============ Start ============ -->
+  <section class="narrow-sec">
+    <div class="sec-head">
+      <h2 data-i18n="s.title">Empezar</h2>
+      <p class="lede" data-i18n="s.lede">Desde tu repositorio. Nada se escribe sin que veas el plan.</p>
+    </div>
+    <ol class="start">
+      <li><div><div class="t" data-i18n="s1.t">Mira qué hay</div><div class="d" data-i18n="s1.d">Stack, Git y agentes instalados. No cambia nada.</div><pre>railguard scan</pre></div></li>
+      <li><div><div class="t" data-i18n="s2.t">Revisa el plan</div><div class="d" data-i18n="s2.d">Cada archivo que se va a escribir.</div><pre>railguard init --add pack:go-service-foundation \
+  --harness claude-code codex --plan-only</pre></div></li>
+      <li><div><div class="t" data-i18n="s3.t">Aplica y haz commit</div><div class="d" data-i18n="s3.d">La versión de Railguard queda fijada para todo el equipo.</div><pre>railguard init --add pack:go-service-foundation \
+  --harness claude-code codex --yes</pre></div></li>
+    </ol>
+  </section>
+
+  <footer data-i18n="foot">Los mensajes y archivos se capturaron ejecutando Railguard 0.1.10 sobre un repositorio Go de ejemplo.</footer>
+</main>
+
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------------- Text ----------------
+  const EN = {
+    h1: 'The agent proposes. Railguard checks.',
+    lede: 'Every action of a coding agent goes through deterministic checks. If something fails, the reason goes back to the agent, which fixes it before it reaches your branch.',
+    alt: 'Diagram: your task goes to the agent, the agent acts, Railguard checks the action. If it fails, the reason goes back as feedback, the agent fixes it and acts again. If it passes, the change is verified.',
+    'm.title': 'Where Railguard checks', 'm.lede': 'Five moments. Each one catches what slipped past the previous one.',
+    'm1.n': 'Before acting', 'm1.w': 'Refuses <code>--no-verify</code> and edits to Railguard’s files.',
+    'm2.n': 'On each edit', 'm2.w': 'Flags suppressions, deleted tests and secrets.',
+    'm3.n': 'When the turn ends', 'm3.w': 'The agent does not finish with red checks.',
+    'm4.n': 'Commit and push', 'm4.w': 'Git does not accept the change if it fails.',
+    'm5.w': 'The same rules, without installing Railguard. Nobody skips it.',
+    'r.title': 'What the agent receives', 'r.lede': 'Real Railguard replies to four common shortcuts.',
+    'r1.tab': 'Silence a check', 'r2.tab': 'Finish with a broken test', 'r3.tab': 'Delete a test', 'r4.tab': 'Skip the hooks',
+    'k.agent': 'The agent', 'r2.act': '“Done, refunds implemented.”',
+    'r1.foot': 'It arrives a second after the edit, as the agent’s context.',
+    'r2.foot': 'The turn does not end. After three attempts the change is marked as not verified and the next session is told.',
+    'r3.foot': 'The pre-commit stops it. Only a person can accept it.',
+    'r4.foot': 'The command never runs.',
+    's.title': 'Get started', 's.lede': 'From your repository. Nothing is written until you see the plan.',
+    's1.t': 'See what is there', 's1.d': 'Stack, Git and installed agents. It changes nothing.',
+    's2.t': 'Review the plan', 's2.d': 'Every file that will be written.',
+    's3.t': 'Apply and commit', 's3.d': 'The Railguard version is pinned for the whole team.',
+    foot: 'The messages and files were captured by running Railguard 0.1.10 on an example Go repository.',
+  };
+  const ES = {};
+  document.querySelectorAll('[data-i18n]').forEach(n => { ES[n.dataset.i18n] = n.innerHTML; });
+  const UI = {
+    es: { pause: '❚❚ Pausa', play: '▶ Reproducir', step: 'Paso', of: 'de',
+      nodes: { task: 'Tu tarea', agent: 'Agente', act: 'Acción', rg: 'Railguard', fb: 'Feedback', fix: 'Corrige', ok: 'Verificado' },
+      fail: 'falla', pass: 'pasa' },
+    en: { pause: '❚❚ Pause', play: '▶ Play', step: 'Step', of: 'of',
+      nodes: { task: 'Your task', agent: 'Agent', act: 'Action', rg: 'Railguard', fb: 'Feedback', fix: 'Fix', ok: 'Verified' },
+      fail: 'fails', pass: 'passes' },
+  };
+
+  // ---------------- The loop: two layouts, one model ----------------
+  const COLOR = { task: 'var(--flow)', agent: 'var(--flow)', act: 'var(--flow)', rg: 'var(--guard)', fb: 'var(--warn)', fix: 'var(--fix)', ok: 'var(--pass)' };
+  const ICON = {
+    task: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+    agent: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    act: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9l3 3-3 3M13 15h4"/>',
+    rg: '<path d="M12 3l8 3v6c0 4.7-3.4 8-8 9-4.6-1-8-4.3-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+    fb: '<path d="M4 5h16v11h-9l-4 4v-4H4z"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/>',
+    fix: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/>',
+    ok: '<circle cx="12" cy="12" r="9"/><path d="M8 12.2l2.8 2.8L16 9.5"/>',
+  };
+  const EDGES = [
+    ['task', 'agent'], ['agent', 'act'], ['act', 'rg'], ['rg', 'ok', 'pass'], ['rg', 'fb', 'fail'], ['fb', 'fix'], ['fix', 'act'],
+  ];
+  const LAYOUT = {
+    wide: { vb: [640, 330], r: 42, icon: 1.12, iy: -10, ly: 21, fs: 13, gap: [7, 9],
+      at: { task: [54, 92], agent: [187, 92], act: [320, 92], rg: [453, 92], ok: [586, 92], fb: [453, 262], fix: [320, 262] } },
+    narrow: { vb: [380, 760], r: 50, icon: 1.15, iy: -12, ly: 24, fs: 14, gap: [8, 10],
+      at: { task: [110, 58], agent: [110, 210], act: [110, 362], rg: [110, 514], ok: [110, 698], fb: [282, 514], fix: [282, 362] } },
+  };
+  const EDGE_COLOR = { flow: 'var(--flow)', warn: 'var(--warn)', fix: 'var(--fix)', pass: 'var(--pass)' };
+  const el = (tag, attrs, parent) => {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  const views = [];
+  for (const [name, L] of Object.entries(LAYOUT)) {
+    const svg = document.querySelector('.loop .' + name);
+    svg.setAttribute('viewBox', `0 0 ${L.vb[0]} ${L.vb[1]}`);
+    const defs = el('defs', {}, svg);
+    for (const [id, c] of Object.entries({ base: 'var(--line)', ...EDGE_COLOR })) {
+      const m = el('marker', { id: `${name}-a-${id}`, viewBox: '0 0 10 10', refX: 6, refY: 5, markerWidth: 5, markerHeight: 5, orient: 'auto-start-reverse' }, defs);
+      el('path', { d: 'M1 1L8 5L1 9', fill: 'none', stroke: c, 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, m);
+    }
+    const edges = {}, labels = {}, nodes = {};
+    const gE = el('g', {}, svg), gI = el('g', {}, svg), gN = el('g', {}, svg);
+    for (const [a, b, kind] of EDGES) {
+      const [ax, ay] = L.at[a], [bx, by] = L.at[b];
+      const len = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / len, uy = (by - ay) / len;
+      const s = L.r + L.gap[0], e = L.r + L.gap[1];
+      const d = `M${ax + ux * s} ${ay + uy * s}L${bx - ux * e} ${by - uy * e}`;
+      el('path', { d, class: 'edge' + (kind === 'pass' ? ' dashed' : ''), 'marker-end': `url(#${name}-a-base)` }, gE);
+      edges[`${a}-${b}`] = el('path', { d, class: 'ink', pathLength: 1 }, gI);
+      if (kind) {
+        const vertical = Math.abs(uy) > .5;
+        const t = el('text', { class: 'e-label', x: (ax + bx) / 2 + (vertical ? 12 : 0), y: (ay + by) / 2 - (vertical ? 0 : 12),
+          'text-anchor': vertical ? 'start' : 'middle', 'dominant-baseline': 'middle' }, gE);
+        t.dataset.kind = kind;
+        labels[`${a}-${b}`] = t;
+      }
+    }
+    for (const [key, [x, y]] of Object.entries(L.at)) {
+      const g = el('g', { class: 'node', style: `--c:${COLOR[key]}` }, gN);
+      g.dataset.key = key;
+      el('circle', { class: 'n-halo', cx: x, cy: y, r: L.r + 8, fill: COLOR[key], 'fill-opacity': .13 }, g);
+      el('circle', { class: 'n-bg', cx: x, cy: y, r: L.r }, g);
+      el('g', { class: 'n-icon', transform: `translate(${x - 12 * L.icon} ${y + L.iy - 12 * L.icon}) scale(${L.icon})` }, g).innerHTML = ICON[key];
+      el('text', { class: 'n-label', x, y: y + L.ly, 'text-anchor': 'middle', 'font-size': L.fs, 'data-node': key }, g);
+      nodes[key] = g;
+    }
+    views.push({ name, edges, labels, nodes });
+  }
+
+  // ---------------- The story, with what happens underneath ----------------
+  // Every code block below is real: files Railguard wrote and output it produced in the example repository.
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const STEPS = [
+    { node: 'task',
+      es: 'Le pides una tarea al agente. Al abrir la sesión, Railguard mira si quedó un cambio sin verificar; aquí no hay nada pendiente y no dice nada.',
+      en: 'You give the agent a task. When the session opens, Railguard checks whether a change was left unverified; nothing is pending here, so it says nothing.',
+      blocks: [{ lbl: '.claude/settings.json', code:
+`<span class="c">"SessionStart": [{ "hooks": [{</span>
+  "type": "command",
+  "command": "…/.railguard/agent-hooks/<mark>session-start</mark> claude-code"
+<span class="c">}]}]</span>` }] },
+    { edge: 'task-agent', node: 'agent',
+      es: 'El agente lee AGENTS.md. Railguard escribió ahí bloques administrados: qué skills usar y qué reglas se le van a aplicar.',
+      en: 'The agent reads AGENTS.md. Railguard wrote managed blocks there: which skills to use and which rules will apply to it.',
+      blocks: [{ lbl: 'AGENTS.md', code:
+`<span class="c">&lt;!-- railguard:managed:start id="automation.mapping" --&gt;</span>
+## Git automation
+- \`edit-feedback\`: After you edit files, Railguard reports
+  suppressions, weakened quality configuration or secrets
+  in them; <mark>fix the cause in that edit instead of hiding it.</mark>
+- \`stop-check\`: When you finish a turn, …
+<span class="c">&lt;!-- railguard:managed:end id="automation.mapping" --&gt;</span>` }] },
+    { edge: 'agent-act', node: 'act',
+      es: 'Antes de cada acción corre el guardián. Escribir refund.go está permitido y la edición sigue, pero el agente agrega una supresión.',
+      en: 'Before each action the guard runs. Writing refund.go is allowed and the edit goes ahead, but the agent adds a suppression.',
+      blocks: [
+        { lbl: '.claude/settings.json · PreToolUse', code:
+`"matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+"command": "…/.railguard/agent-hooks/<mark>guard</mark> claude-code"` },
+        { lbl: 'internal/orders/refund.go', code: `func Refund(o Order) (int, error) { <mark>//nolint:all</mark>` }] },
+    { edge: 'act-rg', node: 'rg',
+      es: 'Después de la edición corre edit-feedback: change-guard y secret-guard, sólo sobre el archivo editado. Tarda alrededor de un segundo.',
+      en: 'After the edit, edit-feedback runs: change-guard and secret-guard, only on the edited file. It takes about a second.',
+      blocks: [
+        { lbl: '.railguard/agent-hooks/edit', code: `.railguard/bin/railguard hook edit --harness "$1"` },
+        { lbl: 'railguard hook edit', code:
+`  <span class="fail">FAIL</span> change-guard/integrity  1 change(s) weaken what the checks can see
+      internal/orders/refund.go:4: <mark>lint suppression</mark>
+  <span class="ok">ok</span>   secret-guard/secrets  No secret in the change` }] },
+    { edge: 'rg-fb', node: 'fb', color: 'warn',
+      es: 'El resultado vuelve al agente como contexto de su sesión, justo después de la edición. No es un log que nadie lee.',
+      en: 'The result goes back to the agent as context in its session, right after the edit. It is not a log nobody reads.',
+      blocks: [{ lbl: 'hookSpecificOutput', code:
+`{
+  "hookEventName": "PostToolUse",
+  "<mark>additionalContext</mark>": "Railguard found problems in
+    internal/orders/refund.go right after your edit.
+    <mark>Fix the cause now instead of hiding it</mark>: …"
+}` }] },
+    { edge: 'fb-fix', node: 'fix', color: 'fix',
+      es: 'El agente quita la supresión y corrige lo que el linter señalaba.',
+      en: 'The agent removes the suppression and fixes what the linter was pointing at.',
+      blocks: [{ lbl: 'internal/orders/refund.go', code:
+`<span class="del">- func Refund(o Order) (int, error) { //nolint:all</span>
+<span class="add">+ func Refund(o Order) (int, error) {</span>` }] },
+    { edge: 'fix-act', node: 'act', color: 'fix',
+      es: 'Da el trabajo por terminado. Al cerrar el turno corre el hook Stop.',
+      en: 'It considers the work done. When the turn closes, the Stop hook runs.',
+      blocks: [{ lbl: '.claude/settings.json · Stop', code:
+`"command": "…/.railguard/agent-hooks/<mark>stop</mark> claude-code",
+"timeout": 900` }] },
+    { edge: 'act-rg', node: 'rg',
+      es: 'stop-check ejecuta check --changed: sólo lo que tocó el cambio desde main. Si fallara, el turno no terminaría, hasta tres veces.',
+      en: 'stop-check runs check --changed: only what the change touched since main. If it failed, the turn would not end, up to three times.',
+      blocks: [{ lbl: 'railguard check --changed', code:
+`  <span class="ok">ok</span>   change-guard/integrity  No suppression, deleted test …
+  <span class="ok">ok</span>   go-architecture/imports  Dependency rules hold
+  <span class="ok">ok</span>   go-quality/format  2 Go file(s) formatted
+  <span class="ok">ok</span>   go-quality/vet  go vet passed for ./internal/orders
+  <span class="ok">ok</span>   go-quality/test  Tests passed for ./internal/orders
+  <span class="ok">ok</span>   secret-guard/secrets  No secret in the change
+<mark>Result: PASSED — 6 passed</mark>` }] },
+    { edge: 'rg-ok', node: 'ok', color: 'pass',
+      es: 'El cambio queda verificado. Después lo revisan otra vez el commit, el push y el CI, que no necesita Railguard.',
+      en: 'The change is verified. Then the commit, the push and CI check it again; CI does not need Railguard.',
+      blocks: [{ lbl: '.railguard/hooks · CI', code:
+`pre-commit  →  railguard check --changed
+pre-push    →  railguard verify --changed
+CI          →  <mark>.railguard/verify.sh verify</mark>` }] },
+  ];
+
+  let lang = new URLSearchParams(location.search).get('lang') || ((navigator.language || 'es').startsWith('es') ? 'es' : 'en');
+  if (!UI[lang]) lang = 'en';
+  let step = 0, playing = !reduced, timer = null, arrive = null;
+  const panel = document.getElementById('panel');
+  const dotsEl = document.getElementById('dots'), pp = document.getElementById('pp');
+
+  STEPS.forEach((_, i) => {
+    const b = document.createElement('button');
+    b.addEventListener('click', () => { playing = false; go(i, false); });
+    dotsEl.appendChild(b);
+  });
+  for (const v of views) for (const [key, g] of Object.entries(v.nodes)) {
+    g.addEventListener('click', () => {
+      const i = STEPS.findIndex(s => s.node === key);
+      if (i >= 0) { playing = false; go(i, false); }
+    });
+  }
+
+  function renderPanel(i, animate) {
+    const s = STEPS[i];
+    const blocks = s.blocks.map(b => `<div class="blk"><div class="lbl">${esc(b.lbl)}</div><pre>${b.code}</pre></div>`).join('');
+    panel.style.setProperty('--c', COLOR[s.node]);
+    panel.innerHTML =
+      `<div class="p-head"><div class="p-icon"><svg viewBox="0 0 24 24">${ICON[s.node]}</svg></div>` +
+      `<div><div class="p-name">${UI[lang].nodes[s.node]}</div><div class="p-step">${UI[lang].step} ${i + 1} ${UI[lang].of} ${STEPS.length}</div></div></div>` +
+      `<p class="p-lead">${esc(s[lang])}</p>${blocks}`;
+    panel.classList.remove('swap');
+    if (animate) { void panel.offsetWidth; panel.classList.add('swap'); }
+  }
+
+  // Light the node of step i; with `drawing`, the edge is drawn first and the node lights when it arrives.
+  function paint(i, drawing) {
+    const s = STEPS[i];
+    const color = s.color || 'flow';
+    for (const v of views) {
+      for (const [k, n] of Object.entries(v.nodes)) n.classList.toggle('on', !drawing && k === s.node);
+      for (const [k, p] of Object.entries(v.edges)) {
+        p.classList.remove('draw', 'drawn');
+        p.removeAttribute('marker-end');
+        if (k !== s.edge) continue;
+        p.style.stroke = EDGE_COLOR[color];
+        if (drawing) { void p.getBoundingClientRect(); p.classList.add('draw'); }
+        else { p.classList.add('drawn'); p.setAttribute('marker-end', `url(#${v.name}-a-${color})`); }
+      }
+      for (const [k, t] of Object.entries(v.labels)) {
+        t.classList.toggle('on', k === s.edge);
+        t.style.setProperty('--c', EDGE_COLOR[t.dataset.kind === 'pass' ? 'pass' : 'warn']);
+      }
+    }
+    [...dotsEl.children].forEach((b, j) => {
+      if (j === i) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+      b.setAttribute('aria-label', `${UI[lang].step} ${j + 1}`);
+    });
+    pp.textContent = playing ? UI[lang].pause : UI[lang].play;
+  }
+
+  function go(i, animate) {
+    clearTimeout(timer); clearTimeout(arrive);
+    step = i;
+    renderPanel(i, animate || !reduced);
+    const drawing = animate && !reduced && !!STEPS[i].edge;
+    paint(i, drawing);
+    if (drawing) arrive = setTimeout(() => { paint(i, false); schedule(); }, 620);
+    else schedule();
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (!playing) return;
+    const last = step === STEPS.length - 1;
+    timer = setTimeout(() => go(last ? 0 : step + 1, true), last ? 6000 : 4600);
+  }
+  pp.addEventListener('click', () => {
+    playing = !playing;
+    if (playing) go(step === STEPS.length - 1 ? 0 : step + 1, true);
+    else { clearTimeout(timer); pp.textContent = UI[lang].play; }
+  });
+
+  // ---------------- Tabs ----------------
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  function select(i) {
+    tabs.forEach((t, j) => {
+      t.setAttribute('aria-selected', String(i === j));
+      t.tabIndex = i === j ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = i !== j;
+    });
+  }
+  tabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => select(i));
+    tab.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const j = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+      select(j); tabs[j].focus();
+    });
+  });
+  select(0);
+
+  // ---------------- Language ----------------
+  function applyLang() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach(n => { n.innerHTML = (lang === 'en' ? EN[n.dataset.i18n] : null) ?? ES[n.dataset.i18n]; });
+    document.querySelectorAll('.loop [data-node]').forEach(t => { t.textContent = UI[lang].nodes[t.dataset.node]; });
+    document.querySelectorAll('.loop .e-label').forEach(t => { t.textContent = UI[lang][t.dataset.kind]; });
+    document.querySelectorAll('.seg [data-lang]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+    renderPanel(step, false);
+    paint(step, false);
+  }
+  document.querySelectorAll('.seg [data-lang]').forEach(b => b.addEventListener('click', () => {
+    lang = b.dataset.lang;
+    const u = new URL(location.href); u.searchParams.set('lang', lang); history.replaceState(null, '', u);
+    applyLang();
+  }));
+
+  applyLang();
+  go(0, false);
+})();
+</script>
+</body>
+</html>
