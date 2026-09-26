@@ -11,7 +11,9 @@ import {
   changedLineCount,
   globToRegExp,
   parseAllowances,
+  removedTestFindings,
   suppressionFindings,
+  testNames,
 } from "../../src/domain/verification/change-guard.js";
 import type { CheckRequest } from "../../src/domain/verification/checks.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
@@ -44,6 +46,37 @@ describe("change guard rules", () => {
     expect(suppressionFindings("x.go", source, "all")).toHaveLength(2);
     expect(suppressionFindings("README.md", source, "all")).toEqual([]);
     expect(suppressionFindings("a.test.ts", "it.only('runs alone', () => {})", "all")[0]).toContain("focused test");
+  });
+
+  it("names the tests each kind of test file declares", () => {
+    const go = [
+      "func TestTotal(t *testing.T) {}",
+      "func (s *OrdersSuite) TestRefund() {}",
+      "func BenchmarkTotal(b *testing.B) {}",
+      "func FuzzParse(f *testing.F) {}",
+      "func ExampleTotal() {}",
+      "func TestGeneric[T any](t *testing.T) {}",
+      "func helper(t *testing.T) {}",
+    ].join("\n");
+    expect(testNames("orders_test.go", go)).toEqual(["TestTotal", "TestRefund", "BenchmarkTotal", "FuzzParse", "ExampleTotal", "TestGeneric"]);
+    expect(testNames("a.test.ts", "describe('x', () => {\n  it(\"adds\", () => {})\n  test.only('it\\'s alone', () => {})\n  expect(/a/.test('a')).toBe(true)\n})"))
+      .toEqual(["adds", "it\\'s alone"]);
+    expect(testNames("tests/test_orders.py", "class TestOrders:\n    def test_total(self):\n        pass\nasync def test_refund():\n    pass\ndef helper():\n    pass"))
+      .toEqual(["test_total", "test_refund"]);
+    expect(testNames("OrdersTest.java", "@Test\nvoid total() {}\n@ParameterizedTest(name = \"{0}\")\n@ValueSource(ints = {1})\npublic void refund(int value) {}\nvoid helper() {}"))
+      .toEqual(["total", "refund"]);
+    expect(testNames("orders.feature", "Feature: Orders\n  Scenario: Total includes tax\n  Scenario Outline: Refund <amount>"))
+      .toEqual(["Total includes tax", "Refund <amount>"]);
+    expect(testNames("orders.go", go)).toEqual([]);
+  });
+
+  it("reports tests the change removes but not tests it moves between changed files", () => {
+    expect(removedTestFindings([
+      { path: "a_test.go", before: "func TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}", after: "func TestA(t *testing.T) {}" },
+      { path: "b_test.go", before: "func TestC(t *testing.T) {}", after: "" },
+      { path: "c_test.go", before: "", after: "func TestC(t *testing.T) {}" },
+      { path: "d.test.ts", before: "it('twice', f)\nit('twice', f)", after: "it('twice', f)" },
+    ])).toEqual(["a_test.go: test TestB removed", "d.test.ts: test twice removed"]);
   });
 
   it("counts new files by lines and accepts only allowances with a reason", () => {
@@ -99,6 +132,50 @@ describe("ChangeCheckProvider", () => {
       "a.go:3: lint suppression: func A() {} //nolint:all",
       "a_test.go: test file deleted",
     ]);
+  });
+
+  it("fails a change that removes a test from a test file it keeps", async () => {
+    const { root, git } = await repository({
+      "internal/orders/orders.go": "package orders\n",
+      "internal/orders/orders_test.go": "package orders\n\nimport \"testing\"\n\nfunc TestTotal(t *testing.T) {}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "internal/orders/orders_test.go"), "package orders\n");
+    await git("commit", "-qam", "drop test");
+
+    const outcome = await provider().run("change-integrity", await request(root));
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.details[0]).toBe("internal/orders/orders_test.go: test TestTotal removed");
+  });
+
+  it("passes a change that moves a test to a new test file or adds tests", async () => {
+    const { root, git } = await repository({
+      "a_test.go": "package a\n\nfunc TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a_test.go"), "package a\n\nfunc TestA(t *testing.T) {}\nfunc TestC(t *testing.T) {}\n");
+    await writeFile(join(root, "b_test.go"), "package a\n\nfunc TestB(t *testing.T) {}\n");
+
+    const outcome = await provider().run("change-integrity", await request(root));
+
+    expect(outcome).toMatchObject({ status: "passed", summary: "No suppression, removed test or protected configuration change" });
+  });
+
+  it("accepts a removed test with a person's trailer and judges later removals", async () => {
+    const { root, git } = await repository({
+      "a_test.go": "package a\n\nfunc TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a_test.go"), "package a\n\nfunc TestA(t *testing.T) {}\n");
+    await git("commit", "-qam", "drop obsolete test\n\nRailguard-Allow: change-integrity: feature removed");
+
+    expect((await provider().run("change-integrity", await request(root))).status).toBe("passed");
+
+    await writeFile(join(root, "a_test.go"), "package a\n");
+    const later = await provider().run("change-integrity", await request(root));
+    expect(later.status).toBe("failed");
+    expect(later.details[0]).toBe("a_test.go: test TestA removed");
   });
 
   it("accepts a protected configuration the change adds", async () => {

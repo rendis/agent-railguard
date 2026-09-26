@@ -44,6 +44,45 @@ export function isTestFile(path: string): boolean {
   return testFile.test(path);
 }
 
+/** How each kind of test file declares a single test; the first capture group is its name. */
+const testDeclarations: readonly { readonly file: RegExp; readonly declaration: RegExp }[] = [
+  { file: /_test\.go$/u, declaration: /^func[ \t]+(?:\([^)]*\)[ \t]*)?((?:Test|Benchmark|Fuzz|Example)\w*)[ \t]*(?:\[[^\]]*\][ \t]*)?\(/gmu },
+  { file: /\.(?:test|spec)\.[cm]?[jt]sx?$/u, declaration: /(?<![.\w$])(?:it|test)(?:\.(?:only|skip|todo|concurrent|sequential|failing|fails))*\s*\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`)/gmu },
+  { file: /(?:(?:^|\/)test_[^/]*|_test)\.py$/u, declaration: /^[ \t]*(?:async[ \t]+)?def[ \t]+(test\w*)[ \t]*\(/gmu },
+  { file: /(?:Test|Tests|IT)\.java$/u, declaration: /@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b(?:\([^)]*\))?(?:\s*@[\w.]+(?:\([^)]*\))?)*\s+[^(;{@]*?\b(\w+)\s*\(/gmu },
+  { file: /\.feature$/u, declaration: /^[ \t]*(?:Scenario(?: Outline| Template)?|Example):[ \t]*(.*?)[ \t]*$/gmu },
+];
+
+/** Names of the tests a test file declares, once per declaration. */
+export function testNames(path: string, content: string): readonly string[] {
+  const rule = testDeclarations.find((candidate) => candidate.file.test(path));
+  if (rule === undefined) return [];
+  return [...content.matchAll(rule.declaration)].map((match) => match.slice(1).find((name) => name !== undefined) ?? "");
+}
+
+/**
+ * Tests the base declared in changed test files that the change no longer declares, as
+ * `path: test <name> removed`. A test moved to another changed file keeps its name and is not reported.
+ */
+export function removedTestFindings(
+  files: readonly { readonly path: string; readonly before: string; readonly after: string }[],
+): readonly string[] {
+  const net = new Map<string, number>();
+  const decreased: { readonly path: string; readonly name: string }[] = [];
+  for (const { path, before, after } of files) {
+    const counts = new Map<string, number>();
+    for (const name of testNames(path, before)) counts.set(name, (counts.get(name) ?? 0) + 1);
+    for (const name of testNames(path, after)) counts.set(name, (counts.get(name) ?? 0) - 1);
+    for (const [name, count] of counts) {
+      net.set(name, (net.get(name) ?? 0) + count);
+      if (count > 0) decreased.push({ path, name });
+    }
+  }
+  return decreased
+    .filter(({ name }) => (net.get(name) ?? 0) > 0)
+    .map(({ path, name }) => `${path}: test ${name} removed`);
+}
+
 /** Suppression markers on the changed lines of one source file, as `path:line: label: text`. */
 export function suppressionFindings(path: string, content: string, lines: ChangedLines): readonly string[] {
   if (documentationFile.test(path)) return [];

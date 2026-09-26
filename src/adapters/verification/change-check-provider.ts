@@ -6,6 +6,7 @@ import {
   changedLineCount,
   isTestFile,
   matchesAnyGlob,
+  removedTestFindings,
   suppressionFindings,
 } from "../../domain/verification/change-guard.js";
 import {
@@ -83,7 +84,8 @@ export class ChangeCheckProvider implements CheckProvider {
       if (isTestFile(path)) findings.push(`${path}: test file deleted`);
       else if (matchesAnyGlob(path, protectedPaths)) findings.push(`${path}: protected quality configuration deleted`);
     }
-    if (findings.length === 0) return passed("No suppression, deleted test or protected configuration change");
+    findings.push(...removedTestFindings(await this.#changedTests(request.repositoryRoot, changes)));
+    if (findings.length === 0) return passed("No suppression, removed test or protected configuration change");
     return {
       status: "failed",
       summary: `${findings.length} change(s) weaken what the checks can see`,
@@ -119,6 +121,27 @@ export class ChangeCheckProvider implements CheckProvider {
         "Split the change into smaller deliveries. Never add a `Railguard-Allow` trailer yourself: only a person may accept what the branch holds so far, with `Railguard-Allow: change-size: <reason>` in a commit they make.",
       ],
     };
+  }
+
+  /** Changed test files as the base held them and as the change holds them now. */
+  async #changedTests(root: string, changes: ChangeSet): Promise<{ path: string; before: string; after: string }[]> {
+    const tests: { path: string; before: string; after: string }[] = [];
+    if (changes.base === null) return tests;
+    for (const path of changes.files.keys()) {
+      if (!isTestFile(path)) continue;
+      const content = await readChanged(root, path);
+      if (content === null || isBinary(content) || content.length > maxScannedBytes) continue;
+      tests.push({ path, before: await this.#atBase(root, changes.base, path), after: content.toString("utf8") });
+    }
+    return tests;
+  }
+
+  /** A file as the base held it; empty when the change adds it. */
+  async #atBase(root: string, base: string, path: string): Promise<string> {
+    if (!(await this.#existsAtBase(root, base, path))) return "";
+    const result = await this.process.run("git", ["cat-file", "blob", `${base}:${path}`], { cwd: root, timeoutMs: 30_000 });
+    if (result.exitCode !== 0) throw new Error(`Cannot read ${path} at ${base}: ${result.stderr.trim()}`);
+    return result.stdout;
   }
 
   async #existsAtBase(root: string, base: string | null, path: string): Promise<boolean> {

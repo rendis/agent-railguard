@@ -285,7 +285,7 @@ catalog:
     change-guard:
       version: 0.1.0
       description: Block changes that silence checks, delete tests or grow past a reviewable size; only a person, never the agent, may accept one with a Railguard-Allow trailer.
-      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, or deletes a test file. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles and harness configuration. A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: <check-kind>: <reason>` trailer; later changes are still judged. It judges only changes; a full run skips it."
+      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, deletes a test file, or removes a test declaration (Go Test/Benchmark/Fuzz/Example functions, it/test calls, Python test functions, JUnit test methods, Gherkin scenarios) that a changed test file held at the base; a test moved to another changed test file keeps its name and is not reported. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles and harness configuration. A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: <check-kind>: <reason>` trailer; later changes are still judged. It judges only changes; a full run skips it."
       executables: [git]
       inputs:
         protected_paths:
@@ -404,7 +404,7 @@ catalog:
     edit-feedback:
       version: 0.1.0
       description: Tell a coding agent right after each file edit about suppressions, weakened configuration or secrets it introduced.
-      details: "Adds a post-edit hook to Claude Code, Codex and Cursor. After the agent edits, adds or deletes files with its file tools, the file-scoped checks of the selected profiles run on those files only: change-integrity from change-guard (suppression markers, protected configuration, deleted tests) and secret-exposure from secret-guard (uncommitted changed lines, without the commit history). Failures reach the agent as context while it still works on that edit; formatting, tests and other stack checks stay with the stop hook. Codex asks each developer to trust the hook once."
+      details: "Adds a post-edit hook to Claude Code, Codex and Cursor. After the agent edits, adds or deletes files with its file tools, the file-scoped checks of the selected profiles run on those files only: change-integrity from change-guard (suppression markers, protected configuration, deleted test files and removed tests) and secret-exposure from secret-guard (uncommitted changed lines, without the commit history). Failures reach the agent as context while it still works on that edit; formatting, tests and other stack checks stay with the stop hook. Codex asks each developer to trust the hook once."
       event: post-edit
 
   instruction-fragments:
