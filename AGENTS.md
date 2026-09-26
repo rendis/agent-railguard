@@ -1,52 +1,39 @@
 # Agent Railguard
 
-## Mission
+Railguard (`railguard`) configures a Git repository so coding agents work with specialized skills and inside deterministic quality guardrails. This repository holds the engine, the catalog it ships and the contracts that make it reproducible. Everything is provisional until a release contract declares it stable.
 
-Build a single source from which teams can configure an AI-assisted development environment. The repository may contain reusable skills, agents, plugins, MCP servers, installation or configuration tooling, evaluation harnesses, and the contracts that make those capabilities reproducible.
+## This repository
 
-This repository is in active development. Treat every layout, interface, manifest, command, and implementation as provisional until an explicit release contract declares it stable.
+- `src/`: TypeScript engine in layers (`domain`, `application`, `adapters`, `catalog`, `cli`, `tui`); `.dependency-cruiser.cjs` enforces their boundaries.
+- `railguard.yaml` and `skills/`: the catalog and skill payloads, embedded in the binary. `railguard --source <checkout>` tries them without rebuilding.
+- `schemas/`: the public contracts (catalog, project state, plan, event, result).
+- `tests/`: behavior tests on temporary repositories, never on a real checkout.
+- `docs/`: user documentation and [decisions](docs/decisions.md), in Spanish. Code, CLI output, identifiers and commits are in English.
 
-## Development posture
+Before delivering, run `pnpm run check` (typecheck, tests with coverage thresholds, skill script tests, import boundaries, bundle smoke test). It needs Node 24, pnpm 11 and Go 1.26. `bash install.sh --local` builds and installs the binary of this machine with Bun. A release is a `vX.Y.Z` tag that matches `package.json`.
 
-- Optimize for the best current design and the simplest complete system. Existing work is evidence, not a constraint or an investment to preserve.
-- Replace obsolete internal paths atomically and remove the displaced implementation. Add compatibility, migrations, or fallbacks only for an observed external contract that the current task explicitly requires.
-- Re-evaluate assumptions when new evidence appears. No current component, convention, dependency, or architecture is a permanent constant merely because it already exists.
-- Prefer maintained standard capabilities when they reduce total complexity. Keep custom code narrow, owned by the component that needs it, and justified by a missing deterministic capability.
-- Keep the repository usable end to end while changing it. Introduce the smallest working slice, verify it, and build from that stable result.
+## Rules
+
+- The project is public: no company, client, project or person data in code, docs, tests, fixtures or commits.
+- Railguard is a local tool. Consumer CI runs its own commands and must never depend on the binary or on access to its releases.
+- Only a person adds a `Railguard-Allow` trailer; an agent never accepts its own guard finding.
+- Conventional Commits, without AI attribution.
+- Replace obsolete paths atomically and remove the displaced code. Add compatibility or migrations only for an observed external contract the task requires.
+- Prefer maintained standard capabilities; keep custom code narrow and owned by the component that needs it.
 
 ## Deterministic core
 
-Everything mechanically decidable must have a deterministic implementation and verdict.
-
-- Express mechanical policy through pinned tools, schemas, manifests, scripts, tests, or explicit configuration.
-- Give every governed check a defined scope, reproducible inputs, actionable diagnostics, and a non-zero failure result.
-- Distinguish reproducible conclusions from noisy bytes: timestamps, ordering, timing, or logs may vary while the classified verdict remains stable.
-- Keep generated reports, caches, traces, temporary installations, and evaluation workspaces outside versioned source. Version only the inputs required to reproduce them.
-- Reserve agent judgment for semantics, design tradeoffs, ambiguity, applicability, and other questions that cannot be reduced honestly to a deterministic check.
-
-## Repository boundaries
-
-- Treat source components, evaluation fixtures, and generated evidence as separate concerns. A test harness may evaluate a component but does not become that component's runtime framework.
-- Keep each reusable component self-contained. Its instructions, code, assets, configuration, tests, and ownership should be discoverable from its directory or manifest.
-- Keep consumer-specific topology and policy out of reusable defaults. Expose deliberate configuration points where projects genuinely differ.
-- Treat local evaluation copies as non-authoritative unless the repository explicitly defines them as the source of truth. Compare immutable identities before accepting mirrored evidence.
-- Publishing, installing into external repositories, changing remote systems, or declaring compatibility requires explicit user authority and observed delivery evidence.
+Everything mechanically decidable has a deterministic implementation and verdict: pinned tools, schemas, scripts, tests or explicit configuration, with a defined scope, reproducible inputs, actionable diagnostics and a non-zero failure result. Agent judgment is reserved for semantics, design tradeoffs and applicability. Generated reports, caches and temporary installations stay out of versioned source.
 
 ## Change workflow
 
-1. **Discover.** Read the smallest relevant instructions, component sources, manifests, tests, evaluations, and current consumers. State the observed capability, ownership boundary, and evidence that the change is needed.
-2. **Contract.** Define the present behavior, success criteria, deterministic checks, and the contextual decisions that remain. Choose the simplest durable replacement; request input only when the decision changes public behavior, persistence, security, cost, architecture, or external systems.
-3. **Implement.** Build the smallest end-to-end slice. Preserve unrelated work, avoid speculative abstraction, and remove the obsolete internal route when its replacement is complete.
-4. **Verify.** Run the narrowest discriminating check first, then the component's broader contract. For behavior-generating components, use isolated forward or blind evaluations that do not disclose the expected solution.
-5. **Challenge.** Inspect the exact diff or immutable candidate for correctness, simplicity, permissions, portability, deterministic coverage, and false-pass risk. A finding creates a new candidate and invalidates prior review evidence.
-6. **Deliver.** Report changed contracts, observed checks, generated artifacts, unavailable evidence, and remaining contextual decisions. Stop when the scoped outcome is proven.
+1. **Discover.** Read the smallest relevant code, tests, docs and consumers; state the evidence that the change is needed.
+2. **Contract.** Define the behavior, success criteria and deterministic checks. Ask only when a decision changes public behavior, persistence, security, cost or external systems.
+3. **Implement.** Build the smallest end-to-end slice and preserve unrelated work.
+4. **Verify.** Run the narrowest discriminating check first, then `pnpm run check`.
+5. **Challenge.** Review the exact diff for correctness, simplicity, permissions, portability and false passes; a finding creates a new candidate.
+6. **Deliver.** Report changed contracts, observed checks and remaining decisions. Publishing, installing into other repositories or changing remote systems requires explicit user authority.
 
-## Component expectations
+## Skills
 
-- **Skills:** keep `SKILL.md` concise and procedural; place branch-specific detail behind direct context pointers; implement repeated or fragile operations as tested scripts; validate structure and forward-test behavior.
-- **Agents:** define authority, inputs, outputs, tool permissions, stopping conditions, and observable success. Keep orchestration shallow and decisions attributable.
-- **Plugins and MCP servers:** define manifests and public schemas explicitly; minimize permissions; validate lifecycle, errors, cleanup, and protocol behavior at the real boundary.
-- **Configuration and installers:** make assessment idempotent, separate readiness from product findings, pin reproducibility inputs, and leave the target environment explainable after application or repair.
-- **Evaluations:** grade observed actions and artifacts rather than claimed compliance; accept alternate valid implementations; reject known-bad evidence; preserve failed attempts without converting them into passes.
-
-Repository structure and commands will evolve. Prefer current executable evidence over cached prose, and update this file only when a stable cross-repository working rule has actually emerged.
+Keep `SKILL.md` concise and procedural, with branch-specific detail behind direct pointers to `references/`. Implement repeated or fragile operations as tested scripts inside the skill, and keep each skill self-contained: its dependencies are declared in `railguard.yaml`, never through links to other skills.
