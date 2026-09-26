@@ -252,8 +252,7 @@ for (const stage of ["check", "verify"] as const) {
           : "Run every check of the selected verification profiles",
       )
       .option("--changed", "judge only what changed relative to the base branch", false)
-      .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch")
-      .option("--coverage-out <file>", "also write the measured Go coverage profile; relative to each project unit"),
+      .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch"),
     ["text", "json"],
   ).action(async (_options, command: Command) => {
     await direct(() => runVerification(stage, command));
@@ -616,7 +615,6 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
   const sourcePath = sourceFrom(options);
   const root = rootFrom(options);
   const base = baseFrom(options);
-  const coverageOut = options.coverageOut === undefined ? undefined : requiredString(options.coverageOut, "--coverage-out");
   const runtime = await createDefaultApplication({
     ...(sourcePath === undefined ? {} : { sourcePath }),
   });
@@ -627,7 +625,6 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
         stage,
         changed: options.changed === true,
         ...(base === undefined ? {} : { base }),
-        ...(coverageOut === undefined ? {} : { coverageOut }),
       },
       (event) => {
         if (format !== "text" || !process.stderr.isTTY) return;
@@ -911,7 +908,7 @@ Effect: diagnoses content, repository and materialization without mutation.`));
 Examples:
   railguard ${stage} --changed
   railguard ${stage} --changed --base origin/release --format json
-  railguard ${stage} --coverage-out coverage.out
+  railguard ${stage}
 
 Effect: runs the ${stage === "check" ? "fast checks" : "checks of both stages"} of every selected verification profile.
 With --changed each check judges only what changed since the merge-base with the default

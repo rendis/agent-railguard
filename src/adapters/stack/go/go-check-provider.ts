@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, posix, resolve } from "node:path";
+import { join, posix } from "node:path";
 import {
   changedFilesInUnit,
   isLineChanged,
@@ -171,11 +171,6 @@ class GoUnit {
         profile = await readFile(profilePath, "utf8");
       } catch {
         return failed("Tests did not produce a coverage profile", output(result));
-      }
-      if (this.#request.coverageOut !== undefined) {
-        const destination = resolve(this.#dir, this.#request.coverageOut);
-        await mkdir(dirname(destination), { recursive: true });
-        await writeFile(destination, profile);
       }
       const blocks = parseCoverProfile(profile, modulePath);
       const corePatterns = this.#input("core_packages", []);

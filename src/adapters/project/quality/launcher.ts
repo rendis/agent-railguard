@@ -14,9 +14,7 @@ export const engineUnavailable = 127;
 /**
  * Runs the engine version this repository pins: the cached release binary, a `railguard` on PATH
  * of exactly that version, or the release downloaded once and verified against its SHA256SUMS.
- * A private release is reached through an authenticated gh or, where gh is missing (a CI image),
- * a GH_TOKEN or GITHUB_TOKEN sent to the GitHub API. Only stderr is used, so a hook's stdout
- * protocol passes through untouched.
+ * Only stderr is used, so a hook's stdout protocol passes through untouched.
  */
 export function launcherBody(engine: EngineRelease): string {
   return `#!/bin/sh
@@ -62,14 +60,6 @@ download() {
   else return 1
   fi
 }
-# Downloads a release asset through the GitHub API, which also serves private repositories.
-api_asset() {
-  id="$(tr ',{}' '\\n\\n\\n' < "$work/release.json" \\
-    | awk -v name="$1" '/"id":/ { gsub(/[^0-9]/, ""); id = $0 } /"name":/ && index($0, "\\"" name "\\"") { print id; exit }')"
-  [ -n "$id" ] || return 1
-  curl -fsSL --retry 3 -H "Authorization: Bearer $token" -H "Accept: application/octet-stream" \\
-    -o "$work/$1" "$api/repos/$repository/releases/assets/$id"
-}
 sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
   else shasum -a 256 "$1" | awk '{print $1}'
@@ -86,13 +76,6 @@ if [ -n "\${RAILGUARD_DOWNLOAD_URL:-}" ]; then
 elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   gh release download "v$version" --repo "$repository" --pattern "$asset" --pattern SHA256SUMS --dir "$work" \\
     </dev/null >/dev/null 2>&1 || fail "gh could not download release v$version of $repository"
-elif [ -n "\${GH_TOKEN:-\${GITHUB_TOKEN:-}}" ] && command -v curl >/dev/null 2>&1; then
-  token="\${GH_TOKEN:-\${GITHUB_TOKEN:-}}"
-  api="\${RAILGUARD_GITHUB_API:-https://api.github.com}"
-  { curl -fsSL --retry 3 -H "Authorization: Bearer $token" -o "$work/release.json" \\
-      "$api/repos/$repository/releases/tags/v$version" \\
-    && api_asset "$asset" && api_asset SHA256SUMS; } </dev/null \\
-    || fail "the GitHub API did not serve release v$version of $repository with the given token"
 else
   base="https://github.com/$repository/releases/download/v$version"
   { download "$base/$asset" "$work/$asset" && download "$base/SHA256SUMS" "$work/SHA256SUMS"; } </dev/null \\

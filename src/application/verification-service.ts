@@ -17,8 +17,6 @@ export interface VerificationRequest {
   /** Judge only what changed relative to the base instead of every project unit completely. */
   readonly changed: boolean;
   readonly base?: string;
-  /** Also write each unit's measured coverage profile here; see CheckRequest.coverageOut. */
-  readonly coverageOut?: string;
   readonly signal?: AbortSignal;
 }
 
@@ -128,7 +126,6 @@ export class VerificationService {
                 params: check.params,
                 inputs,
                 changes,
-                ...(request.coverageOut === undefined ? {} : { coverageOut: request.coverageOut }),
                 ...(request.signal === undefined ? {} : { signal: request.signal }),
               });
           const result = Object.freeze({ profile: profile.ref, check: check.id, kind: check.kind, unit, outcome });

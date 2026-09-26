@@ -1,6 +1,4 @@
 import { execFile } from "node:child_process";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -94,42 +92,6 @@ describe("repository launcher", () => {
     expect(first).toMatchObject({ code: 0, stdout: "ran verify with \n" });
     expect(first.stderr).toContain(`downloading 1.2.3 ${asset}`);
     expect(second).toMatchObject({ code: 0, stdout: "ran verify with \n", stderr: "" });
-  });
-
-  it("downloads a private release through the GitHub API with a token when gh is missing", async () => {
-    const sandbox = await launcherSandbox();
-    const engine = fakeEngine("1.2.3");
-    const sums = `${createHash("sha256").update(engine).digest("hex")}  ${asset}\n`;
-    const release = JSON.stringify({
-      id: 1,
-      name: "v1.2.3",
-      author: { id: 9, login: "someone" },
-      assets: [
-        { url: "x", id: 21, node_id: "a", name: "SHA256SUMS", uploader: { id: 9, login: "someone" } },
-        { url: "y", id: 22, node_id: "b", name: asset, browser_download_url: `https://example.test/${asset}` },
-      ],
-    });
-    const seen: string[] = [];
-    const server = createServer((incoming, response) => {
-      seen.push(`${incoming.headers.authorization} ${incoming.url}`);
-      if (incoming.headers.authorization !== "Bearer secret-token") return void response.writeHead(404).end();
-      if (incoming.url === "/repos/example/railguard/releases/tags/v1.2.3") return void response.end(release);
-      if (incoming.url === "/repos/example/railguard/releases/assets/21") return void response.end(sums);
-      if (incoming.url === "/repos/example/railguard/releases/assets/22") return void response.end(engine);
-      response.writeHead(404).end();
-    });
-    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
-    cleanups.push(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())));
-    const { port } = server.address() as AddressInfo;
-
-    const result = await sandbox.run(["verify"], "", { GH_TOKEN: "secret-token", RAILGUARD_GITHUB_API: `http://127.0.0.1:${port}` });
-
-    expect(result, result.stderr).toMatchObject({ code: 0, stdout: "ran verify with \n" });
-    expect(seen).toEqual([
-      "Bearer secret-token /repos/example/railguard/releases/tags/v1.2.3",
-      "Bearer secret-token /repos/example/railguard/releases/assets/22",
-      "Bearer secret-token /repos/example/railguard/releases/assets/21",
-    ]);
   });
 
   it("refuses a download whose checksum does not match and caches nothing", async () => {
