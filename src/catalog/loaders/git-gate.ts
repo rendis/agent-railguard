@@ -8,13 +8,13 @@ export interface GitGateDefinition {
   readonly details: string;
   readonly event: "pre-commit" | "pre-push";
   readonly operation: "check" | "verify";
-  readonly relations: readonly RelationDefinition[];
+  readonly relations?: readonly RelationDefinition[];
 }
 
 export function loadGitGate(id: string, definition: GitGateDefinition): LoadedComponent {
   const ref = componentRef(`git-gate:${id}`);
   const version = semVer(definition.version);
-  const relations = normalizeRelations(definition.relations);
+  const relations = normalizeRelations(definition.relations ?? []);
   const definitionDigest = sha256(
     JSON.stringify({
       ref,

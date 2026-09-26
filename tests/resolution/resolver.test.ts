@@ -136,6 +136,66 @@ describe("DefaultResolver", () => {
     }
   });
 
+  it("blocks every Git gate while no verification profile is selected", async () => {
+    const preCommit = componentRef("git-gate:pre-commit-check");
+    const prePush = componentRef("git-gate:pre-push-verify");
+    const result = new DefaultResolver().resolve({
+      catalog: await loadCatalog(),
+      directSelections: [prePush, preCommit],
+      projectUnits: [pythonUnit()],
+      targets: [{ target: codex, capabilities: [] }],
+    });
+
+    expect(result.kind).toBe("blocked");
+    expect(result.components.map((component) => component.ref)).toEqual([preCommit, prePush]);
+    expect(result.blockers).toEqual([
+      { kind: "git-gate-without-profile", component: preCommit },
+      { kind: "git-gate-without-profile", component: prePush },
+    ]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "resolution.git-gate.profile-missing",
+        severity: "blocked",
+        subjects: [preCommit],
+      }),
+      expect.objectContaining({
+        code: "resolution.git-gate.profile-missing",
+        severity: "blocked",
+        subjects: [prePush],
+      }),
+    ]);
+  });
+
+  it("runs a Git gate with any verification profile without anchoring it to a stack", async () => {
+    const gate = componentRef("git-gate:pre-commit-check");
+    const secretGuard = componentRef("verification-profile:secret-guard");
+    const result = new DefaultResolver().resolve({
+      catalog: await loadCatalog(),
+      directSelections: [gate, secretGuard],
+      projectUnits: [pythonUnit()],
+      targets: [{ target: codex, capabilities: [] }],
+    });
+
+    expect(result.kind).toBe("ready");
+    expect(result.components.map((component) => component.ref)).toEqual([gate, secretGuard]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("accepts a Git gate whose profile arrives through another selection", async () => {
+    const gate = componentRef("git-gate:pre-push-check");
+    const result = new DefaultResolver().resolve({
+      catalog: await loadCatalog(),
+      directSelections: [gate, componentRef("skill:configure-go-quality")],
+      projectUnits: [goUnit()],
+      targets: [{ target: codex, capabilities: codexCapabilities }],
+    });
+
+    expect(result.kind).toBe("ready");
+    expect(result.components.map((component) => component.ref)).toContain(
+      "verification-profile:go-quality",
+    );
+  });
+
   it("resolves a pack through the same graph as its explicit direct selections", async () => {
     const catalog = await loadCatalog();
     const resolver = new DefaultResolver();

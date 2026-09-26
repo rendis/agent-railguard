@@ -135,6 +135,64 @@ describe("QualityProjector", () => {
     }
   });
 
+  it("projects a Git gate in a repository without Go when a language-less profile is selected", async () => {
+    const repository = await createTempRepository({
+      "package.json": "{\"name\":\"web\",\"private\":true}\n",
+      "src/index.ts": "export const ready = true;\n",
+    });
+    try {
+      const catalogResult = await new FilesystemCatalog({
+        catalogFile: resolve("railguard.yaml"),
+        supportedLanguages: [languageId("go")],
+      }).load();
+      if (catalogResult.kind !== "ready") throw new Error("Expected ready catalog");
+      const resolution = new DefaultResolver().resolve({
+        catalog: catalogResult.catalog,
+        directSelections: [
+          componentRef("git-gate:pre-commit-check"),
+          componentRef("verification-profile:secret-guard"),
+        ],
+        projectUnits: [],
+        targets: [{
+          target: harnessTargetId("codex"),
+          capabilities: [capabilityId("project.instructions")],
+        }],
+      });
+      if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
+      const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
+      const onlyGit: ExecutableProbe = {
+        async probe(command) {
+          return command === "git"
+            ? { detected: true, path: "/test/git", version: "test", diagnostics: [] }
+            : { detected: false, path: null, version: null, diagnostics: [] };
+        },
+      };
+
+      const projection = await new QualityProjector(onlyGit, noHooks, engine, []).project(
+        resolution,
+        catalogResult.catalog,
+        snapshot,
+        ...noUnits,
+      );
+
+      expect(resolution.components.map((component) => component.ref)).not.toContain(
+        "verification-profile:go-quality",
+      );
+      expect(projection.diagnostics).toEqual([]);
+      const hook = projection.units.find(
+        (unit) =>
+          unit.kind === "artifact" &&
+          unit.intent.kind === "file" &&
+          unit.intent.path === ".railguard/hooks/pre-commit",
+      );
+      expect(hook?.kind === "artifact" && hook.intent.kind === "file"
+        ? Buffer.from(hook.intent.bytes.copy()).toString("utf8")
+        : "").toContain(".railguard/bin/railguard check --changed");
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
   it("a verification profile alone projects only the launcher that pins the engine", async () => {
     const repository = await createTempRepository({});
     try {

@@ -75,6 +75,7 @@ export class DefaultResolver implements Resolver {
           Object.freeze({ kind: "non-selectable-component", component }),
         ),
       ...conflictBlockers(closure, byRef),
+      ...gateProfileBlockers(closure, byRef),
       ...capabilityBlockers(closure, byRef, request.targets),
     ];
     blockers.sort(compareBlockers);
@@ -326,6 +327,24 @@ function conflictBlockers(
   );
 }
 
+function gateProfileBlockers(
+  closure: ReadonlySet<ComponentRef>,
+  byRef: ReadonlyMap<ComponentRef, CatalogComponent>,
+): readonly ResolutionBlocker[] {
+  const components = [...closure].map((ref) => requireComponent(byRef, ref));
+  if (components.some((component) => component.kind === "verification-profile")) {
+    return Object.freeze([]);
+  }
+  return Object.freeze(
+    components
+      .filter((component) => component.kind === "git-gate")
+      .map<ResolutionBlocker>((component) =>
+        Object.freeze({ kind: "git-gate-without-profile", component: component.ref }),
+      )
+      .sort(compareBlockers),
+  );
+}
+
 function capabilityBlockers(
   closure: ReadonlySet<ComponentRef>,
   byRef: ReadonlyMap<ComponentRef, CatalogComponent>,
@@ -438,6 +457,8 @@ function blockerKey(blocker: ResolutionBlocker): string {
       return `unknown-selection\0${blocker.component}`;
     case "non-selectable-component":
       return `non-selectable-component\0${blocker.component}`;
+    case "git-gate-without-profile":
+      return `git-gate-without-profile\0${blocker.component}`;
     case "unsupported-capability":
       return `unsupported-capability\0${blocker.component}\0${blocker.target}\0${blocker.capability}`;
   }
@@ -462,6 +483,15 @@ function blockerDiagnostic(blocker: ResolutionBlocker): Diagnostic {
         message: "Managed instruction mappings are internal and cannot be selected directly.",
         impact: "The desired component set cannot be planned.",
         action: "Select a skill, MCP integration, agent, quality profile, Git gate, or pack.",
+      });
+    case "git-gate-without-profile":
+      return diagnostic({
+        code: "resolution.git-gate.profile-missing",
+        subjects: [blocker.component],
+        evidence: [blocker.component],
+        message: "A Git gate runs the checks of the selected verification profiles, and none is selected.",
+        impact: "The hook would run no check and pass every commit or push.",
+        action: "Select at least one verification profile, or remove the Git gate.",
       });
     case "conflict":
       return diagnostic({
