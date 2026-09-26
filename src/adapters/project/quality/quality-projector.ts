@@ -82,6 +82,7 @@ export class QualityProjector implements ProjectArtifactProjector {
     );
     const stopHooks = agentHooks.filter((hook) => hook.event === "stop");
     const guardHooks = agentHooks.filter((hook) => hook.event === "pre-action");
+    const editHooks = agentHooks.filter((hook) => hook.event === "post-edit");
     if (profiles.length === 0 && gates.length === 0 && agentHooks.length === 0) {
       return emptyProjection();
     }
@@ -169,6 +170,18 @@ export class QualityProjector implements ProjectArtifactProjector {
         }),
       );
     }
+    if (editHooks.length > 0) {
+      intents.push(
+        Object.freeze({
+          kind: "file",
+          owner: "agent-hooks:edit",
+          scopeRoot: relativePosixPath(".railguard/agent-hooks"),
+          path: relativePosixPath(agentEditScriptPath),
+          bytes: new ReadonlyBytes(Buffer.from(agentEditBody(), "utf8")),
+          mode: 0o755,
+        }),
+      );
+    }
     if (guardHooks.length > 0) {
       const changeGuard = profiles.find((profile) => profile.ref === changeGuardRef);
       const protectedPaths = changeGuard === undefined
@@ -236,6 +249,14 @@ export class QualityProjector implements ProjectArtifactProjector {
           kind: "artifact",
           ownershipId: "project.agent-hook.session-start",
           sources: Object.freeze(stopHooks.map((hook) => hook.ref)),
+          intent,
+        });
+      }
+      if (intent.path === agentEditScriptPath) {
+        return Object.freeze({
+          kind: "artifact",
+          ownershipId: "project.agent-hook.edit",
+          sources: Object.freeze(editHooks.map((hook) => hook.ref)),
           intent,
         });
       }
@@ -320,6 +341,21 @@ function groupGatesByEvent(
 const agentStopScriptPath = ".railguard/agent-hooks/stop";
 const agentGuardScriptPath = ".railguard/agent-hooks/guard";
 const agentSessionStartScriptPath = ".railguard/agent-hooks/session-start";
+const agentEditScriptPath = ".railguard/agent-hooks/edit";
+
+/**
+ * Called by every harness after an agent edits files: the engine runs the file-scoped checks on
+ * them and returns failures as context. Without the engine the edit stands unreported.
+ */
+function agentEditBody(): string {
+  return [
+    "#!/bin/sh",
+    "# Managed by Railguard: runs after a coding agent edits files.",
+    'cd "$(git rev-parse --show-toplevel)" || exit 0',
+    `${launcherPath} hook edit --harness "$1" || exit 0`,
+    "",
+  ].join("\n");
+}
 
 /**
  * Called by every harness when an agent session starts: it tells the agent about a change an

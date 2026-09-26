@@ -29,6 +29,11 @@ export interface CheckRequest {
   readonly params: CheckParams;
   readonly inputs: Readonly<Record<string, readonly string[]>>;
   readonly changes: ChangeSet;
+  /**
+   * The repository paths of an agent's latest edit, when the check judges only them instead of the
+   * whole change; `changes` then holds only those paths.
+   */
+  readonly paths?: readonly string[];
   readonly signal?: AbortSignal;
 }
 
@@ -100,6 +105,17 @@ export function changedFilesInUnit(
 export function deletedFilesInUnit(changes: ChangeSet, unitRoot: string): readonly string[] {
   const prefix = unitRoot === "." ? "" : `${unitRoot}/`;
   return changes.deleted.filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length));
+}
+
+/** The change restricted to some repository paths, such as the files an agent just edited. */
+export function changesAt(changes: ChangeSet, paths: readonly string[] | undefined): ChangeSet {
+  if (paths === undefined) return changes;
+  const wanted = new Set(paths);
+  return Object.freeze({
+    ...changes,
+    files: new Map([...changes.files].filter(([path]) => wanted.has(path))),
+    deleted: Object.freeze(changes.deleted.filter((path) => wanted.has(path))),
+  });
 }
 
 export function isLineChanged(lines: ChangedLines | undefined, line: number): boolean {

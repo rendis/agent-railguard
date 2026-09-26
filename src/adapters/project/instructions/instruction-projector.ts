@@ -233,9 +233,13 @@ function mappingGuidance(
       return `${timing}, \`.railguard/bin/railguard ${component.operation} --changed\` runs automatically; run it yourself to reproduce a failure.`;
     }
     case "agent-hook":
-      return component.event === "pre-action"
-        ? "Before you run a command or edit a file, Railguard refuses what would bypass the guardrails: skipping Git hooks, adding a `Railguard-Allow` trailer, or editing Railguard, Git internals or protected quality configuration. Ask the user when such a change is really needed."
-        : `When you finish a turn, \`.railguard/bin/railguard ${component.operation} --changed\` runs and any failure comes back to you; fix it instead of weakening tests or checks.`;
+      if (component.event === "pre-action") {
+        return "Before you run a command or edit a file, Railguard refuses what would bypass the guardrails: skipping Git hooks, adding a `Railguard-Allow` trailer, or editing Railguard, Git internals or protected quality configuration. Ask the user when such a change is really needed.";
+      }
+      if (component.event === "post-edit") {
+        return "After you edit files, Railguard reports suppressions, weakened quality configuration or secrets in them; fix the cause in that edit instead of hiding it.";
+      }
+      return `When you finish a turn, \`.railguard/bin/railguard ${component.operation} --changed\` runs and any failure comes back to you; fix it instead of weakening tests or checks.`;
     default:
       return component.description;
   }

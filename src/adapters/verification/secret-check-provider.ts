@@ -1,15 +1,16 @@
 import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-  ChangedLines,
-  ChangeSet,
-  ChangeSetReader,
-  CheckOutcome,
-  CheckProvider,
-  CheckRequest,
-  FullCheck,
-  ProcessRunner,
+import {
+  changesAt,
+  type ChangedLines,
+  type ChangeSet,
+  type ChangeSetReader,
+  type CheckOutcome,
+  type CheckProvider,
+  type CheckRequest,
+  type FullCheck,
+  type ProcessRunner,
 } from "../../domain/verification/checks.js";
 import type { PinnedTool, ToolLocator } from "../platform/tools/pinned-tool.js";
 import { ChangeAcceptance } from "./change-acceptance.js";
@@ -108,7 +109,8 @@ export class SecretCheckProvider implements CheckProvider {
     try {
       const options = await this.#baseExceptions(root, scope.base, work);
       const findings: string[] = [];
-      if (scope.base !== null) {
+      // An agent's single edit is judged in the working tree only; commits are judged with the change.
+      if (scope.base !== null && request.paths === undefined) {
         const committed = await this.#betterleaks(executable, root, ["git", `--log-opts=${scope.base}..HEAD`, ...options, "."], request.signal);
         if ("error" in committed) return scanFailed(committed.error);
         for (const finding of committed.findings) {
@@ -116,7 +118,9 @@ export class SecretCheckProvider implements CheckProvider {
         }
       }
       // Committed content is judged above; this covers what is still only in the working tree.
-      const pending = scope.base === null ? scope.files : (await this.changeSets.read(root, "HEAD")).files;
+      const pending = scope.base === null
+        ? scope.files
+        : changesAt(await this.changeSets.read(root, "HEAD"), request.paths).files;
       const paths = await regularFiles(root, [...pending.keys()]);
       for (let start = 0; start < paths.length; start += pathsPerScan) {
         const chunk = paths.slice(start, start + pathsPerScan);

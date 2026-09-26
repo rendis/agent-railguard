@@ -293,7 +293,7 @@
           "required": ["operation"]
         },
         {
-          "properties": { "event": { "const": "pre-action" }, "operation": false }
+          "properties": { "event": { "enum": ["pre-action", "post-edit"] }, "operation": false }
         }
       ],
       "properties": {
@@ -308,7 +308,7 @@
         },
         "details": { "$ref": "#/$defs/details" },
         "event": {
-          "enum": ["stop", "pre-action"]
+          "enum": ["stop", "pre-action", "post-edit"]
         },
         "operation": {
           "enum": ["check", "verify"]

@@ -11,7 +11,7 @@ export interface AgentHookDefinition {
   readonly version: string;
   readonly description: string;
   readonly details: string;
-  readonly event: "stop" | "pre-action";
+  readonly event: "stop" | "pre-action" | "post-edit";
   readonly operation?: "check" | "verify";
   readonly relations?: readonly RelationDefinition[];
 }

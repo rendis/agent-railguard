@@ -102,6 +102,7 @@ export function nativeJsonMemberUnit(input: {
 export const agentStopScript = ".railguard/agent-hooks/stop";
 export const agentGuardScript = ".railguard/agent-hooks/guard";
 export const agentSessionStartScript = ".railguard/agent-hooks/session-start";
+export const agentEditScript = ".railguard/agent-hooks/edit";
 
 export function stablePrettyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;

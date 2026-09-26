@@ -36,6 +36,7 @@ import { activateDeclaredGitGates } from "./cli/git-gate-activation.js";
 import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
 import { guardAction } from "./application/agent-action-guard.js";
+import { runEditFeedbackHook } from "./application/agent-edit-feedback.js";
 import { runSessionStartHook } from "./application/agent-session-start.js";
 import { runStopHook, type StopHookHarness } from "./application/agent-stop-hook.js";
 import { createDefaultApplication, createUnverifiedChanges } from "./application/composition-root.js";
@@ -332,6 +333,28 @@ hook
       });
       process.stdout.write(response.stdout);
       process.stderr.write(response.stderr);
+    });
+  });
+
+hook
+  .command("edit")
+  .description("Report suppressions, weakened configuration or secrets in the files an agent just edited")
+  .requiredOption("--harness <harness>", "claude-code, codex or cursor")
+  .action(async (_options, command: Command) => {
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const harness = hookHarness(options.harness);
+      const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+      const runtime = await createDefaultApplication();
+      try {
+        process.stdout.write(await runEditFeedbackHook(
+          { harness, root: await realpath(rootFrom(options)), input },
+          runtime.verification,
+          (report) => renderVerificationReport(report, true),
+        ));
+      } finally {
+        await runtime.dispose();
+      }
     });
   });
 

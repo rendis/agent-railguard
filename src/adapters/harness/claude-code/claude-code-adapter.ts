@@ -15,6 +15,7 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentEditScript,
   agentGuardScript,
   agentSessionStartScript,
   agentStopScript,
@@ -84,6 +85,30 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
     }
     const stopHooks = components.agentHooks.filter((hook) => hook.event === "stop");
     const guardHooks = components.agentHooks.filter((hook) => hook.event === "pre-action");
+    const editHooks = components.agentHooks.filter((hook) => hook.event === "post-edit");
+    if (editHooks.length > 0) {
+      units.push(
+        nativeJsonMemberUnit({
+          target: this.id,
+          role: "hook",
+          path: ".claude/settings.json",
+          pointer: ["hooks", "PostToolUse"],
+          value: [
+            {
+              matcher: "Write|Edit|MultiEdit|NotebookEdit",
+              hooks: [
+                {
+                  type: "command",
+                  command: `"$CLAUDE_PROJECT_DIR"/${agentEditScript} claude-code`,
+                  timeout: 120,
+                },
+              ],
+            },
+          ],
+          sources: editHooks.map((hook) => hook.ref),
+        }),
+      );
+    }
     if (guardHooks.length > 0) {
       units.push(
         nativeJsonMemberUnit({

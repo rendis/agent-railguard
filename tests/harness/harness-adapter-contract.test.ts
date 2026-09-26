@@ -166,7 +166,7 @@ describe("Harness adapter contract", () => {
     }
   });
   it.each(cases.filter(({ id }) => id !== "vscode" && id !== "opencode"))(
-    "$id calls the pre-action guard before commands and file edits, next to the stop and session hooks",
+    "$id calls the pre-action guard, edit feedback, stop and session hooks in its native format",
     async ({ id, adapter }) => {
       const catalog = await loadCatalog();
       const repository = await createTempRepository({});
@@ -174,7 +174,11 @@ describe("Harness adapter contract", () => {
         const inspection = await adapter().inspect(await new NodeRepositoryInventory().snapshot(repository.root));
         const result = new DefaultResolver().resolve({
           catalog,
-          directSelections: [componentRef("agent-hook:action-guard"), componentRef("agent-hook:stop-check")],
+          directSelections: [
+            componentRef("agent-hook:action-guard"),
+            componentRef("agent-hook:edit-feedback"),
+            componentRef("agent-hook:stop-check"),
+          ],
           projectUnits: [],
           targets: [{ target: inspection.target, capabilities: inspection.capabilities }],
         });
@@ -190,6 +194,10 @@ describe("Harness adapter contract", () => {
 
         const expected = {
           "claude-code": {
+            "hooks.PostToolUse": [{
+              matcher: "Write|Edit|MultiEdit|NotebookEdit",
+              hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/.railguard/agent-hooks/edit claude-code', timeout: 120 }],
+            }],
             "hooks.PreToolUse": [{
               matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit",
               hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/.railguard/agent-hooks/guard claude-code', timeout: 60 }],
@@ -204,6 +212,10 @@ describe("Harness adapter contract", () => {
           codex: {
             ".codex/hooks.json": {
               hooks: {
+                PostToolUse: [{
+                  matcher: "^apply_patch$",
+                  hooks: [{ type: "command", command: '"$(git rev-parse --show-toplevel)/.railguard/agent-hooks/edit" codex', timeout: 120 }],
+                }],
                 PreToolUse: [{
                   matcher: "^(Bash|apply_patch)$",
                   hooks: [{ type: "command", command: '"$(git rev-parse --show-toplevel)/.railguard/agent-hooks/guard" codex', timeout: 60 }],
@@ -221,6 +233,7 @@ describe("Harness adapter contract", () => {
             ".cursor/hooks.json": {
               version: 1,
               hooks: {
+                postToolUse: [{ command: ".railguard/agent-hooks/edit cursor", matcher: "Write|Delete", timeout: 120 }],
                 preToolUse: [{ command: ".railguard/agent-hooks/guard cursor", matcher: "Shell|Write|Delete", timeout: 60 }],
                 sessionStart: [{ command: ".railguard/agent-hooks/session-start cursor", timeout: 60 }],
                 stop: [{ command: ".railguard/agent-hooks/stop cursor", loop_limit: 3 }],

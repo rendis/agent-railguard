@@ -16,6 +16,7 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentEditScript,
   agentGuardScript,
   agentSessionStartScript,
   agentStopScript,
@@ -96,6 +97,16 @@ export class CodexAdapter implements HarnessAdapter {
 function codexHooks(hooks: readonly CatalogAgentHookComponent[]): Readonly<Record<string, unknown>> {
   const command = (script: string) => `"$(git rev-parse --show-toplevel)/${script}" codex`;
   return {
+    ...(hooks.some((hook) => hook.event === "post-edit")
+      ? {
+          PostToolUse: [
+            {
+              matcher: "^apply_patch$",
+              hooks: [{ type: "command", command: command(agentEditScript), timeout: 120 }],
+            },
+          ],
+        }
+      : {}),
     ...(hooks.some((hook) => hook.event === "pre-action")
       ? {
           PreToolUse: [

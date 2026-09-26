@@ -9,6 +9,7 @@ import type {
   CatalogVerificationProfileComponent,
 } from "../../src/domain/catalog/model.js";
 import type {
+  ChangedLines,
   ChangeSet,
   CheckOutcome,
   CheckProvider,
@@ -94,6 +95,34 @@ describe("VerificationService", () => {
     expect(steps).toEqual([]);
   });
 
+  it("judges only the requested kinds on the requested paths of the change", async () => {
+    const provider = recordingProvider(() => passed());
+    const changes: ChangeSet = {
+      base: "a".repeat(40),
+      baseRef: "main",
+      files: new Map<string, ChangedLines>([["a.go", "all"], ["b.go", new Set([3])]]),
+      deleted: ["old_test.go"],
+    };
+    const { service } = await serviceFor(
+      provider,
+      ["verification-profile:go-quality", "verification-profile:change-guard", "verification-profile:secret-guard"],
+      {},
+      ["."],
+      changes,
+    );
+
+    const report = await service.run({
+      root: "/repo", stage: "check", changed: true, paths: ["a.go", "old_test.go"], kinds: ["change-integrity", "secret-exposure"],
+    });
+
+    expect(report.results.map((result) => result.kind)).toEqual(["change-integrity", "secret-exposure"]);
+    for (const request of provider.requests) {
+      expect([...request.changes.files.keys()]).toEqual(["a.go"]);
+      expect(request.changes.deleted).toEqual(["old_test.go"]);
+      expect(request.paths).toEqual(["a.go", "old_test.go"]);
+    }
+  });
+
   it("skips units without changes and hands the change set to providers", async () => {
     const provider = recordingProvider(() => passed());
     const changes: ChangeSet = {
@@ -166,7 +195,10 @@ function recordingProvider(
   return {
     requests,
     fullRequests,
-    kinds: ["go-format", "go-vet", "go-test", "go-mod-verify", "golangci-lint", "go-coverage", "govulncheck"],
+    kinds: [
+      "go-format", "go-vet", "go-test", "go-mod-verify", "golangci-lint", "go-coverage", "govulncheck",
+      "change-integrity", "change-size", "secret-exposure",
+    ],
     async run(kind, request) {
       requests.push(request);
       return outcome(kind);

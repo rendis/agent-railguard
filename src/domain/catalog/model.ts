@@ -89,13 +89,14 @@ export interface CatalogGitGateComponent extends CatalogComponentBase {
 
 /**
  * A coding-agent lifecycle hook: `stop` runs a verification operation on the change before the
- * agent finishes; `pre-action` refuses a command or file edit that would bypass the guardrails.
+ * agent finishes; `pre-action` refuses a command or file edit that would bypass the guardrails;
+ * `post-edit` reports what the file-scoped checks find in the files an agent just edited.
  */
 export interface CatalogAgentHookComponent extends CatalogComponentBase {
   readonly kind: "agent-hook";
   readonly trust: "local-agent-execution";
   readonly payload: null;
-  readonly event: "stop" | "pre-action";
+  readonly event: "stop" | "pre-action" | "post-edit";
   /** The verification stage a `stop` hook runs; null for a hook that does not verify. */
   readonly operation: "check" | "verify" | null;
 }

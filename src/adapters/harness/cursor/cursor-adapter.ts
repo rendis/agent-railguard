@@ -16,6 +16,7 @@ import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
 import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
+  agentEditScript,
   agentGuardScript,
   agentSessionStartScript,
   agentStopScript,
@@ -100,6 +101,9 @@ export class CursorAdapter implements HarnessAdapter {
 /** Project hooks run from the project root, so the scripts are addressed relative to it. */
 function cursorHooks(hooks: readonly CatalogAgentHookComponent[]): Readonly<Record<string, unknown>> {
   return {
+    ...(hooks.some((hook) => hook.event === "post-edit")
+      ? { postToolUse: [{ command: `${agentEditScript} cursor`, matcher: "Write|Delete", timeout: 120 }] }
+      : {}),
     ...(hooks.some((hook) => hook.event === "pre-action")
       ? { preToolUse: [{ command: `${agentGuardScript} cursor`, matcher: "Shell|Write|Delete", timeout: 60 }] }
       : {}),

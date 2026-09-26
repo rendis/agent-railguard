@@ -2,6 +2,7 @@ import type { CatalogVerificationProfileComponent } from "../domain/catalog/mode
 import { compareUtf8, relativePosixPath, type ComponentRef, type Diagnostic } from "../domain/shared/types.js";
 import {
   changedFilesInUnit,
+  changesAt,
   deletedFilesInUnit,
   type ChangeSet,
   type ChangeSetReader,
@@ -28,6 +29,10 @@ export interface VerificationRequest {
   /** Judge only what changed relative to the base instead of every project unit completely. */
   readonly changed: boolean;
   readonly base?: string;
+  /** With `changed`, judge only these repository paths of the change, such as an agent's edit. */
+  readonly paths?: readonly string[];
+  /** Run only checks of these kinds; by default every check of the stage runs. */
+  readonly kinds?: readonly string[];
   readonly signal?: AbortSignal;
 }
 
@@ -111,7 +116,7 @@ export class VerificationService {
     }
     let changes: ChangeSet;
     try {
-      changes = await this.#dependencies.changeSets.read(scan.snapshot.realRoot, request.base);
+      changes = changesAt(await this.#dependencies.changeSets.read(scan.snapshot.realRoot, request.base), request.paths);
     } catch (error) {
       return blocked(request.stage, mode, [changeSetDiagnostic(error)]);
     }
@@ -119,7 +124,11 @@ export class VerificationService {
     const results: CheckResult[] = [];
     for (const profile of profiles) {
       const inputs = profileInputs(profile, selectedInputs.get(profile.ref));
-      const checks = profile.checks.filter((check) => request.stage === "verify" || check.stage === "check");
+      const checks = profile.checks.filter(
+        (check) =>
+          (request.stage === "verify" || check.stage === "check") &&
+          (request.kinds === undefined || request.kinds.includes(check.kind)),
+      );
       for (const unit of profileUnits(profile, projectUnits)) {
         for (const check of checks) {
           progress({ type: "started", profile: profile.ref, check: check.id, unit });
@@ -131,6 +140,7 @@ export class VerificationService {
                 params: check.params,
                 inputs,
                 changes,
+                ...(request.paths === undefined ? {} : { paths: request.paths }),
                 ...(request.signal === undefined ? {} : { signal: request.signal }),
               });
           const result = Object.freeze({ profile: profile.ref, check: check.id, kind: check.kind, unit, outcome });

@@ -105,7 +105,7 @@ describe.sequential("production CLI contract", () => {
     expect(components.some(({ ref }) => ref.startsWith("instruction-fragment:"))).toBe(false);
 
     const hooks = await cli(["catalog", "list", "--type", "agent-hook", "--format", "json"]);
-    expect(JSON.parse(hooks.stdout).data.components.map(({ ref }: { ref: string }) => ref)).toEqual(["agent-hook:action-guard", "agent-hook:stop-check"]);
+    expect(JSON.parse(hooks.stdout).data.components.map(({ ref }: { ref: string }) => ref)).toEqual(["agent-hook:action-guard", "agent-hook:edit-feedback", "agent-hook:stop-check"]);
   });
 
   it("blocks catalog work instead of falling back when an explicit source is unavailable", async () => {

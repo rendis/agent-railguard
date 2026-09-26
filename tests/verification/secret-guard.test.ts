@@ -272,6 +272,26 @@ describe("secret-exposure", () => {
     expect((await fake.read("args-git.txt"))?.split("\n")[1]).toBe(`--log-opts=${accepted}..HEAD`);
   });
 
+  it("judges an agent's edit in the working tree only, without the commit history", async () => {
+    const fake = await scanner();
+    const repo = await repository();
+    await repo.commit("leak", { "config.go": "package config\n" });
+    await writeFile(join(repo.root, "edited.env"), "TOKEN=x\n");
+    await writeFile(join(repo.root, "other.env"), "TOKEN=y\n");
+    await fake.report("dir", [finding("edited.env", 1)]);
+    const changes = await changeSets.read(repo.root);
+
+    const outcome = await new SecretCheckProvider(runner, changeSets, fake.locator).run("secret-exposure", {
+      repositoryRoot: repo.root, unitRoot: ".", params: {}, inputs: {}, paths: ["edited.env"],
+      changes: { ...changes, files: new Map([...changes.files].filter(([path]) => path === "edited.env")) },
+    });
+
+    expect(outcome.details[0]).toBe("edited.env:1: github-pat, not committed (fingerprint edited.env:github-pat:1)");
+    expect(await fake.read("args-git.txt")).toBeNull();
+    const scanned = (await fake.read("args-dir.txt"))?.split("\n") ?? [];
+    expect(scanned.slice(scanned.indexOf("--") + 1).filter(Boolean)).toEqual(["edited.env"]);
+  });
+
   it("is unavailable, never passed, when Betterleaks cannot run", async () => {
     const fake = await scanner();
     const repo = await repository();
