@@ -57,6 +57,27 @@ describe("Stack adapter contract", () => {
     }
   });
 
+  it("leaves out a Go module that only pins tools, but keeps a new module without code", async () => {
+    const repository = await createTempRepository({
+      "go.mod": "module example.com/service\n\ngo 1.26\n",
+      "tools/go.mod": "module example.com/service/tools\n\ngo 1.26\n\ntool github.com/golangci/golangci-lint/v2/cmd/golangci-lint\n",
+      "tools/.cache/ignored.go": "package ignored\n",
+      "fresh/go.mod": "module example.com/fresh\n",
+      "pinned/go.mod": "module example.com/pinned\n\ntool (\n\texample.com/tool\n)\n",
+      "pinned/cmd/main.go": "package main\n\nfunc main() {}\n",
+    });
+    try {
+      const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
+      const go = registeredStackAdapters().find((candidate) => candidate.id === languageId("go"));
+
+      const result = await go!.assess(snapshot);
+
+      expect(result.contributions.map((contribution) => contribution.root)).toEqual(["fresh", ".", "pinned"]);
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
   it("keeps an empty repository valid for every registered adapter", async () => {
     const repository = await createTempRepository({});
     try {

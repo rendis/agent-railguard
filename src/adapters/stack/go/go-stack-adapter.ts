@@ -31,6 +31,10 @@ export class GoStackAdapter implements StackAdapter {
     if (moduleFiles.length === 0) {
       return Object.freeze({ contributions: Object.freeze([]), diagnostics: Object.freeze([]) });
     }
+    const moduleRoots = moduleFiles.map((manifest) => posix.dirname(manifest));
+    const goFiles = snapshot.entries
+      .filter((entry) => entry.kind === "file" && entry.path.endsWith(".go"))
+      .map((entry) => entry.path as string);
     const diagnostics: Diagnostic[] = [];
     const contributions: StackAssessment["contributions"][number][] = [];
     for (const manifest of moduleFiles) {
@@ -53,6 +57,8 @@ export class GoStackAdapter implements StackAdapter {
       }
 
       const rootValue = posix.dirname(manifest);
+      // A module that only pins tools (`tool` directives, no Go source) has nothing to judge.
+      if (/^\s*tool\s/mu.test(source) && !goFiles.some((file) => ownerRoot(file, moduleRoots) === rootValue)) continue;
       contributions.push(
         Object.freeze({
           root: relativePosixPath(rootValue, { allowRoot: rootValue === "." }),
@@ -71,6 +77,17 @@ export class GoStackAdapter implements StackAdapter {
       diagnostics: Object.freeze(diagnostics.sort(compareDiagnostics)),
     });
   }
+}
+
+/** The innermost module root that owns a file, or null when the Go tool ignores its directory. */
+function ownerRoot(file: string, roots: readonly string[]): string | null {
+  const directories = posix.dirname(file).split("/");
+  if (directories.some((segment) => segment === "vendor" || segment === "testdata" || /^[._]./u.test(segment))) {
+    return null;
+  }
+  return roots
+    .filter((root) => root === "." || file.startsWith(`${root}/`))
+    .sort((left, right) => right.length - left.length)[0] ?? null;
 }
 
 function invalidModuleDiagnostic(
