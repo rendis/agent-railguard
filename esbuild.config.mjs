@@ -29,6 +29,7 @@ const result = await build({
   banner: {
     js: 'import { createRequire as __railguardCreateRequire } from "node:module"; const require = __railguardCreateRequire(import.meta.url);',
   },
+  loader: { ".md": "text" },
   legalComments: "none",
   metafile: true,
   sourcemap: false,

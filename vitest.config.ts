@@ -1,6 +1,13 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  // Matches the esbuild text loader: Markdown the CLI prints is imported as a string.
+  plugins: [{
+    name: "markdown-as-text",
+    transform(code, id) {
+      return id.endsWith(".md") ? `export default ${JSON.stringify(code)};` : undefined;
+    },
+  }],
   test: {
     environment: "node",
     fileParallelism: false,

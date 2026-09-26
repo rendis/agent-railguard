@@ -1,7 +1,7 @@
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Command, CommanderError } from "commander";
+import { Argument, Command, CommanderError } from "commander";
 import {
   decodePublicPlan,
   encodePublicPlan,
@@ -21,6 +21,7 @@ import type { CommandRun } from "./cli/command-result.js";
 import {
   delegateToPinnedEngine,
   printUpdateNotice,
+  repositoryPinnedVersion,
   runRefreshLatest,
   runUpdate,
 } from "./cli/engine-updates.js";
@@ -31,9 +32,10 @@ import {
   renderRun,
   type OutputFormat,
 } from "./cli/output.js";
+import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
 import { runStopHook } from "./application/agent-stop-hook.js";
 import { createDefaultApplication } from "./application/composition-root.js";
-import { engineVersion } from "./application/engine-release.js";
+import { engineVersion, releaseRepository } from "./application/engine-release.js";
 import {
   encodeVerificationReport,
   label,
@@ -65,9 +67,11 @@ const program = new Command()
   .showHelpAfterError()
   .exitOverride();
 
-// A global railguard runs every command with the engine version the repository pins.
+// A global railguard runs every command with the engine version the repository pins; an issue
+// report comes from the engine at hand, which names the pinned version itself.
+const commandsWithoutDelegation = new Set(["refresh-latest", "issue"]);
 program.hook("preAction", (_program, actionCommand) => {
-  if (actionCommand.name() === "refresh-latest") return;
+  if (commandsWithoutDelegation.has(actionCommand.name())) return;
   const options = actionCommand.optsWithGlobals() as Readonly<Record<string, unknown>>;
   const status = delegateToPinnedEngine(rootFrom(options), process.argv.slice(2));
   if (status !== null) process.exit(status);
@@ -373,6 +377,19 @@ program
     await runRefreshLatest();
   });
 
+program
+  .command("issue")
+  .description("Print the guide and template to report a bug or suggest an improvement")
+  .addArgument(new Argument("<kind>", "what to report").choices(issueKinds))
+  .action((kind: IssueKind, _options, command: Command) => {
+    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+    process.stdout.write(issueReport(kind, {
+      engineVersion,
+      pinnedVersion: repositoryPinnedVersion(rootFrom(options)),
+      platform: `${process.platform}-${process.arch}`,
+    }, releaseRepository));
+  });
+
 addFormat(program.command("doctor").description("Run read-only project diagnostics"))
   .action(async (_options, command) => {
     await invoke("doctor", command, (options) => ({
@@ -459,7 +476,8 @@ try {
     if (error.code === "commander.helpDisplayed" || error.code === "commander.version") {
       process.exitCode = 0;
     } else {
-      process.exitCode = error.exitCode === 0 ? 2 : error.exitCode;
+      // Commander reports every usage error with 1; the contract reserves 2 for invalid input.
+      process.exitCode = 2;
     }
   } else {
     process.stderr.write(`${errorMessage(error)}\n`);
@@ -823,6 +841,10 @@ Engine update:
   global command itself. A notice on stderr reports a newer release, checked once a day in
   the background (disabled in CI or with RAILGUARD_NO_UPDATE_CHECK=1).
 
+Reporting:
+  railguard issue bug|improvement prints the guide and template for a GitHub issue that
+  describes Railguard without any project, company or personal data.
+
 Exit codes:
   0 ready/succeeded/no changes; 2 invalid input; 3 invalid scope; 4 readiness blocked;
   5 blocked/rejected; 6 changes available; 7 failed/rolled back/partial rollback;
@@ -898,6 +920,15 @@ rewrites .railguard/bin/railguard with its version and applies the content it sh
 reviewable change of the repository. Exit codes: 0 applied or already current; 2 invalid
 input; 4 release unavailable; 6 a newer release exists (--check).
 Output: --format text|json.`);
+  command(root, "issue").addHelpText("after", `
+Examples:
+  railguard issue bug
+  railguard issue improvement
+
+Effect: prints the reporting guide, the GitHub issue template of that kind and the
+Railguard version and platform. It reads nothing else from the repository and sends
+nothing: the issue must hold no company, project, person, path or secret, and an agent
+publishes it only after a person approves the draft.`);
   command(root, "doctor").addHelpText("after", commonReadHelp(`
 Examples:
   railguard doctor --cwd . --format json

@@ -44,15 +44,19 @@ function selfCommand(): { readonly command: string; readonly prefix: readonly st
  */
 export function delegateToPinnedEngine(root: string, args: readonly string[]): number | null {
   if (process.env[launchedVariable] === "1") return null;
-  const launcher = join(root, launcherPath);
-  if (!existsSync(launcher)) return null;
-  const pinned = pinnedVersion(readFileSync(launcher, "utf8"));
+  const pinned = repositoryPinnedVersion(root);
   if (pinned === null || pinned === engineVersion) return null;
-  const result = spawnSync(launcher, [...args], {
+  const result = spawnSync(join(root, launcherPath), [...args], {
     stdio: "inherit",
     env: { ...process.env, [launchedVariable]: "1" },
   });
   return result.status ?? 1;
+}
+
+/** The engine version the repository's launcher pins, or null outside a configured repository. */
+export function repositoryPinnedVersion(root: string): string | null {
+  const launcher = join(root, launcherPath);
+  return existsSync(launcher) ? pinnedVersion(readFileSync(launcher, "utf8")) : null;
 }
 
 /** Prints the update notice on stderr; it never delays or fails the command that just ran. */

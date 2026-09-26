@@ -33,6 +33,9 @@ describe.sequential("production CLI contract", () => {
     expect(rootHelp).toContain("Engine update:");
     expect(rootHelp).toContain("Machine-readable operation:");
     expect(rootHelp).toContain("Exit codes:");
+    expect(rootHelp).toContain("railguard issue bug|improvement");
+    expect((await cli(["issue", "question"])).code).toBe(2);
+    expect((await cli(["scan", "--unknown"])).code).toBe(2);
     expect(rootHelp).toContain("codex | claude-code | opencode | cursor | vscode");
     expect(rootHelp).toContain("skill:NAME");
     expect(rootHelp).not.toContain("instruction-fragment:NAME");
@@ -381,6 +384,9 @@ describe.sequential("production CLI contract", () => {
       await writeFile(launcher, pinned.replace(`version=${engineVersion}`, "version=9.9.9"));
       const delegated = await cli(["status", "--cwd", repository.root], environment);
       expect(delegated).toMatchObject({ code: 0, stdout: `engine 9.9.9 ran status --cwd ${repository.root}\n` });
+      const report = await cli(["issue", "bug", "--cwd", repository.root], environment);
+      expect(report.code, report.stderr).toBe(0);
+      expect(report.stdout).toContain(`- Railguard: ${engineVersion} (este repositorio fija 9.9.9)`);
       await writeFile(launcher, pinned);
 
       await mkdir(join(workspace, "cache", "railguard"), { recursive: true });
