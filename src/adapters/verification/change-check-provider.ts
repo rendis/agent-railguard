@@ -6,7 +6,6 @@ import {
   changedLineCount,
   isTestFile,
   matchesAnyGlob,
-  parseAllowances,
   suppressionFindings,
 } from "../../domain/verification/change-guard.js";
 import {
@@ -25,6 +24,7 @@ import type {
   FullCheck,
   ProcessRunner,
 } from "../../domain/verification/checks.js";
+import { ChangeAcceptance } from "./change-acceptance.js";
 import { readActiveHandoffs } from "./knowledge-os-handoffs.js";
 
 const maxScannedBytes = 16 * 1024 * 1024;
@@ -32,12 +32,15 @@ const maxScannedBytes = 16 * 1024 * 1024;
 /** Stack-independent checks that judge the shape of a change rather than its code. */
 export class ChangeCheckProvider implements CheckProvider {
   public readonly kinds = ["change-integrity", "change-size", "change-review"] as const;
+  readonly #acceptance: ChangeAcceptance;
 
   public constructor(
     private readonly process: ProcessRunner,
-    private readonly changeSets: ChangeSetReader,
+    changeSets: ChangeSetReader,
     private readonly review: ChangeReview,
-  ) {}
+  ) {
+    this.#acceptance = new ChangeAcceptance(process, changeSets);
+  }
 
   public full(): FullCheck {
     return { kind: "skipped", reason: "Judges a change; run with --changed" };
@@ -47,9 +50,9 @@ export class ChangeCheckProvider implements CheckProvider {
     const changes = request.changes;
     switch (kind) {
       case "change-integrity":
-        return await this.#sinceAccepted(request, changes, kind, (scope) => this.#integrity(request, scope));
+        return await this.#acceptance.judge(request, kind, (scope) => this.#integrity(request, scope));
       case "change-size":
-        return await this.#sinceAccepted(request, changes, kind, (scope) => this.#size(request, scope));
+        return await this.#acceptance.judge(request, kind, (scope) => this.#size(request, scope));
       case "change-review":
         return await this.review.evaluate(request.repositoryRoot, changes);
       default:
@@ -122,39 +125,6 @@ export class ChangeCheckProvider implements CheckProvider {
     if (base === null) return false;
     const result = await this.process.run("git", ["cat-file", "-e", `${base}:${path}`], { cwd: root, timeoutMs: 30_000 });
     return result.exitCode === 0;
-  }
-
-  /**
-   * A `Railguard-Allow` trailer accepts what the branch held at that commit, such as work that
-   * predates adopting Railguard. Later changes are judged from that commit on.
-   */
-  async #sinceAccepted(
-    request: CheckRequest,
-    changes: ChangeSet,
-    kind: string,
-    judge: (scope: ChangeSet) => Promise<CheckOutcome>,
-  ): Promise<CheckOutcome> {
-    const accepted = await this.#acceptedCommit(request.repositoryRoot, changes.base, kind);
-    if (accepted === null) return await judge(changes);
-    const outcome = await judge(await this.changeSets.read(request.repositoryRoot, accepted.commit));
-    const since = `since ${accepted.commit.slice(0, 12)} (accepted: ${accepted.reason})`;
-    return { ...outcome, summary: `${outcome.summary} ${since}` };
-  }
-
-  async #acceptedCommit(
-    root: string,
-    base: string | null,
-    kind: string,
-  ): Promise<{ readonly commit: string; readonly reason: string } | null> {
-    if (base === null) return null;
-    const log = await this.process.run("git", ["log", "--format=%H%x1f%B%x1e", `${base}..HEAD`], { cwd: root, timeoutMs: 60_000 });
-    if (log.exitCode !== 0) return null;
-    for (const entry of log.stdout.split("\x1e")) {
-      const [commit, message] = entry.trim().split("\x1f");
-      const reason = message === undefined ? undefined : parseAllowances(message).get(kind);
-      if (commit !== undefined && reason !== undefined) return { commit, reason };
-    }
-    return null;
   }
 }
 

@@ -301,6 +301,10 @@ catalog:
             - "vitest.config.*"
             - ".coveragerc"
             - "codecov.yml"
+            - ".betterleaks.toml"
+            - ".betterleaksignore"
+            - ".gitleaks.toml"
+            - ".gitleaksignore"
           item_pattern: "^(?![/~])[^\\s]+$"
         size_excluded_paths:
           type: string-list
@@ -344,6 +348,16 @@ catalog:
         - id: review
           kind: change-review
           stage: verify
+
+    secret-guard:
+      version: 0.1.0
+      description: Block changes that expose secrets, found locally by a pinned Betterleaks; only a person, never the agent, may accept a finding with a Railguard-Allow trailer.
+      details: "Check scans the commits since the base and every uncommitted changed line with Betterleaks 1.8.1, downloaded once from its GitHub release and verified against pinned SHA-256 digests. The scan runs locally: live validation of secrets stays off and reports never show a secret value. Exceptions come from .betterleaks.toml and .betterleaksignore as the base holds them, and inline allow comments are ignored, so a change cannot exempt itself. A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: secret-exposure: <reason>` trailer; later changes are still judged. When Betterleaks cannot be obtained the check is unavailable, never passed. It judges only changes; a full run skips it."
+      executables: [git]
+      checks:
+        - id: secrets
+          kind: secret-exposure
+          stage: check
 
   git-gates:
     pre-commit-check:
@@ -466,6 +480,9 @@ catalog:
         - kind: includes
           target: verification-profile:handoff-review
           reason: The foundation reviews a change against its active handoff before delivery.
+        - kind: includes
+          target: verification-profile:secret-guard
+          reason: The foundation blocks changes that expose secrets before they are committed or pushed.
         - kind: includes
           target: git-gate:pre-commit-check
           reason: The foundation checks fast verification before commits.

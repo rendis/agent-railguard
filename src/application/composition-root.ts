@@ -20,11 +20,13 @@ import { NodeRepositoryInventory } from "../adapters/platform/repository-invento
 import { NodeRepositoryGate } from "../adapters/platform/repository-gate/node-repository-gate.js";
 import { NodeProjectStateStore } from "../adapters/platform/state/project-state-store.js";
 import { NodeMutationEngine } from "../adapters/platform/transaction/node-mutation-engine.js";
+import { PinnedToolInstaller, toolCacheRoot } from "../adapters/platform/tools/pinned-tool.js";
 import { QualityProjector } from "../adapters/project/quality/quality-projector.js";
 import { InstructionProjector } from "../adapters/project/instructions/instruction-projector.js";
 import { SharedSkillProjector } from "../adapters/project/skills/shared-skill-projector.js";
 import { registeredCheckProviders, registeredStackAdapters } from "../adapters/stack/registry.js";
 import { ChangeCheckProvider, ChangeReview } from "../adapters/verification/change-check-provider.js";
+import { SecretCheckProvider } from "../adapters/verification/secret-check-provider.js";
 import { NodeVerifyScript } from "../adapters/verification/node-verify-script.js";
 import { createDefaultContentSource } from "../catalog/source/content-source-composition.js";
 import type { ContentSource, ContentSourceProgress } from "../catalog/source/content-source.js";
@@ -101,6 +103,11 @@ export async function createDefaultApplication(
   const checkProviders = [
     ...registeredCheckProviders(processRunner),
     new ChangeCheckProvider(processRunner, changeSets, review),
+    new SecretCheckProvider(
+      processRunner,
+      changeSets,
+      new PinnedToolInstaller({ cacheRoot: toolCacheRoot(options.environment ?? process.env), process: processRunner }),
+    ),
   ];
   const application = new RailguardApplication({
     catalog: new SourcedCatalog({

@@ -145,6 +145,7 @@ describe("configure-go-quality contract", () => {
       "go-mutation",
       "go-quality",
       "handoff-review",
+      "secret-guard",
     ]);
     for (const id of ["go-architecture", "go-assurance", "go-e2e", "go-fuzz", "go-mutation", "go-quality"]) {
       const checks = authoring.catalog["verification-profiles"][id]?.checks ?? [];
