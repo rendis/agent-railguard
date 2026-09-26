@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -106,6 +107,31 @@ describe("NodeMutationEngine", () => {
       });
     } finally {
       await repository.cleanup();
+    }
+  });
+
+  it("rejects creating a directory through a symlinked ancestor", async () => {
+    const repository = await gitRepository({ "AGENTS.md": "# User\n" });
+    const outside = await mkdtemp(join(tmpdir(), "railguard-outside-"));
+    const gitConfig = memoryGitConfig();
+    try {
+      await symlink(outside, join(repository.root, "escape"));
+      const prepared = await prepare(repository.root, gitConfig);
+      const template = prepared.plan.operations.find((operation) => operation.kind === "create-directory");
+      if (template === undefined) throw new Error("Expected a planned directory");
+      const plan = Object.freeze({
+        ...prepared.plan,
+        operations: Object.freeze([
+          Object.freeze({ ...template, path: relativePosixPath("escape/created") }),
+        ]),
+      });
+
+      const result = await new NodeMutationEngine(gitConfig).apply(plan);
+
+      expect(result.kind).toBe("rejected");
+      expect(await readdir(outside)).toEqual([]);
+    } finally {
+      await Promise.all([repository.cleanup(), rm(outside, { recursive: true, force: true })]);
     }
   });
 

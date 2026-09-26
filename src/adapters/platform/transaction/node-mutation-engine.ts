@@ -195,6 +195,7 @@ async function preflight(plan: ReadyPlan, gitConfig: GitConfigPort): Promise<Dia
         } catch (error) {
           if (!isNodeError(error, "ENOENT")) throw error;
         }
+        await validateAncestors(plan.rootRealPath, operation.path, plan.operations);
       } else if (operation.kind === "remove-directory") {
         const entry = await lstat(destination);
         if (
