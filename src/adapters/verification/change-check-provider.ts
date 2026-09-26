@@ -22,6 +22,7 @@ import type {
   CheckOutcome,
   CheckProvider,
   CheckRequest,
+  FullCheck,
   ProcessRunner,
 } from "../../domain/verification/checks.js";
 import { readActiveHandoffs } from "./knowledge-os-handoffs.js";
@@ -38,9 +39,12 @@ export class ChangeCheckProvider implements CheckProvider {
     private readonly review: ChangeReview,
   ) {}
 
+  public full(): FullCheck {
+    return { kind: "skipped", reason: "Judges a change; run with --changed" };
+  }
+
   public async run(kind: string, request: CheckRequest): Promise<CheckOutcome> {
     const changes = request.changes;
-    if (changes === null) return skipped("Judges a change; run with --changed");
     switch (kind) {
       case "change-integrity":
         return await this.#sinceAccepted(request, changes, kind, (scope) => this.#integrity(request, scope));

@@ -127,7 +127,7 @@ catalog:
     go-quality:
       version: 0.2.0
       description: "Run `railguard check --changed` while developing and `railguard verify --changed` before delivery for Go changes."
-      details: Check formatting of changed Go files and vet and test the packages that contain changes. Verify additionally runs those tests with the race detector and a shuffled order. Without --changed every detected Go module is checked completely. Developers, agent hooks, Git gates and CI call the same commands.
+      details: Check formatting of changed Go files and vet and test the packages that contain changes. Verify additionally runs those tests with the race detector and a shuffled order. Without --changed every detected Go module is checked completely through .railguard/verify.sh, the script CI runs.
       applies:
         languages: [go]
       executables: [go, gofmt]

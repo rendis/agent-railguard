@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NodeChangeSetReader } from "../../src/adapters/platform/git/node-change-set-reader.js";
 import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
 import { GoCheckProvider, goImports } from "../../src/adapters/stack/go/go-check-provider.js";
-import type { CheckRequest } from "../../src/domain/verification/checks.js";
+import type { ChangeSet, CheckRequest } from "../../src/domain/verification/checks.js";
+import { runFullCheck } from "../helpers/full-check.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
 
 const execute = promisify(execFile);
@@ -93,30 +94,35 @@ describe.skipIf(!hasGo)("go-imports against a real module", () => {
     ]);
   });
 
-  it("reports the legacy violation too in full mode", async () => {
-    const outcome = await provider.run("go-imports", request({ changes: null, inputs: hexagonal }));
+  it("reports the legacy violation too through the verify script", async () => {
+    const outcome = await runFullCheck(root, provider, "go-imports", { inputs: hexagonal });
 
-    expect(outcome.details).toContain("internal/core/legacy/legacy.go: core imports example.com/svc/internal/adapters/db");
+    expect(outcome).toMatchObject({ code: 1 });
+    const output = "output" in outcome ? outcome.output : "";
+    expect(output).toContain("internal/core/legacy: core imports example.com/svc/internal/adapters/db");
+    expect(output).toContain("internal/core/order: core imports net/http");
+    expect(output).toContain("3 forbidden import(s)");
   });
 
   it("enforces custom layering rules", async () => {
-    const outcome = await provider.run("go-imports", request({
-      changes: null,
+    const outcome = await runFullCheck(root, provider, "go-imports", {
       inputs: { core_packages: ["disabled"], forbidden_imports: ["./internal/core/... -> ./internal/adapters/..."] },
-    }));
+    });
 
-    expect(outcome.status).toBe("failed");
-    expect(outcome.details).toHaveLength(2);
+    expect(outcome).toMatchObject({ code: 1, output: expect.stringContaining("2 forbidden import(s)") });
+    expect(outcome).toMatchObject({ output: expect.stringContaining('(forbidden by "./internal/core/... -> ./internal/adapters/...")') });
   });
 
-  it("skips when no dependency rule is configured", async () => {
-    const outcome = await provider.run("go-imports", request({ changes: null, inputs: { core_packages: ["disabled"] } }));
-
-    expect(outcome.status).toBe("skipped");
+  it("passes a clean core and skips when no dependency rule is configured", async () => {
+    expect(await runFullCheck(root, provider, "go-imports", {
+      inputs: { core_packages: ["./internal/core/order"], core_denied_stdlib: ["none"], forbidden_imports: ["./internal/core/order -> ./internal/core/legacy"] },
+    })).toMatchObject({ code: 1, output: expect.stringContaining("core imports example.com/svc/internal/adapters/db") });
+    expect(await runFullCheck(root, provider, "go-imports", { inputs: { core_packages: ["disabled"] } }))
+      .toEqual({ skipped: "No dependency rule configured" });
   });
 
-  function request(overrides: Partial<CheckRequest>): CheckRequest {
-    return { repositoryRoot: root, unitRoot: ".", params: {}, inputs: {}, changes: null, ...overrides };
+  function request(overrides: Partial<CheckRequest> & { changes: ChangeSet }): CheckRequest {
+    return { repositoryRoot: root, unitRoot: ".", params: {}, inputs: {}, ...overrides };
   }
 
   async function git(...args: string[]): Promise<void> {

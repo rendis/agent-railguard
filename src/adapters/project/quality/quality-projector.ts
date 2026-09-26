@@ -6,13 +6,17 @@ import type {
   CatalogVerificationProfileComponent,
 } from "../../../domain/catalog/model.js";
 import type { ExecutableProbe } from "../../../domain/harness/model.js";
+import type { HarnessTargetId } from "../../../domain/shared/types.js";
 import type { ArtifactIntent } from "../../../domain/planning/model.js";
 import type {
   ProjectArtifactProjector,
   ProjectProjection,
+  ProjectSelectionInputs,
   GitHookInventory,
 } from "../../../domain/project/model.js";
-import type { RepositorySnapshot } from "../../../domain/repository/model.js";
+import type { CheckProvider } from "../../../domain/verification/checks.js";
+import { planFullSteps, renderVerifyScript, verifyScriptPath } from "../../../domain/verification/verify-script.js";
+import type { RepositoryAssessmentResult, RepositorySnapshot } from "../../../domain/repository/model.js";
 import type { ReadyResolution } from "../../../domain/resolution/model.js";
 import {
   ReadonlyBytes,
@@ -34,17 +38,27 @@ export class QualityProjector implements ProjectArtifactProjector {
   readonly #executableProbe: ExecutableProbe;
   readonly #gitHooks: GitHookInventory;
   readonly #engine: EngineRelease;
+  readonly #checkProviders: readonly CheckProvider[];
 
-  public constructor(executableProbe: ExecutableProbe, gitHooks: GitHookInventory, engine: EngineRelease) {
+  public constructor(
+    executableProbe: ExecutableProbe,
+    gitHooks: GitHookInventory,
+    engine: EngineRelease,
+    checkProviders: readonly CheckProvider[],
+  ) {
     this.#executableProbe = executableProbe;
     this.#gitHooks = gitHooks;
     this.#engine = engine;
+    this.#checkProviders = checkProviders;
   }
 
   public async project(
     resolution: ReadyResolution,
     catalog: CatalogSnapshot,
     snapshot: RepositorySnapshot,
+    assessment: RepositoryAssessmentResult,
+    _targets: readonly HarnessTargetId[],
+    selectionInputs: ProjectSelectionInputs,
   ): Promise<ProjectProjection> {
     const byRef = new Map(catalog.components.map((component) => [component.ref, component]));
     const components = resolution.components
@@ -98,6 +112,21 @@ export class QualityProjector implements ProjectArtifactProjector {
         mode: 0o755,
       }),
     ];
+    const fullSteps = planFullSteps(profiles, assessment.projectUnits, selectionInputs, this.#checkProviders);
+    const scriptSources = [...new Set(fullSteps.filter((step) => step.full.kind === "script").map((step) => step.profile))];
+    const verifyScript = renderVerifyScript(fullSteps);
+    if (verifyScript !== null) {
+      intents.push(
+        Object.freeze({
+          kind: "file",
+          owner: "railguard:verify-script",
+          scopeRoot: relativePosixPath(".railguard"),
+          path: relativePosixPath(verifyScriptPath),
+          bytes: new ReadonlyBytes(Buffer.from(verifyScript, "utf8")),
+          mode: 0o755,
+        }),
+      );
+    }
     for (const [event, eventGates] of groupGatesByEvent(gates)) {
       intents.push(
         Object.freeze({
@@ -151,6 +180,14 @@ export class QualityProjector implements ProjectArtifactProjector {
           kind: "artifact",
           ownershipId: "project.launcher",
           sources: Object.freeze([...profiles, ...gates, ...agentHooks].map((component) => component.ref)),
+          intent,
+        });
+      }
+      if (intent.path === verifyScriptPath) {
+        return Object.freeze({
+          kind: "artifact",
+          ownershipId: "project.verify-script",
+          sources: Object.freeze(scriptSources),
           intent,
         });
       }

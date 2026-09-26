@@ -3,7 +3,6 @@ import {
   changedLineCoverage,
   lineRanges,
   parseCoverProfile,
-  statementCoverage,
 } from "../../src/adapters/stack/go/go-coverage.js";
 import { matchesPackagePattern } from "../../src/adapters/stack/go/go-check-provider.js";
 import type { ChangedLines } from "../../src/domain/verification/checks.js";
@@ -25,13 +24,6 @@ describe("Go coverage", () => {
     expect(blocks).toHaveLength(4);
     expect(blocks.find((block) => block.startLine === 7)?.count).toBe(1);
     expect(blocks.map((block) => block.file)).toContain("cmd/main.go");
-  });
-
-  it("measures statement coverage for full mode", () => {
-    const blocks = parseCoverProfile(profile, "example.com/svc");
-
-    expect(statementCoverage(blocks, (file) => file.startsWith("internal/core/"))).toEqual({ covered: 3, total: 6 });
-    expect(statementCoverage(blocks, () => true)).toEqual({ covered: 3, total: 7 });
   });
 
   it("measures only changed lines that hold statements and lists the uncovered ones", () => {

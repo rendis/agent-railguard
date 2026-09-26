@@ -9,20 +9,21 @@ import {
   type CheckOutcome,
   type CheckProvider,
   type CheckRequest,
+  type FullCheck,
+  type FullCheckRequest,
   type ProcessResult,
   type ProcessRunner,
 } from "../../../domain/verification/checks.js";
-import {
-  changedLineCoverage,
-  lineRanges,
-  parseCoverProfile,
-  statementCoverage,
-} from "./go-coverage.js";
+import { changedLineCoverage, lineRanges, parseCoverProfile } from "./go-coverage.js";
+import { goFullCheck } from "./go-full-checks.js";
 
 const minute = 60_000;
 const golangciConfigs = [".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"];
 
-/** Go implementations of the verification check kinds declared by the catalog. */
+/**
+ * Go implementations of the verification check kinds declared by the catalog: `run` judges only
+ * what a change touched; `full` is the shell that judges a whole module in the verify script.
+ */
 export class GoCheckProvider implements CheckProvider {
   public readonly kinds = [
     "go-format",
@@ -39,6 +40,10 @@ export class GoCheckProvider implements CheckProvider {
   ] as const;
 
   public constructor(private readonly process: ProcessRunner) {}
+
+  public full(kind: string, request: FullCheckRequest): FullCheck {
+    return goFullCheck(kind, request);
+  }
 
   public async run(kind: string, request: CheckRequest): Promise<CheckOutcome> {
     const unit = new GoUnit(request, this.process);
@@ -75,17 +80,17 @@ class GoUnit {
   readonly #request: CheckRequest;
   readonly #process: ProcessRunner;
   readonly #dir: string;
-  readonly #changed: ReadonlyMap<string, ChangedLines> | null;
+  readonly #changed: ReadonlyMap<string, ChangedLines>;
 
   public constructor(request: CheckRequest, process: ProcessRunner) {
     this.#request = request;
     this.#process = process;
     this.#dir = request.unitRoot === "." ? request.repositoryRoot : join(request.repositoryRoot, request.unitRoot);
-    this.#changed = request.changes === null ? null : changedFilesInUnit(request.changes, request.unitRoot);
+    this.#changed = changedFilesInUnit(request.changes, request.unitRoot);
   }
 
   public async format(): Promise<CheckOutcome> {
-    const files = this.#changed === null ? ["."] : this.#changedGoFiles();
+    const files = this.#changedGoFiles();
     if (files.length === 0) return skipped("No Go file changed");
     const unformatted: string[] = [];
     for (const batch of chunks(files, 200)) {
@@ -94,7 +99,7 @@ class GoUnit {
       unformatted.push(...lines(result.stdout).filter((file) => !ignoredByGo(file)));
     }
     return unformatted.length === 0
-      ? passed(`${this.#changed === null ? "All" : files.length} Go file(s) formatted`)
+      ? passed(`${files.length} Go file(s) formatted`)
       : failed(`${unformatted.length} Go file(s) need gofmt`, unformatted.map((file) => `gofmt -w ${file}`));
   }
 
@@ -119,13 +124,13 @@ class GoUnit {
   }
 
   public async modVerify(): Promise<CheckOutcome> {
-    if (this.#changed !== null && !this.#dependenciesChanged()) return skipped("go.mod and go.sum unchanged");
+    if (!this.#dependenciesChanged()) return skipped("go.mod and go.sum unchanged");
     const result = await this.#run("go", ["mod", "verify"], 10 * minute);
     return result.exitCode === 0 ? passed("Module checksums verified") : failed("go mod verify failed", output(result));
   }
 
   public async lint(): Promise<CheckOutcome> {
-    if (this.#changed !== null && this.#changedGoFiles().length === 0) return skipped("No Go file changed");
+    if (this.#changedGoFiles().length === 0) return skipped("No Go file changed");
     const config = golangciConfigs.find((name) => existsSync(join(this.#dir, name)));
     if (config === undefined) {
       return unavailable(
@@ -135,7 +140,7 @@ class GoUnit {
     }
     const tool = await this.#tool("golangci-lint");
     if (tool.status !== "ready") return tool.outcome;
-    const base = this.#request.changes?.base ?? null;
+    const base = this.#request.changes.base;
     const newOnly = base === null ? [] : [`--new-from-rev=${base}`];
     const result = await this.#run("go", [...tool.prefix, "golangci-lint", "run", "--config", config, ...newOnly, "./..."], 15 * minute);
     if (result.exitCode === 0) {
@@ -148,10 +153,8 @@ class GoUnit {
   }
 
   public async coverage(): Promise<CheckOutcome> {
-    const changedSources = this.#changed === null ? null : new Map(
-      [...this.#changed].filter(([file]) => isProductionGoFile(file)),
-    );
-    if (changedSources !== null && changedSources.size === 0) return skipped("No production Go file changed");
+    const changedSources = new Map([...this.#changed].filter(([file]) => isProductionGoFile(file)));
+    if (changedSources.size === 0) return skipped("No production Go file changed");
     const modulePath = await this.#modulePath();
     if (modulePath === null) return unavailable("go.mod has no module directive");
     const scratch = await mkdtemp(join(tmpdir(), "railguard-coverage-"));
@@ -177,17 +180,6 @@ class GoUnit {
       const isCore = (file: string) => corePatterns.some((pattern) => matchesPackagePattern(posix.dirname(file), pattern));
       const coreMin = numberParam(this.#request.params.core_min, 100);
       const warnings = result.exitCode === 0 ? [] : ["Some tests failed; coverage only counts the tests that ran."];
-      if (changedSources === null) {
-        const core = statementCoverage(blocks, isCore);
-        const overall = statementCoverage(blocks, () => true);
-        const overallMin = numberParam(this.#request.params.overall_min, 85);
-        const problems = [
-          ...belowThreshold("core statements", core, coreMin),
-          ...belowThreshold("all statements", overall, overallMin),
-        ];
-        const summary = `Coverage: core ${percent(core)}, overall ${percent(overall)}`;
-        return problems.length === 0 ? passed(summary, warnings) : failed(summary, [...problems, ...warnings]);
-      }
       // A changed file without blocks has no statements, unless its package never ran: a build or
       // test failure leaves the package out of the profile, which must not read as covered.
       const measured = new Set(blocks.map((block) => posix.dirname(block.file)));
@@ -227,7 +219,7 @@ class GoUnit {
   }
 
   public async vulnerabilities(): Promise<CheckOutcome> {
-    if (this.#changed !== null && !this.#dependenciesChanged()) return skipped("go.mod and go.sum unchanged");
+    if (!this.#dependenciesChanged()) return skipped("go.mod and go.sum unchanged");
     const tool = await this.#tool("govulncheck");
     if (tool.status !== "ready") return tool.outcome;
     const result = await this.#run("go", [...tool.prefix, "govulncheck", "./..."], 15 * minute);
@@ -239,13 +231,13 @@ class GoUnit {
   public async fuzz(): Promise<CheckOutcome> {
     const cases = this.#input("cases", ["disabled"]).filter((value) => value !== "disabled");
     if (cases.length === 0) return skipped("No fuzz case configured");
-    const changedPackages = this.#changed === null ? null : new Set(this.#changedGoFiles().map(packageDirectory));
+    const changedPackages = new Set(this.#changedGoFiles().map(packageDirectory));
     const selected = cases
       .map((value) => {
         const [pkg, target, duration] = value.split(":");
         return { pkg: pkg!, target: target!, duration: duration! };
       })
-      .filter((entry) => changedPackages === null || changedPackages.has(normalizePackage(entry.pkg)));
+      .filter((entry) => changedPackages.has(normalizePackage(entry.pkg)));
     if (selected.length === 0) return skipped("No fuzz case targets a changed package");
     for (const entry of selected) {
       const result = await this.#run(
@@ -260,13 +252,8 @@ class GoUnit {
 
   public async mutation(): Promise<CheckOutcome> {
     const scope = this.#input("packages", ["./..."]);
-    let packages: string[];
-    if (this.#changed === null) {
-      packages = [...new Set((await this.#listPackages(scope)).map((entry) => entry.dir))];
-    } else {
-      packages = [...new Set(this.#changedGoFiles().filter(isProductionGoFile).map(packageDirectory))]
-        .filter((dir) => scope.some((pattern) => matchesPackagePattern(dir, pattern)));
-    }
+    const packages = [...new Set(this.#changedGoFiles().filter(isProductionGoFile).map(packageDirectory))]
+      .filter((dir) => scope.some((pattern) => matchesPackagePattern(dir, pattern)));
     if (packages.length === 0) return skipped("No production package in the mutation scope changed");
     const tool = await this.#tool("gremlins");
     if (tool.status !== "ready") return tool.outcome;
@@ -292,8 +279,7 @@ class GoUnit {
         for (const file of parsed.files ?? []) {
           const path = mutationFile(file.file_name, dir, modulePath, this.#dir);
           for (const mutation of file.mutations ?? []) {
-            const inScope = this.#changed === null || isLineChanged(this.#changed.get(path), mutation.line);
-            if (!inScope) continue;
+            if (!isLineChanged(this.#changed.get(path), mutation.line)) continue;
             if (mutation.status === "KILLED" || mutation.status === "TIMED_OUT") killed += 1;
             if (mutation.status === "LIVED" || mutation.status === "NOT_COVERED") {
               survivors.push(`${posix.join(this.#request.unitRoot, path)}:${mutation.line}:${mutation.column} ${mutation.type} ${mutation.status}`);
@@ -305,14 +291,14 @@ class GoUnit {
       await rm(scratch, { recursive: true, force: true });
     }
     return survivors.length === 0
-      ? passed(`${killed} mutant(s) killed${this.#changed === null ? "" : " on changed lines"}`)
-      : failed(`${survivors.length} mutant(s) survived${this.#changed === null ? "" : " on changed lines"}`, survivors);
+      ? passed(`${killed} mutant(s) killed on changed lines`)
+      : failed(`${survivors.length} mutant(s) survived on changed lines`, survivors);
   }
 
   public async e2e(): Promise<CheckOutcome> {
     const packages = this.#input("packages", ["disabled"]).filter((value) => value !== "disabled");
     if (packages.length === 0) return skipped("No end-to-end package configured");
-    if (this.#changed !== null && this.#changed.size === 0) return skipped("Module unchanged");
+    if (this.#changed.size === 0) return skipped("Module unchanged");
     const result = await this.#run("go", ["test", "-count=1", "-tags=e2e", "-timeout=5m", ...packages], 10 * minute);
     return result.exitCode === 0
       ? passed(`End-to-end suites passed for ${describePackages(packages)}`)
@@ -323,7 +309,7 @@ class GoUnit {
    * Dependency direction: files in core packages may import only the standard library (minus
    * transport and persistence packages), other core packages and explicitly allowed modules;
    * `forbidden_imports` adds `from -> to` package rules
-   * for any other layering. Test files are exempt. In delta mode only changed files are judged.
+   * for any other layering. Test files are exempt, and only changed files are judged.
    */
   public async imports(): Promise<CheckOutcome> {
     const modulePath = await this.#modulePath();
@@ -336,10 +322,9 @@ class GoUnit {
       return from === undefined || to === undefined ? [] : [{ from, to, rule }];
     });
     if (core.length === 0 && rules.length === 0) return skipped("No dependency rule configured");
-    const files = this.#changed === null
-      ? await this.#allGoFiles()
-      : this.#changedGoFiles().filter((file) => existsSync(join(this.#dir, file)));
-    const sources = files.filter(isProductionGoFile);
+    const sources = this.#changedGoFiles()
+      .filter((file) => existsSync(join(this.#dir, file)))
+      .filter(isProductionGoFile);
     if (sources.length === 0) return skipped("No production Go file to judge");
     const violations: string[] = [];
     for (const file of sources) {
@@ -373,20 +358,8 @@ class GoUnit {
       : failed(`${violations.length} forbidden import(s)`, violations);
   }
 
-  async #allGoFiles(): Promise<string[]> {
-    const result = await this.#run(
-      "go",
-      ["list", "-e", "-f", "{{$dir := .Dir}}{{range .GoFiles}}{{$dir}}/{{.}}\n{{end}}", "./..."],
-      5 * minute,
-    );
-    return lines(result.stdout)
-      .filter((file) => file.startsWith(`${this.#dir}/`))
-      .map((file) => file.slice(this.#dir.length + 1));
-  }
-
-  /** Packages to vet and test: the changed ones in delta mode, otherwise the configured patterns. */
+  /** Packages to vet and test: those that contain a changed Go file. */
   async #packages(): Promise<string[]> {
-    if (this.#changed === null) return [...this.#input("test_packages", ["./..."])];
     const dirs = [...new Set(this.#changedGoFiles().map(packageDirectory))];
     if (dirs.length === 0) return [];
     const listed = await this.#listPackages(dirs.map(packagePattern));
@@ -433,11 +406,11 @@ class GoUnit {
   }
 
   #changedGoFiles(): string[] {
-    return [...(this.#changed?.keys() ?? [])].filter((file) => file.endsWith(".go") && !ignoredByGo(file)).sort();
+    return [...this.#changed.keys()].filter((file) => file.endsWith(".go") && !ignoredByGo(file)).sort();
   }
 
   #dependenciesChanged(): boolean {
-    return this.#changed !== null && (this.#changed.has("go.mod") || this.#changed.has("go.sum"));
+    return this.#changed.has("go.mod") || this.#changed.has("go.sum");
   }
 
   #input(id: string, fallback: readonly string[]): readonly string[] {

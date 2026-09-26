@@ -25,6 +25,7 @@ import { InstructionProjector } from "../adapters/project/instructions/instructi
 import { SharedSkillProjector } from "../adapters/project/skills/shared-skill-projector.js";
 import { registeredCheckProviders, registeredStackAdapters } from "../adapters/stack/registry.js";
 import { ChangeCheckProvider, ChangeReview } from "../adapters/verification/change-check-provider.js";
+import { NodeVerifyScript } from "../adapters/verification/node-verify-script.js";
 import { createDefaultContentSource } from "../catalog/source/content-source-composition.js";
 import type { ContentSource, ContentSourceProgress } from "../catalog/source/content-source.js";
 import { SourcedCatalog } from "../catalog/source/sourced-catalog.js";
@@ -94,6 +95,13 @@ export async function createDefaultApplication(
     ...(options.contentCacheRoot === undefined ? {} : { cacheRoot: options.contentCacheRoot }),
     progress,
   });
+  const processRunner = new NodeProcessRunner();
+  const changeSets = new NodeChangeSetReader(processRunner);
+  const review = new ChangeReview(processRunner, changeSets);
+  const checkProviders = [
+    ...registeredCheckProviders(processRunner),
+    new ChangeCheckProvider(processRunner, changeSets, review),
+  ];
   const application = new RailguardApplication({
     catalog: new SourcedCatalog({
       source: contentSource,
@@ -107,10 +115,12 @@ export async function createDefaultApplication(
     projectors: [
       new SharedSkillProjector(),
       new InstructionProjector(),
-      new QualityProjector(executableProbe, new NodeGitHookInventory(), {
-        version: engineVersion,
-        repository: releaseRepository,
-      }),
+      new QualityProjector(
+        executableProbe,
+        new NodeGitHookInventory(),
+        { version: engineVersion, repository: releaseRepository },
+        checkProviders,
+      ),
     ],
     projectionCoordinator: new DefaultProjectProjectionCoordinator(),
     planner: new DurableProjectPlanner(gitConfig),
@@ -146,13 +156,11 @@ export async function createDefaultApplication(
     }),
     ...(options.events === undefined ? {} : { events: options.events }),
   });
-  const processRunner = new NodeProcessRunner();
-  const changeSets = new NodeChangeSetReader(processRunner);
-  const review = new ChangeReview(processRunner, changeSets);
   const verification = new VerificationService({
     scan: (root) => application.scan(root),
     changeSets,
-    providers: [...registeredCheckProviders(processRunner), new ChangeCheckProvider(processRunner, changeSets, review)],
+    providers: checkProviders,
+    script: new NodeVerifyScript(processRunner),
   });
   return Object.freeze({
     application,

@@ -7,6 +7,7 @@ import { NodeChangeSetReader } from "../../src/adapters/platform/git/node-change
 import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
 import { GoCheckProvider } from "../../src/adapters/stack/go/go-check-provider.js";
 import type { ChangeSet, CheckRequest } from "../../src/domain/verification/checks.js";
+import { runFullCheck } from "../helpers/full-check.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
 
 const execute = promisify(execFile);
@@ -66,13 +67,26 @@ describe.skipIf(!hasGo)("GoCheckProvider against a real module", () => {
     expect(test).toMatchObject({ status: "passed", summary: expect.stringContaining("./internal/core/order") });
   }, 120_000);
 
-  it("still reports the pre-existing debt in full mode", async () => {
-    const format = await provider.run("go-format", request({ changes: null }));
-    const test = await provider.run("go-test", request({ changes: null }));
+  it("still reports the pre-existing debt through the verify script", async () => {
+    const format = await runFullCheck(root, provider, "go-format");
+    const test = await runFullCheck(root, provider, "go-test");
 
-    expect(format).toMatchObject({ status: "failed", details: ["gofmt -w internal/legacy/legacy.go"] });
-    expect(test.status).toBe("failed");
-    expect(test.details.join("\n")).toContain("pre-existing failure");
+    expect(format).toMatchObject({ code: 1, output: expect.stringContaining("internal/legacy/legacy.go") });
+    expect(format).toMatchObject({ output: expect.not.stringContaining(".agents") });
+    expect(test).toMatchObject({ code: 1, output: expect.stringContaining("pre-existing failure") });
+  }, 120_000);
+
+  it("measures core and overall coverage and keeps the profile when asked", async () => {
+    const profile = join(root, "..", "coverage.out");
+    const coverage = await runFullCheck(root, provider, "go-coverage", {
+      params: { core_min: 100, overall_min: 50 },
+      inputs: { core_packages: ["./internal/core/..."], test_packages: ["./internal/core/..."] },
+    }, { COVERAGE_PROFILE: profile });
+
+    expect(coverage).toMatchObject({ code: 1, output: expect.stringContaining("Coverage: core 57.1% (4/7)") });
+    expect(coverage).toMatchObject({ output: expect.stringContaining("core statements are below the required 100%") });
+    expect(execFileSync("head", ["-1", profile], { encoding: "utf8" })).toBe("mode: set\n");
+    await rm(profile);
   }, 120_000);
 
   it("requires coverage of changed lines and names the uncovered ones", async () => {
@@ -135,6 +149,9 @@ describe.skipIf(!hasGo)("GoCheckProvider against a real module", () => {
 
     expect(lint.status).toBe("unavailable");
     expect(mutation.status).toBe("unavailable");
+    expect(await runFullCheck(root, provider, "golangci-lint")).toMatchObject({ code: 4 });
+    expect(await runFullCheck(root, provider, "go-mutation")).toMatchObject({ code: 4 });
+    expect(await runFullCheck(root, provider, "go-fuzz")).toEqual({ skipped: "No fuzz case configured" });
   }, 120_000);
 
   function request(overrides: Partial<CheckRequest>): CheckRequest {
@@ -143,7 +160,7 @@ describe.skipIf(!hasGo)("GoCheckProvider against a real module", () => {
       unitRoot: ".",
       params: {},
       inputs: {},
-      changes: null,
+      changes,
       ...overrides,
     };
   }

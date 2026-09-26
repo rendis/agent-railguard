@@ -43,7 +43,8 @@ beforeAll(async () => {
     { async probe() { return { detected: true, path: "/test/go", version: "test", diagnostics: [] }; } },
     { async executableDefaultHooks() { return []; } },
     { version: "1.2.3", repository: "example/railguard" },
-  ).project(resolution, catalogResult.catalog, await new NodeRepositoryInventory().snapshot(empty));
+    [],
+  ).project(resolution, catalogResult.catalog, await new NodeRepositoryInventory().snapshot(empty), { projectUnits: [] } as never, [], new Map());
   files = new Map(projection.units.flatMap((unit) =>
     unit.kind === "artifact" && unit.intent.kind === "file"
       ? [[unit.intent.path, Buffer.from(unit.intent.bytes.copy()).toString("utf8")] as const]

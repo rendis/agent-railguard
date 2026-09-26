@@ -28,8 +28,7 @@ export interface CheckRequest {
   readonly unitRoot: string;
   readonly params: CheckParams;
   readonly inputs: Readonly<Record<string, readonly string[]>>;
-  /** Null in full mode: the whole unit is judged. */
-  readonly changes: ChangeSet | null;
+  readonly changes: ChangeSet;
   readonly signal?: AbortSignal;
 }
 
@@ -45,9 +44,28 @@ export interface CheckOutcome {
   readonly details: readonly string[];
 }
 
+export interface FullCheckRequest {
+  readonly params: CheckParams;
+  readonly inputs: Readonly<Record<string, readonly string[]>>;
+}
+
+/**
+ * How a check judges a whole project unit: shell run from the unit root that exits 0 when it
+ * passes, 1 when it finds a problem and 4 (through `unavailable`) when it cannot run; or the
+ * reason the check does not judge a whole unit.
+ */
+export type FullCheck =
+  | { readonly kind: "script"; readonly body: string }
+  | { readonly kind: "skipped"; readonly reason: string };
+
+/**
+ * A check judges a change natively (`run`), where it can scope itself to changed lines, and a
+ * whole unit through the shell of `full`, which the repository's verify script carries to CI.
+ */
 export interface CheckProvider {
   readonly kinds: readonly string[];
   run(kind: string, request: CheckRequest): Promise<CheckOutcome>;
+  full(kind: string, request: FullCheckRequest): FullCheck;
 }
 
 export interface ProcessResult {

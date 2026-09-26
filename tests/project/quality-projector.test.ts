@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NodeRepositoryInventory } from "../../src/adapters/platform/repository-inventory/node-repository-inventory.js";
+import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
 import { QualityProjector } from "../../src/adapters/project/quality/quality-projector.js";
+import { registeredCheckProviders } from "../../src/adapters/stack/registry.js";
 import { FilesystemCatalog } from "../../src/catalog/filesystem-catalog.js";
 import type { ExecutableProbe } from "../../src/domain/harness/model.js";
 import type { GitHookInventory } from "../../src/domain/project/model.js";
@@ -46,6 +48,9 @@ const availableWithoutVersionCommands: ExecutableProbe = {
 
 const engine = { version: "1.2.3", repository: "example/railguard" };
 
+/** A repository without project units, targets or selected inputs. */
+const noUnits = [{ projectUnits: [] } as never, [], new Map()] as const;
+
 const noHooks: GitHookInventory = {
   async executableDefaultHooks() {
     return [];
@@ -74,11 +79,9 @@ describe("QualityProjector", () => {
       if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
       const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
 
-      const projection = await new QualityProjector(
-        availableWithoutVersionCommands,
+      const projection = await new QualityProjector(availableWithoutVersionCommands,
         noHooks,
-        engine,
-      ).project(resolution, catalogResult.catalog, snapshot);
+        engine, []).project(resolution, catalogResult.catalog, snapshot, ...noUnits);
 
       expect(projection.diagnostics).not.toContainEqual(
         expect.objectContaining({ code: "harness.executable.version-unavailable" }),
@@ -114,10 +117,11 @@ describe("QualityProjector", () => {
         },
       };
 
-      const projection = await new QualityProjector(missing, noHooks, engine).project(
+      const projection = await new QualityProjector(missing, noHooks, engine, []).project(
         resolution,
         catalogResult.catalog,
         snapshot,
+        ...noUnits,
       );
 
       expect(projection.diagnostics).toContainEqual(
@@ -155,10 +159,11 @@ describe("QualityProjector", () => {
       if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
       const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
 
-      const projection = await new QualityProjector(available, noHooks, engine).project(
+      const projection = await new QualityProjector(available, noHooks, engine, []).project(
         resolution,
         catalogResult.catalog,
         snapshot,
+        ...noUnits,
       );
 
       expect(projection.units.map((unit) => unit.ownershipId)).toEqual(["project.launcher"]);
@@ -169,6 +174,56 @@ describe("QualityProjector", () => {
       expect(launcher).toMatchObject({ intent: { path: ".railguard/bin/railguard", mode: 0o755 } });
       expect(text).toContain("version=1.2.3\nrepository=example/railguard\n");
       expect(launcher?.sources).toEqual([...profiles].sort());
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
+  it("writes the verify script from the selected profiles, units and inputs", async () => {
+    const repository = await createTempRepository({});
+    try {
+      const catalogResult = await new FilesystemCatalog({
+        catalogFile: resolve("railguard.yaml"),
+        supportedLanguages: [languageId("go")],
+      }).load();
+      if (catalogResult.kind !== "ready") throw new Error("Expected ready catalog");
+      const profiles = [
+        componentRef("verification-profile:go-quality"),
+        componentRef("verification-profile:change-guard"),
+      ];
+      const resolution = new DefaultResolver().resolve({
+        catalog: catalogResult.catalog,
+        directSelections: profiles,
+        projectUnits: [],
+        targets: [{ target: harnessTargetId("codex"), capabilities: [capabilityId("project.instructions")] }],
+      });
+      if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
+      const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
+
+      const projection = await new QualityProjector(available, noHooks, engine, [
+        ...registeredCheckProviders(new NodeProcessRunner()),
+        {
+          kinds: ["change-integrity", "change-size"],
+          async run() { throw new Error("not called"); },
+          full() { return { kind: "skipped", reason: "Judges a change" }; },
+        },
+      ]).project(
+        resolution,
+        catalogResult.catalog,
+        snapshot,
+        { projectUnits: [{ root: "svc", languages: [languageId("go")] }] } as never,
+        [],
+        new Map([[profiles[0]!, { test_packages: ["./internal/..."] }]]),
+      );
+
+      const script = projection.units.find((unit) => unit.ownershipId === "project.verify-script");
+      const text = script?.kind === "artifact" && script.intent.kind === "file"
+        ? Buffer.from(script.intent.bytes.copy()).toString("utf8")
+        : "";
+      expect(script).toMatchObject({ sources: [profiles[0]], intent: { path: ".railguard/verify.sh", mode: 0o755 } });
+      expect(text).toContain("    go-quality/race@svc) (\n      cd svc || exit 4\n      go test -count=1 -race -shuffle=on ./internal/... || exit 1\n");
+      expect(text).toContain("  check)\n    run go-quality/format@svc\n    run go-quality/vet@svc\n    run go-quality/test@svc\n    ;;");
+      expect(text).not.toContain("change-guard");
     } finally {
       await repository.cleanup();
     }
@@ -198,10 +253,11 @@ describe("QualityProjector", () => {
       if (resolution.kind !== "ready") throw new Error("Expected ready resolution");
       const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
 
-      const projection = await new QualityProjector(available, noHooks, engine).project(
+      const projection = await new QualityProjector(available, noHooks, engine, []).project(
         resolution,
         catalogResult.catalog,
         snapshot,
+        ...noUnits,
       );
 
       const hook = projection.units.find(

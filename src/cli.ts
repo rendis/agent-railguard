@@ -966,7 +966,9 @@ Examples:
 Effect: runs the ${stage === "check" ? "fast checks" : "checks of both stages"} of every selected verification profile.
 With --changed each check judges only what changed since the merge-base with the default
 branch (or --base); a repository with commits but no resolvable base is blocked. Without
---changed every project unit is judged completely. No repository mutation is attempted.
+--changed every project unit is judged completely by the steps of .railguard/verify.sh, the
+script CI runs; a script that does not match the selection is blocked until railguard sync
+--yes regenerates it. No repository mutation is attempted.
 
 Exit codes: 0 passed; 2 invalid input; 4 a check could not run; 5 blocked; 8 a check failed.
 Output: --format text|json (railguard/verification-report/v1).`);

@@ -38,21 +38,6 @@ export interface CoverageTally {
   readonly total: number;
 }
 
-/** Statement coverage of the blocks whose file satisfies `include`. */
-export function statementCoverage(
-  blocks: readonly CoverBlock[],
-  include: (file: string) => boolean,
-): CoverageTally {
-  let covered = 0;
-  let total = 0;
-  for (const block of blocks) {
-    if (!include(block.file) || block.statements === 0) continue;
-    total += block.statements;
-    if (block.count > 0) covered += block.statements;
-  }
-  return { covered, total };
-}
-
 /**
  * Coverage of changed lines that contain statements. A changed line is covered when any block that
  * spans it was executed. Returns the uncovered lines per file for diagnostics.

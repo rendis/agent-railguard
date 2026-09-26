@@ -214,7 +214,7 @@ describe("ChangeReview", () => {
     await writeFile(join(root, "a.go"), "package a\n\nvar A = 1\n");
     expect(await review.brief(root)).toContain("Review status: failed — This change has no current review against its handoff");
     expect((await review.record(root, join(root, "missing.json"))).message).toMatch(/^Cannot read the review/u);
-    expect(await provider().run("change-review", { ...(await request(root)), changes: null })).toMatchObject({ status: "skipped" });
+    expect(provider().full()).toEqual({ kind: "skipped", reason: "Judges a change; run with --changed" });
   });
 
   it("skips a repository without an active handoff", async () => {

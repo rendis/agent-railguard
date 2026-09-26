@@ -360,6 +360,7 @@ describe("RailguardApplication", () => {
         ".railguard/bin/railguard",
         ".railguard/hooks/pre-commit",
         ".railguard/hooks/pre-push",
+        ".railguard/verify.sh",
         "AGENTS.md",
         ".railguard/project.yaml",
         ".railguard/lock.json",
