@@ -17,7 +17,7 @@ import {
   type InputAssignment,
   type ProductCommandRequest,
 } from "./cli/command-runner.js";
-import type { HeadlessRun } from "./cli/headless.js";
+import type { CommandRun } from "./cli/command-result.js";
 import {
   internalErrorRun,
   invalidInputRun,
@@ -538,7 +538,7 @@ async function assertPlanOutputOutsideRepository(
   }
 }
 
-function writeRun(run: HeadlessRun, format: OutputFormat): void {
+function writeRun(run: CommandRun, format: OutputFormat): void {
   if (format === "ndjson") {
     process.stdout.write(encodePublicResult(run.result));
   } else {

@@ -37,8 +37,7 @@
         "doctor",
         "mcp-status",
         "mcp-login",
-        "mcp-logout",
-        "update"
+        "mcp-logout"
       ]
     },
     "operation_id": { "$ref": "#/$defs/uuid" },
@@ -98,7 +97,6 @@
         { "$ref": "#/$defs/catalogListData" },
         { "$ref": "#/$defs/catalogShowData" },
         { "$ref": "#/$defs/doctorData" },
-        { "$ref": "#/$defs/updateData" },
         { "$ref": "#/$defs/mcpSessionData" },
         { "type": "null" }
       ]
@@ -387,22 +385,6 @@
         "id": { "enum": ["catalog", "repository", "materialization"] },
         "status": { "enum": ["passed", "warning", "failed"] },
         "message": { "type": "string", "minLength": 1 }
-      }
-    },
-    "updateData": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "current_version", "latest_version", "status"],
-      "properties": {
-        "kind": { "const": "update" },
-        "current_version": { "type": "string", "minLength": 1 },
-        "latest_version": {
-          "oneOf": [
-            { "type": "string", "minLength": 1 },
-            { "type": "null" }
-          ]
-        },
-        "status": { "enum": ["current", "available", "unknown"] }
       }
     },
     "mcpSessionData": {

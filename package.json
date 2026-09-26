@@ -7,9 +7,6 @@
   "bin": {
     "railguard": "dist/cli.js"
   },
-  "exports": {
-    ".": "./dist/index.js"
-  },
   "engines": {
     "node": ">=24.19.0 <25.0.0"
   },

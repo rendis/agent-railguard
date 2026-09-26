@@ -8,11 +8,9 @@ import {
   componentRef,
   harnessTargetId,
 } from "../../src/domain/shared/types.js";
-import {
-  exitCodeForVerdict,
-  runHeadless,
-  serializeHeadlessRun,
-} from "../../src/cli/headless.js";
+import { runProductCommand } from "../../src/cli/command-runner.js";
+import { exitCodeForVerdict } from "../../src/cli/exit-codes.js";
+import { renderRun } from "../../src/cli/output.js";
 import { createInteractionRuntime } from "../../src/interaction/interaction-session.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
 
@@ -46,12 +44,13 @@ describe("production shared CLI/TUI interaction contract", () => {
     const repository = await createTempRepository({});
     const interaction = await runtime("44444444-4444-4444-8444-444444444444");
     try {
-      const result = await runHeadless(interaction.session, {
+      const result = await runProductCommand(interaction, {
         command: "init",
         root: repository.root,
         recommended: false,
-        directSelections: [componentRef("pack:testing-foundation")],
+        add: [componentRef("pack:testing-foundation")],
         targets: [codex],
+        setInputs: [],
         approve: false,
       });
       expect(result.result.verdict).toBe("BLOCKED");
@@ -73,23 +72,24 @@ describe("production shared CLI/TUI interaction contract", () => {
     try {
       const baseline = await interaction.applicationRuntime.application.scan(repository.root);
       expect(baseline.kind).toBe("ready");
-      const install = await runHeadless(interaction.session, {
+      const install = await runProductCommand(interaction, {
         command: "init",
         root: repository.root,
         recommended: false,
-        directSelections: [goHexagonal],
+        add: [goHexagonal],
         targets: [codex],
+        setInputs: [],
         approve: true,
       });
       expect(install.result.verdict).toBe("SUCCEEDED");
       expect(install.result.receipt?.materialization).toBe("committed");
       expect(install.result.components).toHaveLength(8);
 
-      const removal = await runHeadless(interaction.session, {
+      const removal = await runProductCommand(interaction, {
         command: "remove",
         root: repository.root,
-        remainingDirectSelections: [],
-        targets: [codex],
+        all: true,
+        components: [],
         approve: true,
       });
       expect(removal.result.verdict).toBe("SUCCEEDED");
@@ -113,21 +113,21 @@ describe("production shared CLI/TUI interaction contract", () => {
     const planner = await runtime("99999999-9999-4999-8999-999999999999");
     const applier = await runtime("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     try {
-      const planned = await runHeadless(planner.session, {
+      const planned = await runProductCommand(planner, {
         command: "init",
         root: repository.root,
         recommended: false,
-        directSelections: [goHexagonal],
+        add: [goHexagonal],
         targets: [codex],
+        setInputs: [],
         approve: false,
       });
       if (planned.result.plan === null) throw new Error("Expected exported plan");
 
-      const applied = await runHeadless(applier.session, {
+      const applied = await runProductCommand(applier, {
         command: "apply",
         root: repository.root,
         plan: planned.result.plan,
-        approve: true,
       });
 
       expect(applied.result.verdict).toBe("SUCCEEDED");
@@ -143,12 +143,13 @@ describe("production shared CLI/TUI interaction contract", () => {
     const interaction = await runtime("44444444-4444-4444-8444-444444444444");
     try {
       const baseline = await interaction.applicationRuntime.application.scan(repository.root);
-      const planned = await runHeadless(interaction.session, {
+      const planned = await runProductCommand(interaction, {
         command: "init",
         root: repository.root,
         recommended: false,
-        directSelections: [goHexagonal],
+        add: [goHexagonal],
         targets: [codex],
+        setInputs: [],
         approve: false,
       });
       expect(planned.result.verdict).toBe("PLAN_READY");
@@ -262,19 +263,20 @@ describe("production shared CLI/TUI interaction contract", () => {
     const repository = await goRepository();
     const interaction = await runtime("55555555-5555-4555-8555-555555555555");
     try {
-      const run = await runHeadless(interaction.session, {
+      const run = await runProductCommand(interaction, {
         command: "init",
         root: repository.root,
         recommended: false,
-        directSelections: [goHexagonal],
+        add: [goHexagonal],
         targets: [codex],
+        setInputs: [],
         approve: false,
       });
-      const jsonLines = serializeHeadlessRun(run, "json").trimEnd().split("\n");
+      const jsonLines = renderRun(run, "json").trimEnd().split("\n");
       expect(jsonLines).toHaveLength(1);
       expect(JSON.parse(jsonLines[0]!)).toEqual(run.result);
 
-      const ndjson = serializeHeadlessRun(run, "ndjson")
+      const ndjson = renderRun(run, "ndjson")
         .trimEnd()
         .split("\n")
         .map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -345,12 +347,13 @@ describe("production shared CLI/TUI interaction contract", () => {
     const interaction = await runtime("66666666-6666-4666-8666-666666666666");
     try {
       const baseline = await interaction.applicationRuntime.application.scan(repository.root);
-      await runHeadless(interaction.session, {
+      await runProductCommand(interaction, {
         command: "init",
         root: repository.root,
         recommended: false,
-        directSelections: [goHexagonal],
+        add: [goHexagonal],
         targets: [codex],
+        setInputs: [],
         approve: false,
       });
       await interaction.session.dispatch({

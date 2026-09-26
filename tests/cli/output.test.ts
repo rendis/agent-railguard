@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CommandResultEnvelope, HeadlessRun } from "../../src/cli/headless.js";
+import type { CommandResultEnvelope, CommandRun } from "../../src/cli/command-result.js";
 import {
   internalErrorRun,
   invalidInputRun,
@@ -21,7 +21,7 @@ describe("CLI output renderer", () => {
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0]!)).toMatchObject({ type: "result" });
 
-    const withEvent: HeadlessRun = Object.freeze({
+    const withEvent: CommandRun = Object.freeze({
       events: Object.freeze([taskEvent("running", 1, 2)]),
       result: run.result,
     });
@@ -71,17 +71,6 @@ describe("CLI output renderer", () => {
       }),
     }, "text");
     expect(doctor).toContain("passed  catalog");
-
-    const update = renderRun({
-      events: [],
-      result: resultWithData({
-        kind: "update",
-        current_version: "0.1.0",
-        latest_version: null,
-        status: "unknown",
-      }),
-    }, "text");
-    expect(update).toContain("latest unknown");
   });
 
   it("renders all task states, optional progress and both error classes", () => {

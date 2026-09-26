@@ -19,8 +19,8 @@ import {
 import {
   buildCommandResult,
   type CommandResultEnvelope,
-  type HeadlessRun,
-} from "./headless.js";
+  type CommandRun,
+} from "./command-result.js";
 
 export interface InputAssignment {
   readonly ref: ComponentRef;
@@ -88,7 +88,7 @@ export type ProductCommandRequest =
 export async function runProductCommand(
   runtime: InteractionRuntime,
   request: ProductCommandRequest,
-): Promise<HeadlessRun> {
+): Promise<CommandRun> {
   const events: PublicInteractionEvent[] = [];
   const unsubscribe = runtime.session.subscribe(({ event }) => {
     events.push(toPublicEvent(event));

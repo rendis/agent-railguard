@@ -21,7 +21,6 @@ const nativeModules = new Set(builtinModules.map((moduleName) => moduleName.repl
 const result = await build({
   entryPoints: {
     cli: "src/cli.ts",
-    index: "src/index.ts",
   },
   outdir,
   bundle: true,

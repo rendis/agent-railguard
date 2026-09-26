@@ -34,8 +34,7 @@ export type CommandName =
   | "doctor"
   | "mcp-status"
   | "mcp-login"
-  | "mcp-logout"
-  | "update";
+  | "mcp-logout";
 
 export type CommandVerdict =
   | "READY"
@@ -72,12 +71,6 @@ export type CommandData =
         readonly status: "passed" | "warning" | "failed";
         readonly message: string;
       }[];
-    }
-  | {
-      readonly kind: "update";
-      readonly current_version: string;
-      readonly latest_version: string | null;
-      readonly status: "current" | "available" | "unknown";
     }
   | {
       readonly kind: "mcp-session";

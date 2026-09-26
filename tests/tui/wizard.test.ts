@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { runHeadless } from "../../src/cli/headless.js";
+import { runProductCommand } from "../../src/cli/command-runner.js";
 import type { ExecutableProbe } from "../../src/domain/harness/model.js";
 import { harnessTargetId } from "../../src/domain/shared/types.js";
 import { createInteractionRuntime } from "../../src/interaction/interaction-session.js";
@@ -128,7 +128,7 @@ describe("interactive wizard", () => {
     }
   }, 60_000);
 
-  it("builds and applies exactly the plan the headless CLI builds for the same request", async () => {
+  it("builds and applies exactly the plan the CLI builds for the same request", async () => {
     const headlessRepository = await goRepository();
     const wizardRepository = await goRepository();
     const everything: ExecutableProbe = {
@@ -139,12 +139,13 @@ describe("interactive wizard", () => {
     const headlessRuntime = await createInteractionRuntime({ executableProbe: everything });
     const wizardRuntime = await createInteractionRuntime({ executableProbe: everything });
     try {
-      const headless = await runHeadless(headlessRuntime.session, {
+      const headless = await runProductCommand(headlessRuntime, {
         command: "init",
         root: headlessRepository.root,
         recommended: true,
-        directSelections: [],
+        add: [],
         targets: [harnessTargetId("codex")],
+        setInputs: [],
         approve: false,
       });
       const script = scriptedUi([

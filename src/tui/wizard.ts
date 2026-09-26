@@ -73,7 +73,7 @@ type MenuAction =
   | { readonly mcp: ComponentRef; readonly operation: "inspect" | "login" | "logout" };
 
 /**
- * Linear interactive flow over the same interaction session the headless CLI uses: scan, choose
+ * Linear interactive flow over the same interaction session the CLI uses: scan, choose
  * components and harnesses, review the exact plan, apply it, and see the receipt.
  */
 export async function runWizard(

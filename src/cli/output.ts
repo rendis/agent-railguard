@@ -5,12 +5,12 @@ import type {
   CommandName,
   PublicInteractionEvent,
 } from "../interaction/public-output.js";
-import type { CommandResultEnvelope, HeadlessRun } from "./headless.js";
+import type { CommandResultEnvelope, CommandRun } from "./command-result.js";
 import { exitCodeForVerdict } from "./exit-codes.js";
 
 export type OutputFormat = "text" | "json" | "ndjson";
 
-export function renderRun(run: HeadlessRun, format: OutputFormat): string {
+export function renderRun(run: CommandRun, format: OutputFormat): string {
   if (format === "json") return encodePublicResult(run.result);
   if (format === "ndjson") {
     return `${[
@@ -33,14 +33,14 @@ export function renderProgress(event: PublicInteractionEvent): string | null {
 export function invalidInputRun(
   command: CommandName,
   message: string,
-): HeadlessRun {
+): CommandRun {
   return errorRun(command, "INVALID_INPUT", "cli.input-invalid", message, "Run railguard --help or the command-specific --help and correct the input.");
 }
 
 export function internalErrorRun(
   command: CommandName,
   message: string,
-): HeadlessRun {
+): CommandRun {
   return errorRun(
     command,
     "INTERNAL_ERROR",
@@ -56,7 +56,7 @@ function errorRun(
   code: string,
   message: string,
   action: string,
-): HeadlessRun {
+): CommandRun {
   const diagnostic: DiagnosticView = Object.freeze({
     code,
     severity: "failed",
@@ -128,10 +128,6 @@ function renderHumanResult(result: CommandResultEnvelope): string {
     for (const check of result.data.checks) {
       lines.push(`  ${check.status.padEnd(7)} ${check.id} — ${check.message}`);
     }
-  } else if (result.data?.kind === "update") {
-    lines.push(
-      `Update: ${result.data.status} · current ${result.data.current_version} · latest ${result.data.latest_version ?? "unknown"}`,
-    );
   } else if (result.data?.kind === "mcp-session") {
     lines.push(`MCP: ${result.data.component} · ${result.data.operation}`);
     for (const target of result.data.results) {
