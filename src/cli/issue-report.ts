@@ -1,6 +1,6 @@
 import bugTemplate from "../../.github/ISSUE_TEMPLATE/bug.md";
 import improvementTemplate from "../../.github/ISSUE_TEMPLATE/improvement.md";
-import guide from "../../docs/contributing/reporting-issues.md";
+import guide from "../../docs/reporting-issues.md";
 import { parseSafeYaml } from "../shared/safe-yaml.js";
 
 export const issueKinds = ["bug", "improvement"] as const;
