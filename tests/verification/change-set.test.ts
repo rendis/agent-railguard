@@ -80,6 +80,21 @@ describe("NodeChangeSetReader", () => {
     expect(changedFilesInUnit(changes, "svc").get("main.go")).toBe("all");
   });
 
+  it("rejects a change without a resolvable default branch instead of comparing HEAD with itself", async () => {
+    const origin = await repository({ "a.go": "package a\n" });
+    await git(origin, "checkout", "-q", "-b", "feature");
+    await writeFile(join(origin, "a.go"), "package a\n\nvar x = 1\n");
+    await git(origin, "commit", "-qam", "feature");
+    const created = await createTempRepository({});
+    cleanups.push(created.cleanup);
+    await git(created.root, "init", "-q", "-b", "detached");
+    await git(created.root, "fetch", "-q", "--depth", "1", `file://${origin}`, "feature");
+    await git(created.root, "checkout", "-q", "--detach", "FETCH_HEAD");
+
+    await expect(new NodeChangeSetReader(new NodeProcessRunner()).read(created.root))
+      .rejects.toThrow(/No merge-base with the default branch.*--base/);
+  });
+
   it("rejects an explicit base that does not exist", async () => {
     const root = await repository({ "a.go": "package a\n" });
 

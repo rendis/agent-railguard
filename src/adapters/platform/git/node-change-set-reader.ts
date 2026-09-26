@@ -11,7 +11,8 @@ const defaultBranchCandidates = ["origin/main", "origin/master", "main", "master
 /**
  * Computes what the working tree changed relative to a base commit. Without an explicit base it
  * uses the merge-base with the remote default branch (or a local main/master), so a branch is
- * judged by everything it adds, and a repository without that branch by its uncommitted work.
+ * judged by everything it adds. A repository with commits but no resolvable default branch, such
+ * as a shallow CI checkout, is rejected instead of being compared with itself.
  */
 export class NodeChangeSetReader implements ChangeSetReader {
   public constructor(private readonly process: ProcessRunner) {}
@@ -60,8 +61,10 @@ export class NodeChangeSetReader implements ChangeSetReader {
       const commit = await this.#mergeBase(root, candidate);
       if (commit !== null) return { commit, label: candidate };
     }
-    const head = await this.#git(root, ["rev-parse", "HEAD"]);
-    return { commit: (head ?? "").trim(), label: "HEAD" };
+    throw new Error(
+      `No merge-base with the default branch (tried ${candidates.join(", ")}). ` +
+        "Fetch the default branch with enough history (for example actions/checkout with fetch-depth: 0) or pass --base.",
+    );
   }
 
   async #mergeBase(root: string, ref: string): Promise<string | null> {
