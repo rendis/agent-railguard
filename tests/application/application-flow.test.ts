@@ -26,6 +26,7 @@ const probe: ExecutableProbe = {
 
 const selection = componentRef("skill:develop-go-hexagonal-service");
 const codex = harnessTargetId("codex");
+const goQuality = componentRef("verification-profile:go-quality");
 const exec = promisify(execFile);
 
 describe("RailguardApplication", () => {
@@ -340,14 +341,14 @@ describe("RailguardApplication", () => {
 
       const prepared = await runtime.application.prepareInstall(
         baseline,
-        [componentRef("git-gate:pre-commit-check"), componentRef("git-gate:pre-push-verify")],
+        [componentRef("git-gate:pre-commit-check"), componentRef("git-gate:pre-push-verify"), goQuality],
         [codex],
       );
       expect(prepared.resolution.kind).toBe("ready");
       expect(prepared.resolution.components.map((component) => component.ref)).toEqual([
-        "verification-profile:go-quality",
         "git-gate:pre-commit-check",
         "git-gate:pre-push-verify",
+        "verification-profile:go-quality",
       ]);
       expect(prepared.plan?.kind).toBe("ready");
       if (prepared.plan?.kind !== "ready") {
@@ -382,7 +383,7 @@ describe("RailguardApplication", () => {
       const installed = await runtime.application.scan(repository.root);
       const noOp = await runtime.application.prepareInstall(
         installed,
-        [componentRef("git-gate:pre-commit-check"), componentRef("git-gate:pre-push-verify")],
+        [componentRef("git-gate:pre-commit-check"), componentRef("git-gate:pre-push-verify"), goQuality],
         [codex],
       );
       expect(noOp.plan?.kind).toBe("ready");
@@ -417,7 +418,7 @@ describe("RailguardApplication", () => {
       if (baseline.kind !== "ready") throw new Error("Expected ready baseline");
       const install = await runtime.application.prepareInstall(
         baseline,
-        [preCommitCheck, preCommitVerify],
+        [preCommitCheck, preCommitVerify, goQuality],
         [codex],
       );
       if (install.plan?.kind !== "ready") throw new Error("Expected ready install");
@@ -439,8 +440,8 @@ describe("RailguardApplication", () => {
       });
 
       expect(partial.resolution.components.map((component) => component.ref)).toEqual([
-        "verification-profile:go-quality",
         "git-gate:pre-commit-check",
+        "verification-profile:go-quality",
       ]);
       if (partial.plan?.kind !== "ready") throw new Error("Expected ready partial removal");
       expect((await runtime.application.apply(partial.plan)).kind).toBe("applied");
@@ -454,6 +455,7 @@ describe("RailguardApplication", () => {
       if (after.kind !== "ready") throw new Error("Expected ready managed scan");
       expect(after.desired?.state.selections.map((entry) => entry.ref)).toEqual([
         preCommitCheck,
+        goQuality,
       ]);
       expect(after.reconciliation.management).toBe("managed");
     } finally {
@@ -470,7 +472,7 @@ describe("RailguardApplication", () => {
       const baseline = await runtime.application.scan(repository.root);
       const install = await runtime.application.prepareInstall(
         baseline,
-        [componentRef("git-gate:pre-commit-check")],
+        [componentRef("git-gate:pre-commit-check"), goQuality],
         [codex],
       );
       if (install.plan?.kind !== "ready") {
@@ -498,7 +500,7 @@ describe("RailguardApplication", () => {
       }
       const foreign = await runtime.application.prepareInstall(
         baseline,
-        [componentRef("git-gate:pre-commit-check")],
+        [componentRef("git-gate:pre-commit-check"), goQuality],
         [codex],
       );
       expect(foreign.plan?.kind).toBe("blocked");
@@ -514,7 +516,7 @@ describe("RailguardApplication", () => {
       }
       const install = await runtime.application.prepareInstall(
         clean,
-        [componentRef("git-gate:pre-commit-check")],
+        [componentRef("git-gate:pre-commit-check"), goQuality],
         [codex],
       );
       if (install.plan?.kind !== "ready") {
@@ -563,7 +565,7 @@ describe("RailguardApplication", () => {
       }
       const prepared = await runtime.application.prepareInstall(
         scan,
-        [componentRef("git-gate:pre-commit-check")],
+        [componentRef("git-gate:pre-commit-check"), goQuality],
         [codex],
       );
 

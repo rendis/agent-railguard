@@ -419,7 +419,13 @@ describe.sequential("production CLI contract", () => {
   it("activates the declared Git hooks in a clone that lacks them, but keeps a developer's own", async () => {
     const repository = await goRepository("gate-activation");
     try {
-      expect((await cli(["init", "--add", "git-gate:pre-commit-check", "--harness", "codex", "--yes", "--cwd", repository.root])).code).toBe(0);
+      const withoutProfile = await cli(["init", "--add", "git-gate:pre-commit-check", "--harness", "codex", "--yes", "--cwd", repository.root, "--format", "json"]);
+      expect(withoutProfile.code).toBe(5);
+      expect(JSON.parse(withoutProfile.stdout)).toMatchObject({
+        verdict: "BLOCKED",
+        diagnostics: expect.arrayContaining([expect.objectContaining({ code: "resolution.git-gate.profile-missing" })]),
+      });
+      expect((await cli(["init", "--add", "git-gate:pre-commit-check", "verification-profile:change-guard", "--harness", "codex", "--yes", "--cwd", repository.root])).code).toBe(0);
       const hooksPath = async () => (await execute("git", ["-C", repository.root, "config", "--get", "core.hooksPath"]).catch(() => ({ stdout: "" }))).stdout.trim();
       await execute("git", ["-C", repository.root, "config", "--unset", "core.hooksPath"]);
 

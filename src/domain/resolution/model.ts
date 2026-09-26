@@ -80,6 +80,7 @@ export interface ResolvedAssociation {
 export type ResolutionBlocker =
   | { readonly kind: "unknown-selection"; readonly component: ComponentRef }
   | { readonly kind: "non-selectable-component"; readonly component: ComponentRef }
+  | { readonly kind: "git-gate-without-profile"; readonly component: ComponentRef }
   | {
       readonly kind: "conflict";
       readonly pair: readonly [ComponentRef, ComponentRef];

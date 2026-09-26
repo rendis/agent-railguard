@@ -247,7 +247,7 @@
     "gitGate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "description", "details", "event", "operation", "relations"],
+      "required": ["version", "description", "details", "event", "operation"],
       "properties": {
         "version": {
           "$ref": "#/$defs/semver"

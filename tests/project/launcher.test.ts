@@ -29,7 +29,11 @@ beforeAll(async () => {
   if (catalogResult.kind !== "ready") throw new Error("Expected ready catalog");
   const resolution = new DefaultResolver().resolve({
     catalog: catalogResult.catalog,
-    directSelections: [componentRef("git-gate:pre-commit-check"), componentRef("agent-hook:stop-check")],
+    directSelections: [
+      componentRef("git-gate:pre-commit-check"),
+      componentRef("agent-hook:stop-check"),
+      componentRef("verification-profile:change-guard"),
+    ],
     projectUnits: [],
     targets: [{
       target: harnessTargetId("codex"),

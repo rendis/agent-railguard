@@ -361,48 +361,32 @@ catalog:
 
   git-gates:
     pre-commit-check:
-      version: 0.2.0
+      version: 0.3.0
       description: Run `railguard check --changed` before a local commit.
-      details: Add the check stage of every selected verification profile to the managed pre-commit hook. Only the change since the base branch is judged.
+      details: Add the check stage of every selected verification profile to the managed pre-commit hook. Only the change since the base branch is judged. The plan blocks until at least one verification profile is selected.
       event: pre-commit
       operation: check
-      relations:
-        - kind: requires
-          target: verification-profile:go-quality
-          reason: The hook operation requires the Go Quality check provider.
 
     pre-commit-verify:
-      version: 0.2.0
+      version: 0.3.0
       description: Run `railguard verify --changed` before a local commit.
-      details: Add the verify stage of every selected verification profile to the managed pre-commit hook for teams that require full verification before every commit.
+      details: Add the verify stage of every selected verification profile to the managed pre-commit hook for teams that require full verification before every commit. The plan blocks until at least one verification profile is selected.
       event: pre-commit
       operation: verify
-      relations:
-        - kind: requires
-          target: verification-profile:go-quality
-          reason: The hook operation requires the Go Quality verify provider.
 
     pre-push-check:
-      version: 0.2.0
+      version: 0.3.0
       description: Run `railguard check --changed` before a local push.
-      details: Add the check stage of every selected verification profile to the managed pre-push hook. It provides a faster push gate than full verification.
+      details: Add the check stage of every selected verification profile to the managed pre-push hook. It provides a faster push gate than full verification. The plan blocks until at least one verification profile is selected.
       event: pre-push
       operation: check
-      relations:
-        - kind: requires
-          target: verification-profile:go-quality
-          reason: The hook operation requires the Go Quality check provider.
 
     pre-push-verify:
-      version: 0.2.0
+      version: 0.3.0
       description: Run `railguard verify --changed` before a local push.
-      details: Add the verify stage of every selected verification profile to the managed pre-push hook.
+      details: Add the verify stage of every selected verification profile to the managed pre-push hook. The plan blocks until at least one verification profile is selected.
       event: pre-push
       operation: verify
-      relations:
-        - kind: requires
-          target: verification-profile:go-quality
-          reason: The hook operation requires the Go Quality verify provider.
   agent-hooks:
     stop-check:
       version: 0.1.0

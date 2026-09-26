@@ -189,31 +189,6 @@ export function validateCatalog(
         );
       }
     }
-
-    if (component.kind === "git-gate") {
-      const requiredProfiles = component.relations
-        .filter((relation) => relation.kind === "requires")
-        .map((relation) => uniqueComponents.get(relation.target)?.component)
-        .filter(
-          (target): target is Extract<CatalogComponent, { readonly kind: "verification-profile" }> =>
-            target?.kind === "verification-profile",
-        );
-      if (requiredProfiles.length !== 1) {
-        diagnostics.push(
-          diagnostic({
-            code: "catalog.git-gate.profile-invalid",
-            phase: "catalog",
-            message: "A Git gate must require exactly one verification profile.",
-            path: relativePosixPath("railguard.yaml"),
-            pointer: `${entry.authoringPointer}/relations`,
-            subjects: [component.ref],
-            evidence: component.relations
-              .filter((relation) => relation.kind === "requires")
-              .map((relation) => relation.target),
-          }),
-        );
-      }
-    }
   }
 
   const cycle = findHardCycle([...uniqueComponents.values()].map((entry) => entry.component));
