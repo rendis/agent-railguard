@@ -188,6 +188,25 @@ class GoUnit {
         const summary = `Coverage: core ${percent(core)}, overall ${percent(overall)}`;
         return problems.length === 0 ? passed(summary, warnings) : failed(summary, [...problems, ...warnings]);
       }
+      // A changed file without blocks has no statements, unless its package never ran: a build or
+      // test failure leaves the package out of the profile, which must not read as covered.
+      const measured = new Set(blocks.map((block) => posix.dirname(block.file)));
+      const inCoverPackages = (file: string) =>
+        coverPackages.some((pattern) => matchesPackagePattern(posix.dirname(file), pattern));
+      const changedFiles = [...changedSources.keys()].sort();
+      const unitPath = (file: string) => posix.join(this.#request.unitRoot, file);
+      const unmeasured = result.exitCode === 0
+        ? []
+        : changedFiles.filter((file) => inCoverPackages(file) && !measured.has(posix.dirname(file)));
+      if (unmeasured.length > 0) {
+        return failed("Coverage of changed files could not be measured", [
+          ...unmeasured.map((file) => `${unitPath(file)}: its package did not build or its tests did not run`),
+          ...output(result),
+        ]);
+      }
+      const outside = changedFiles
+        .filter((file) => !inCoverPackages(file))
+        .map((file) => `${unitPath(file)}: not measured, outside core_cover_packages and overall_cover_packages`);
       const changedMin = numberParam(this.#request.params.changed_min, 80);
       const core = changedLineCoverage(blocks, changedSources, isCore);
       const other = changedLineCoverage(blocks, changedSources, (file) => !isCore(file));
@@ -196,11 +215,12 @@ class GoUnit {
         ...belowThreshold("changed lines", other, changedMin),
       ];
       const uncovered = [...core.uncovered, ...other.uncovered]
-        .map(([file, missing]) => `${posix.join(this.#request.unitRoot, file)}: uncovered lines ${lineRanges(missing)}`);
-      const summary = `Changed-line coverage: core ${percent(core)}, other ${percent(other)}`;
+        .map(([file, missing]) => `${unitPath(file)}: uncovered lines ${lineRanges(missing)}`);
+      const summary = `Changed-line coverage: core ${percent(core)}, other ${percent(other)}` +
+        (outside.length === 0 ? "" : `; ${outside.length} changed file(s) not measured`);
       return problems.length === 0
-        ? passed(summary, warnings)
-        : failed(summary, [...problems, ...uncovered, ...warnings]);
+        ? passed(summary, [...outside, ...warnings])
+        : failed(summary, [...problems, ...uncovered, ...outside, ...warnings]);
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }

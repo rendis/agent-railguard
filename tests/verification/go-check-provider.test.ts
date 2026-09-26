@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { appendFile, mkdir, realpath, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -95,6 +95,38 @@ describe.skipIf(!hasGo)("GoCheckProvider against a real module", () => {
       inputs: { core_packages: ["./internal/core/..."] },
     }));
     expect(covered).toMatchObject({ status: "passed", summary: expect.stringContaining("core 100.0%") });
+  }, 180_000);
+
+  it("fails coverage when a changed package did not build instead of reading it as covered", async () => {
+    await writeFile(join(root, "internal/core/order/broken.go"), "package order\n\nfunc Broken() int { return undefined }\n");
+    try {
+      const outcome = await provider.run("go-coverage", request({
+        changes: await new NodeChangeSetReader(process).read(root),
+        params: { core_min: 100, changed_min: 80 },
+        inputs: { core_packages: ["./internal/core/..."] },
+      }));
+
+      expect(outcome).toMatchObject({ status: "failed", summary: "Coverage of changed files could not be measured" });
+      expect(outcome.details).toContain("internal/core/order/order.go: its package did not build or its tests did not run");
+    } finally {
+      await rm(join(root, "internal/core/order/broken.go"));
+    }
+  }, 180_000);
+
+  it("names changed files outside the measured packages", async () => {
+    await mkdir(join(root, "tools/gen"), { recursive: true });
+    await writeFile(join(root, "tools/gen/gen.go"), "package gen\n\nfunc Gen() int { return 1 }\n");
+    try {
+      const outcome = await provider.run("go-coverage", request({
+        changes: await new NodeChangeSetReader(process).read(root),
+        inputs: { core_packages: ["./internal/core/..."] },
+      }));
+
+      expect(outcome.summary).toContain("1 changed file(s) not measured");
+      expect(outcome.details).toContain("tools/gen/gen.go: not measured, outside core_cover_packages and overall_cover_packages");
+    } finally {
+      await rm(join(root, "tools"), { recursive: true });
+    }
   }, 180_000);
 
   it("reports a missing lint configuration or tool as unavailable, never as a pass", async () => {
