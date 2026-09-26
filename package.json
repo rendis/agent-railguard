@@ -14,9 +14,10 @@
   "packageManager": "pnpm@11.21.0",
   "scripts": {
     "build": "node esbuild.config.mjs",
-    "check": "pnpm run typecheck && pnpm run test:coverage && pnpm run check:boundaries && pnpm run build && pnpm run check:bundle",
+    "check": "pnpm run typecheck && pnpm run test:coverage && pnpm run check:skills && pnpm run check:boundaries && pnpm run build && pnpm run check:bundle",
     "check:boundaries": "depcruise src --config .dependency-cruiser.cjs",
     "check:bundle": "node scripts/verification/smoke-bundle.mjs",
+    "check:skills": "node scripts/verification/test-skill-scripts.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
