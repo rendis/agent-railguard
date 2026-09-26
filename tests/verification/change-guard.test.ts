@@ -156,18 +156,18 @@ describe("ChangeReview", () => {
     expect(missing.details.join("\n")).toContain(".knowledge-os-handoffs/work-1--svc/scope.md");
 
     const invalid = await record(review, root, [{ handoff: "work-1--svc", criterion: "A returns 1", status: "met", evidence: ["a.go:99"] }]);
-    expect(invalid).toEqual({ ok: false, message: 'Evidence a.go:99 for "A returns 1" does not exist.' });
+    expect(invalid).toEqual({ outcome: "invalid", message: 'Evidence a.go:99 for "A returns 1" does not exist.' });
 
     const unmet = await record(review, root, [
       { handoff: "work-1--svc", criterion: "A returns 1", status: "met", evidence: ["a.go:3"] },
       { handoff: "work-1--svc", criterion: "B exists", status: "not_met", evidence: [] },
     ]);
-    expect(unmet.ok).toBe(false);
+    expect(unmet.outcome).toBe("not-met");
     expect((await review.evaluate(root, await changeSets.read(root))).summary).toBe("1 handoff criterion(s) not met");
 
     expect(await record(review, root, [
       { handoff: "work-1--svc", criterion: "A returns 1", status: "met", evidence: ["a.go:3"] },
-    ])).toMatchObject({ ok: true });
+    ])).toMatchObject({ outcome: "recorded" });
     expect((await review.evaluate(root, await changeSets.read(root))).status).toBe("passed");
 
     await writeFile(join(root, "a.go"), "package a\n\nfunc A() int { return 2 }\n");
@@ -185,7 +185,7 @@ describe("ChangeReview", () => {
     const { root, git } = await repository({ "a.go": "package a\n", ".gitignore": ".knowledge-os-handoffs/\n" });
     const review = new ChangeReview(process, changeSets);
     expect(await review.brief(root)).toContain("nothing to review");
-    expect(await review.record(root, join(root, "missing.json"))).toEqual({ ok: false, message: "No active handoff to record a review for." });
+    expect(await review.record(root, join(root, "missing.json"))).toEqual({ outcome: "blocked", message: "No active handoff to record a review for." });
 
     await handoff(root, "work-2--svc", "v0001");
     await git("checkout", "-q", "-b", "feature");

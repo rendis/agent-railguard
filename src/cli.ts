@@ -47,6 +47,7 @@ import { runWizard } from "./tui/wizard.js";
 
 declare const __RAILGUARD_VERSION__: string;
 const version = __RAILGUARD_VERSION__;
+const reviewRecordExitCodes = Object.freeze({ recorded: 0, invalid: 2, blocked: 5, "not-met": 8 });
 
 const program = new Command()
   .name("railguard")
@@ -235,7 +236,7 @@ for (const stage of ["check", "verify"] as const) {
       .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch"),
     ["text", "json"],
   ).action(async (_options, command: Command) => {
-    await runVerification(stage, command);
+    await direct(() => runVerification(stage, command));
   });
 }
 
@@ -244,13 +245,17 @@ const review = program
   .description("Show what a review of this change against its active handoff needs")
   .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch")
   .action(async (_options, command: Command) => {
-    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-    const runtime = await createDefaultApplication();
-    try {
-      process.stdout.write(await runtime.review.brief(rootFrom(options), baseFrom(options)));
-    } finally {
-      await runtime.dispose();
-    }
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const root = rootFrom(options);
+      const base = baseFrom(options);
+      const runtime = await createDefaultApplication();
+      try {
+        process.stdout.write(await runtime.review.brief(root, base));
+      } finally {
+        await runtime.dispose();
+      }
+    });
   });
 
 review
@@ -258,15 +263,19 @@ review
   .description("Record a reviewer's criteria JSON for the current change content")
   .argument("<file>", "JSON file with the reviewed criteria")
   .action(async (file: string, _options, command: Command) => {
-    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-    const runtime = await createDefaultApplication();
-    try {
-      const result = await runtime.review.record(rootFrom(options), file, baseFrom(options));
-      process.stdout.write(`${result.message}\n`);
-      process.exitCode = result.ok ? 0 : 8;
-    } finally {
-      await runtime.dispose();
-    }
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const root = rootFrom(options);
+      const base = baseFrom(options);
+      const runtime = await createDefaultApplication();
+      try {
+        const result = await runtime.review.record(root, file, base);
+        process.stdout.write(`${result.message}\n`);
+        process.exitCode = reviewRecordExitCodes[result.outcome];
+      } finally {
+        await runtime.dispose();
+      }
+    });
   });
 
 program
@@ -277,34 +286,36 @@ program
   .requiredOption("--harness <harness>", "claude-code, codex or cursor")
   .option("--operation <operation>", "check or verify", "check")
   .action(async (_options, command: Command) => {
-    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-    const harness = String(options.harness);
-    const stage = String(options.operation);
-    if (harness !== "claude-code" && harness !== "codex" && harness !== "cursor") {
-      throw new CommandInputError(`Unsupported hook harness: ${harness}`);
-    }
-    if (stage !== "check" && stage !== "verify") {
-      throw new CommandInputError(`Unsupported hook operation: ${stage}`);
-    }
-    const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
-    const runtime = await createDefaultApplication();
-    try {
-      const response = await runStopHook(
-        {
-          harness,
-          root: rootFrom(options),
-          stage,
-          input,
-          stateDirectory: join(tmpdir(), "railguard-stop-hooks"),
-        },
-        runtime.verification,
-        (report) => renderVerificationReport(report, true),
-      );
-      process.stdout.write(response.stdout);
-      process.stderr.write(response.stderr);
-    } finally {
-      await runtime.dispose();
-    }
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const harness = String(options.harness);
+      const stage = String(options.operation);
+      if (harness !== "claude-code" && harness !== "codex" && harness !== "cursor") {
+        throw new CommandInputError(`Unsupported hook harness: ${harness}`);
+      }
+      if (stage !== "check" && stage !== "verify") {
+        throw new CommandInputError(`Unsupported hook operation: ${stage}`);
+      }
+      const input = process.stdin.isTTY ? "" : await readStream(process.stdin);
+      const runtime = await createDefaultApplication();
+      try {
+        const response = await runStopHook(
+          {
+            harness,
+            root: rootFrom(options),
+            stage,
+            input,
+            stateDirectory: join(tmpdir(), "railguard-stop-hooks"),
+          },
+          runtime.verification,
+          (report) => renderVerificationReport(report, true),
+        );
+        process.stdout.write(response.stdout);
+        process.stderr.write(response.stderr);
+      } finally {
+        await runtime.dispose();
+      }
+    });
   });
 
 addFormat(program.command("doctor").description("Run read-only project diagnostics"))
@@ -439,6 +450,22 @@ async function invoke(
   }
 }
 
+/**
+ * Runs a command that writes its own report instead of a command-result envelope. Invalid input
+ * still exits 2 like every other command; anything else reaches the internal-error handler.
+ */
+async function direct(action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (!isInputError(error)) throw error;
+    process.stderr.write(
+      `${errorMessage(error)}\nRun railguard --help or the command-specific --help and correct the input.\n`,
+    );
+    process.exitCode = 2;
+  }
+}
+
 async function executeProduct(
   request: ProductCommandRequest,
   format: OutputFormat,
@@ -528,19 +555,21 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
 
 async function runVerification(stage: "check" | "verify", command: Command): Promise<void> {
   const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-  const format = outputFormat(options);
+  const format = outputFormat(options, ["text", "json"]);
   const plain = options.plain === true || !process.stdout.isTTY;
   const sourcePath = sourceFrom(options);
+  const root = rootFrom(options);
+  const base = baseFrom(options);
   const runtime = await createDefaultApplication({
     ...(sourcePath === undefined ? {} : { sourcePath }),
   });
   try {
     const report = await runtime.verification.run(
       {
-        root: rootFrom(options),
+        root,
         stage,
         changed: options.changed === true,
-        ...(options.base === undefined ? {} : { base: requiredString(options.base, "--base") }),
+        ...(base === undefined ? {} : { base }),
       },
       (event) => {
         if (format !== "text" || !process.stderr.isTTY) return;
@@ -556,13 +585,16 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
   }
 }
 
-function outputFormat(options: Readonly<Record<string, unknown>>): OutputFormat {
+function outputFormat(
+  options: Readonly<Record<string, unknown>>,
+  supported: readonly OutputFormat[] = ["text", "json", "ndjson"],
+): OutputFormat {
   if (options.plain === true) return "text";
   const value = String(options.format ?? "text");
-  if (value !== "text" && value !== "json" && value !== "ndjson") {
+  if (!(supported as readonly string[]).includes(value)) {
     throw new CommandInputError(`Unsupported output format: ${value}`);
   }
-  return value;
+  return value as OutputFormat;
 }
 
 function baseFrom(options: Readonly<Record<string, unknown>>): string | undefined {

@@ -149,6 +149,15 @@ export class ChangeCheckProvider implements CheckProvider {
  * handoff and the diff) judges each criterion; Railguard records that judgment for the exact change
  * content and verifies mechanically that it is current, covers every handoff and cites real files.
  */
+/**
+ * `invalid`: the reviewer's file is unreadable or does not hold up; `blocked`: there is nothing to
+ * record a review for; `not-met`: recorded, but a criterion is not met.
+ */
+export interface ReviewRecordResult {
+  readonly outcome: "recorded" | "not-met" | "invalid" | "blocked";
+  readonly message: string;
+}
+
 export class ChangeReview {
   public constructor(
     private readonly process: ProcessRunner,
@@ -197,17 +206,17 @@ export class ChangeReview {
   }
 
   /** Stores a reviewer's criteria for the current change content, rejecting incomplete input. */
-  public async record(root: string, inputFile: string, base?: string): Promise<{ readonly ok: boolean; readonly message: string }> {
+  public async record(root: string, inputFile: string, base?: string): Promise<ReviewRecordResult> {
     const handoffs = await readActiveHandoffs(root);
-    if (handoffs.length === 0) return { ok: false, message: "No active handoff to record a review for." };
+    if (handoffs.length === 0) return { outcome: "blocked", message: "No active handoff to record a review for." };
     let input: unknown;
     try {
       input = JSON.parse(await readFile(inputFile, "utf8"));
     } catch (error) {
-      return { ok: false, message: `Cannot read the review: ${error instanceof Error ? error.message : String(error)}` };
+      return { outcome: "invalid", message: `Cannot read the review: ${error instanceof Error ? error.message : String(error)}` };
     }
     const parsed = parseReviewInput(input);
-    if ("errors" in parsed) return { ok: false, message: parsed.errors.join("\n") };
+    if ("errors" in parsed) return { outcome: "invalid", message: parsed.errors.join("\n") };
     const changes = await this.changeSets.read(root, base);
     const record: ReviewRecord = {
       schema: "railguard/review/v1",
@@ -218,13 +227,13 @@ export class ChangeReview {
       criteria: parsed.criteria,
     };
     const evaluation = evaluateReview(record, handoffs, record.change_digest, (reference) => evidenceExists(root, reference));
-    if (evaluation.invalid.length > 0) return { ok: false, message: evaluation.invalid.join("\n") };
+    if (evaluation.invalid.length > 0) return { outcome: "invalid", message: evaluation.invalid.join("\n") };
     const path = await this.#recordPath(root);
     await mkdir(join(path, ".."), { recursive: true });
     await writeFile(path, `${JSON.stringify(record, null, 2)}\n`);
     const unmet = evaluation.unmet.length;
     return {
-      ok: unmet === 0,
+      outcome: unmet === 0 ? "recorded" : "not-met",
       message: unmet === 0
         ? `Review recorded for ${handoffs.map((handoff) => handoff.family).join(", ")}.`
         : `Review recorded with ${unmet} criterion(s) not met:\n${evaluation.unmet.join("\n")}`,

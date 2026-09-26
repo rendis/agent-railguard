@@ -325,6 +325,26 @@ describe.sequential("production CLI contract", () => {
     }
   }, 45_000);
 
+  it("exits 2 on invalid input for commands that write their own report", async () => {
+    const repository = await goRepository("direct-input");
+    try {
+      for (const args of [
+        ["verify", "--format", "ndjson"],
+        ["check", "--changed", "--base", ""],
+        ["review", "--base", ""],
+        ["hook", "stop", "--harness", "vscode"],
+      ]) {
+        const result = await cli([...args, "--cwd", repository.root]);
+        expect(result.code, `${args.join(" ")}: ${result.stderr}`).toBe(2);
+        expect(result.stderr).toContain("--help");
+      }
+      const unreviewable = await cli(["review", "record", join(repository.root, "missing.json"), "--cwd", repository.root]);
+      expect(unreviewable.code).toBe(5);
+    } finally {
+      await repository.cleanup();
+    }
+  }, 30_000);
+
   it("supports catalog, doctor and repair queries", async () => {
     const repository = await goRepository("queries");
     try {
