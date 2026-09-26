@@ -32,6 +32,7 @@ import {
   renderRun,
   type OutputFormat,
 } from "./cli/output.js";
+import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
 import { runStopHook } from "./application/agent-stop-hook.js";
 import { createDefaultApplication } from "./application/composition-root.js";
@@ -380,14 +381,28 @@ program
 program
   .command("issue")
   .description("Print the guide and template to report a bug or suggest an improvement")
-  .addArgument(new Argument("<kind>", "what to report").choices(issueKinds))
-  .action((kind: IssueKind, _options, command: Command) => {
-    const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-    process.stdout.write(issueReport(kind, {
-      engineVersion,
-      pinnedVersion: repositoryPinnedVersion(rootFrom(options)),
-      platform: `${process.platform}-${process.arch}`,
-    }, releaseRepository));
+  .addArgument(new Argument("[kind]", "what to report").choices(issueKinds))
+  .option("--check <draft>", "find project, personal and secret data in an issue draft")
+  .action(async (kind: IssueKind | undefined, _options, command: Command) => {
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const draft = options.check === undefined ? undefined : requiredString(options.check, "--check");
+      if ((kind === undefined) === (draft === undefined)) {
+        throw new CommandInputError("issue requires either a kind (bug or improvement) or --check <draft>");
+      }
+      const root = rootFrom(options);
+      if (draft !== undefined) {
+        const findings = draftFindings(await readFile(resolve(draft), "utf8"), draftContext(root), releaseRepository);
+        process.stdout.write(renderDraftFindings(draft, findings));
+        process.exitCode = findings.length === 0 ? 0 : 8;
+        return;
+      }
+      process.stdout.write(issueReport(kind as IssueKind, {
+        engineVersion,
+        pinnedVersion: repositoryPinnedVersion(root),
+        platform: `${process.platform}-${process.arch}`,
+      }, releaseRepository));
+    });
   });
 
 addFormat(program.command("doctor").description("Run read-only project diagnostics"))
@@ -843,7 +858,8 @@ Engine update:
 
 Reporting:
   railguard issue bug|improvement prints the guide and template for a GitHub issue that
-  describes Railguard without any project, company or personal data.
+  describes Railguard without any project, company or personal data; railguard issue
+  --check DRAFT finds the data a machine can recognize before it is published.
 
 Exit codes:
   0 ready/succeeded/no changes; 2 invalid input; 3 invalid scope; 4 readiness blocked;
@@ -924,11 +940,17 @@ Output: --format text|json.`);
 Examples:
   railguard issue bug
   railguard issue improvement
+  railguard issue --check /tmp/issue.md
 
-Effect: prints the reporting guide, the GitHub issue template of that kind and the
-Railguard version and platform. It reads nothing else from the repository and sends
-nothing: the issue must hold no company, project, person, path or secret, and an agent
-publishes it only after a person approves the draft.`);
+Effect: with a kind, prints the reporting guide, the GitHub issue template of that kind and
+the Railguard version and platform. The issue must hold no company, project, person, path or
+secret, and an agent publishes it only after a person approves the draft.
+--check finds in a draft the repository's and the person's names known to Git, emails,
+absolute paths, internal URLs, IP addresses, secrets and commits of the repository. It
+cannot recognize every company or project name, so a person still reads the draft.
+Nothing is sent anywhere.
+
+Exit codes: 0 no finding; 2 invalid input or unreadable draft; 8 findings.`);
   command(root, "doctor").addHelpText("after", commonReadHelp(`
 Examples:
   railguard doctor --cwd . --format json
