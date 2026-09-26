@@ -30,6 +30,11 @@ export interface CheckRequest {
   readonly inputs: Readonly<Record<string, readonly string[]>>;
   /** Null in full mode: the whole unit is judged. */
   readonly changes: ChangeSet | null;
+  /**
+   * Where a coverage check also writes the profile it measured, for tools such as Sonar. A
+   * relative path resolves against the project unit.
+   */
+  readonly coverageOut?: string;
   readonly signal?: AbortSignal;
 }
 

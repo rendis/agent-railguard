@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { appendFile, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -95,6 +95,20 @@ describe.skipIf(!hasGo)("GoCheckProvider against a real module", () => {
       inputs: { core_packages: ["./internal/core/..."] },
     }));
     expect(covered).toMatchObject({ status: "passed", summary: expect.stringContaining("core 100.0%") });
+  }, 180_000);
+
+  it("writes the measured coverage profile where asked, relative to the unit", async () => {
+    const outcome = await provider.run("go-coverage", request({
+      changes,
+      inputs: { core_packages: ["./internal/core/..."] },
+      coverageOut: "reports/coverage.out",
+    }));
+
+    expect(["passed", "failed"]).toContain(outcome.status);
+    const profile = await readFile(join(root, "reports/coverage.out"), "utf8");
+    expect(profile.split("\n")[0]).toMatch(/^mode: /u);
+    expect(profile).toContain("example.com/svc/internal/core/order/order.go:");
+    await rm(join(root, "reports"), { recursive: true });
   }, 180_000);
 
   it("fails coverage when a changed package did not build instead of reading it as covered", async () => {

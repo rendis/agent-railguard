@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,6 +10,7 @@ import { sha256 } from "../../src/domain/shared/types.js";
 
 const execute = promisify(execFile);
 const cliPath = resolve("dist/cli.js");
+const engineVersion = (JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { version: string }).version;
 
 beforeAll(async () => {
   await execute(process.execPath, ["esbuild.config.mjs"], { cwd: resolve(".") });
@@ -16,7 +18,7 @@ beforeAll(async () => {
 
 describe.sequential("production CLI contract", () => {
   it("exposes help/version and never opens a hidden prompt without a TTY", async () => {
-    expect((await cli(["--version"])).stdout.trim()).toBe("0.1.0");
+    expect((await cli(["--version"])).stdout.trim()).toBe(engineVersion);
     expect((await cli(["--help"])).stdout).toContain("railguard [options] [command]");
     const noCommand = await cli([]);
     expect(noCommand.code).toBe(2);
@@ -158,7 +160,7 @@ describe.sequential("production CLI contract", () => {
       ]);
       expect(current.code).toBe(0);
       expect(JSON.parse(current.stdout).verdict).toBe("NO_CHANGES");
-      expect((await cli(["--version"])).stdout.trim()).toBe("0.1.0");
+      expect((await cli(["--version"])).stdout.trim()).toBe(engineVersion);
     } finally {
       await Promise.all([
         repository.cleanup(),
@@ -359,7 +361,7 @@ describe.sequential("production CLI contract", () => {
       expect(init.code, init.stderr).toBe(0);
       const launcher = join(repository.root, ".railguard/bin/railguard");
       const pinned = await readFile(launcher, "utf8");
-      expect(pinned).toContain("version=0.1.0\n");
+      expect(pinned).toContain(`version=${engineVersion}\n`);
 
       const release = join(workspace, "release");
       const asset = `railguard-${process.platform}-${process.arch}`;
@@ -370,13 +372,13 @@ describe.sequential("production CLI contract", () => {
       const environment = { XDG_CACHE_HOME: join(workspace, "cache"), RAILGUARD_DOWNLOAD_URL: `file://${release}` };
 
       const check = await cli(["update", "--check", "--to", "9.9.9", "--cwd", repository.root], environment);
-      expect(check).toMatchObject({ code: 6, stdout: "Railguard 9.9.9 is available; this repository runs 0.1.0.\n" });
+      expect(check).toMatchObject({ code: 6, stdout: `Railguard 9.9.9 is available; this repository runs ${engineVersion}.\n` });
 
       const update = await cli(["update", "--yes", "--to", "9.9.9", "--cwd", repository.root], environment);
       expect(update.code, update.stderr).toBe(0);
       expect(update.stdout).toBe(`engine 9.9.9 ran sync --yes --cwd ${repository.root} --format text\n`);
 
-      await writeFile(launcher, pinned.replace("version=0.1.0", "version=9.9.9"));
+      await writeFile(launcher, pinned.replace(`version=${engineVersion}`, "version=9.9.9"));
       const delegated = await cli(["status", "--cwd", repository.root], environment);
       expect(delegated).toMatchObject({ code: 0, stdout: `engine 9.9.9 ran status --cwd ${repository.root}\n` });
       await writeFile(launcher, pinned);
@@ -384,7 +386,7 @@ describe.sequential("production CLI contract", () => {
       await mkdir(join(workspace, "cache", "railguard"), { recursive: true });
       await writeFile(join(workspace, "cache", "railguard", "latest.json"), JSON.stringify({ checked_at: Date.now(), latest: "9.9.9" }));
       const notified = await cli(["status", "--cwd", repository.root, "--format", "json"], { ...environment, RAILGUARD_NO_UPDATE_CHECK: "", CI: "" });
-      expect(notified.stderr).toContain("railguard: Railguard 9.9.9 is available; this repository runs 0.1.0.");
+      expect(notified.stderr).toContain(`railguard: Railguard 9.9.9 is available; this repository runs ${engineVersion}.`);
       expect(JSON.parse(notified.stdout)).toMatchObject({ command: "status" });
       const quietInCi = await cli(["status", "--cwd", repository.root], { ...environment, RAILGUARD_NO_UPDATE_CHECK: "", CI: "true" });
       expect(quietInCi.stderr).not.toContain("is available");
