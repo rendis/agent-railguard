@@ -27,12 +27,11 @@ describe("interactive wizard in a PTY", () => {
     await execute("git", ["init", "--quiet", repository.root]);
     const session = startPty(control, ["--cwd", repository.root]);
     try {
-      await waitFor(() => session.output().includes("What do you want to do?"), 20_000, session.output);
+      await session.answer("What do you want to do?", "\u001B[A");
       expect(session.output()).toContain("Configure this repository");
       expect(session.output()).toContain("Stack        go");
-      session.write("\u001B[A");
-      session.write("\r");
-      const exit = await waitForExit(session.child, 20_000);
+      await session.answer("● Quit", "\r");
+      const exit = await waitForExit(session.child, 20_000, session.output);
 
       expect(exit.signal).toBeNull();
       expect(exit.code, session.output().slice(-4_000)).toBe(0);
@@ -51,14 +50,11 @@ describe("interactive wizard in a PTY", () => {
     await execute("git", ["init", "--quiet", repository.root]);
     const session = startPty(source, ["--source", source, "--cwd", repository.root]);
     try {
-      await waitFor(() => session.output().includes("What do you want to do?"), 20_000, session.output);
-      session.write("\r");
-      await waitFor(() => session.output().includes("local-only-go"), 20_000, session.output);
-      session.write("\u0003");
-      await waitFor(() => session.output().split("What do you want to do?").length > 2, 20_000, session.output);
-      session.write("\u001B[A");
-      session.write("\r");
-      const exit = await waitForExit(session.child, 20_000);
+      await session.answer("What do you want to do?", "\r");
+      await session.answer("local-only-go", "\u0003");
+      await session.answer("What do you want to do?", "\u001B[A");
+      await session.answer("● Quit", "\r");
+      const exit = await waitForExit(session.child, 20_000, session.output);
       expect(exit.code, session.output().slice(-4_000)).toBe(0);
     } finally {
       session.stop();
@@ -74,14 +70,21 @@ function startPty(control: string, args: readonly string[]) {
     process.execPath, cli, ...args,
   ], { cwd: resolve("."), env: { ...process.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "pipe"] });
   let output = "";
+  let answered = 0;
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => { output += chunk; });
   child.stderr.on("data", (chunk: string) => { output += chunk; });
+  const visible = () => output.replace(/\u001B\[[0-9;?]*[A-Za-z]/g, "");
   return {
     child,
-    output: () => output.replace(/\u001B\[[0-9;?]*[A-Za-z]/g, ""),
-    write: (text: string) => child.stdin.write(text),
+    output: visible,
+    /** Waits for `prompt` to render after the previous answer, then types `keys`. */
+    answer: async (prompt: string, keys: string) => {
+      await waitFor(() => visible().slice(answered).includes(prompt), 20_000, visible);
+      answered = visible().length;
+      child.stdin.write(keys);
+    },
     stop: () => {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
     },
@@ -141,12 +144,13 @@ async function waitFor(
 async function waitForExit(
   child: ReturnType<typeof spawn>,
   timeout: number,
+  evidence: () => string = () => "",
 ): Promise<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return { code: child.exitCode, signal: child.signalCode };
   }
   return await new Promise((resolveExit, reject) => {
-    const timeoutId = setTimeout(() => reject(new Error("Timed out waiting for PTY exit")), timeout);
+    const timeoutId = setTimeout(() => reject(new Error(`Timed out waiting for PTY exit:\n${evidence().slice(-4_000)}`)), timeout);
     child.once("error", reject);
     child.once("exit", (code, signal) => {
       clearTimeout(timeoutId);
