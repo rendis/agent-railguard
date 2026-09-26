@@ -5,7 +5,7 @@ guardrails, in [guardrails.md](guardrails.md).
 
 ## Status
 
-- Current release: `v0.1.13`, with binaries for macOS, Linux, and Windows on arm64/x64 and
+- Current release: `v0.1.12`, with binaries for macOS, Linux, and Windows on arm64/x64 and
   `SHA256SUMS`, published by `release.yml` on pushing a `vX.Y.Z` tag. The `rendis/agent-railguard`
   repository is private: downloads need an authenticated `gh`, and GitHub does not offer
   provenance attestation.

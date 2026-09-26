@@ -37,7 +37,7 @@ describe("issue draft check", () => {
       [3, "commit", "3f9c2ab"],
       [3, "commit", "4105278"],
     ]);
-    expect(renderDraftFindings("issue.md", findings)).toContain("issue.md:1:4 nombre del repositorio, su organización o la persona: ledger-api");
+    expect(renderDraftFindings("issue.md", findings)).toContain("issue.md:1:4 repository, organization or person name: ledger-api");
   });
 
   it("accepts markers, public links, generic words and the Railguard repository itself", () => {
@@ -52,7 +52,7 @@ describe("issue draft check", () => {
   it.each(issueKinds)("does not flag its own %s guide and template", (kind) => {
     const report = issueReport(kind, { engineVersion: "1.2.3", pinnedVersion: "1.0.0", platform: "linux-x64" }, repository);
     expect(draftFindings(report, { terms: [], isCommit: () => false }, repository)).toEqual([]);
-    expect(renderDraftFindings("draft.md", [])).toContain("Sin hallazgos");
+    expect(renderDraftFindings("draft.md", [])).toContain("No findings");
   });
 
   it("collects the repository, remote, branch and person names from Git", async () => {

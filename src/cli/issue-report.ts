@@ -35,19 +35,19 @@ export function issueTemplate(text: string): IssueTemplate {
 export function issueReport(kind: IssueKind, environment: IssueEnvironment, repository: string): string {
   const { label, body } = issueTemplate(templates[kind]);
   const pinned = environment.pinnedVersion !== null && environment.pinnedVersion !== environment.engineVersion
-    ? ` (este repositorio fija ${environment.pinnedVersion})`
+    ? ` (this repository pins ${environment.pinnedVersion})`
     : "";
   return [
     guide.trimEnd(),
     "---",
-    `## Plantilla: ${kind} (etiqueta \`${label}\`)`,
+    `## Template: ${kind} (label \`${label}\`)`,
     body.trimEnd(),
     "---",
-    "## Entorno detectado, sin datos del proyecto",
-    `- Railguard: ${environment.engineVersion}${pinned}\n- Plataforma: ${environment.platform}`,
-    "## Publicar, después de la aprobación de la persona",
+    "## Detected environment, without project data",
+    `- Railguard: ${environment.engineVersion}${pinned}\n- Platform: ${environment.platform}`,
+    "## Publish, after the person's approval",
     "```bash\n" +
-      `gh issue create --repo ${repository} --label ${label} --title "<título>" --body-file <borrador fuera del repositorio>.md\n` +
+      `gh issue create --repo ${repository} --label ${label} --title "<title>" --body-file <draft outside the repository>.md\n` +
       "```",
   ].join("\n\n") + "\n";
 }

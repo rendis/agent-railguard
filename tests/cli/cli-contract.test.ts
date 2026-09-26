@@ -392,7 +392,7 @@ describe.sequential("production CLI contract", () => {
       expect(unobtainable).toMatchObject({ code: 6, stdout: "Railguard 9.9.10 is available; this repository runs 9.9.9.\n" });
       const report = await cli(["issue", "bug", "--cwd", repository.root], environment);
       expect(report.code, report.stderr).toBe(0);
-      expect(report.stdout).toContain(`- Railguard: ${engineVersion} (este repositorio fija 9.9.9)`);
+      expect(report.stdout).toContain(`- Railguard: ${engineVersion} (this repository pins 9.9.9)`);
       const draft = join(workspace, "issue.md");
       await writeFile(draft, "check --changed falla en <repo>.\n");
       expect(await cli(["issue", "--check", draft, "--cwd", repository.root], environment)).toMatchObject({ code: 0 });

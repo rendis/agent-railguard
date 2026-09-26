@@ -8,7 +8,8 @@ Railguard (`railguard`) configures a Git repository so coding agents work with s
 - `railguard.yaml` and `skills/`: the catalog and skill payloads, embedded in the binary. `railguard --source <checkout>` tries them without rebuilding.
 - `schemas/`: the public contracts (catalog, project state, plan, event, result).
 - `tests/`: behavior tests on temporary repositories, never on a real checkout.
-- `docs/`: user documentation and [decisions](docs/decisions.md), in Spanish. Code, CLI output, identifiers and commits are in English.
+- `docs/`: user documentation, [decisions](docs/decisions.md), the visual guide (`docs/guide/`) and the README banner (`docs/assets/`, rendered by `scripts/docs/render-banner.mjs`).
+- Everything in the repository is in English: code, CLI output, identifiers, documentation and commits. The visual guide also carries a Spanish translation.
 
 Before delivering, run `pnpm run check` (typecheck, tests with coverage thresholds, skill script tests, import boundaries, bundle smoke test). It needs Node 24, pnpm 11 and Go 1.26. `bash install.sh --local` builds and installs the binary of this machine with Bun. A release is a `vX.Y.Z` tag that matches `package.json`.
 

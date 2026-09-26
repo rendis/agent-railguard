@@ -141,24 +141,24 @@ export function draftContext(root: string): DraftContext {
 }
 
 const findingLabels: Readonly<Record<DraftFindingKind, string>> = {
-  "project-or-person": "nombre del repositorio, su organización o la persona",
-  email: "correo",
-  "absolute-path": "ruta absoluta",
-  "internal-url": "URL interna",
-  "ip-address": "dirección IP",
-  secret: "posible secreto",
-  commit: "commit del repositorio",
+  "project-or-person": "repository, organization or person name",
+  email: "email address",
+  "absolute-path": "absolute path",
+  "internal-url": "internal URL",
+  "ip-address": "IP address",
+  secret: "possible secret",
+  commit: "repository commit",
 };
 
 export function renderDraftFindings(draft: string, findings: readonly DraftFinding[]): string {
   if (findings.length === 0) {
-    return "Sin hallazgos. Relea el borrador de todas formas: el check no reconoce nombres de empresa,\n" +
-      "proyecto o personas que no estén en Git.\n";
+    return "No findings. Read the draft again anyway: the check does not recognize company, project or\n" +
+      "person names that are not in Git.\n";
   }
   return [
     ...findings.map((finding) => `${draft}:${finding.line}:${finding.column} ${findingLabels[finding.kind]}: ${finding.excerpt}`),
     "",
-    `${findings.length} hallazgo(s). Reemplácelos por marcadores como <repo> o <modulo>, o quítelos, y vuelva a revisar.`,
+    `${findings.length} finding(s). Replace them with markers such as <repo> or <module>, or remove them, and check again.`,
     "",
   ].join("\n");
 }

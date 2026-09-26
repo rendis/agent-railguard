@@ -15,7 +15,7 @@ describe("issue report", () => {
       expect(report).toContain("## 2. Protect privacy");
       expect(report).toContain(template.body.trimEnd());
       expect(report).not.toContain("labels:");
-      expect(report).toContain("- Railguard: 1.2.3\n- Plataforma: darwin-arm64");
+      expect(report).toContain("- Railguard: 1.2.3\n- Platform: darwin-arm64");
       expect(report).toContain(`gh issue create --repo example/railguard --label ${label} `);
     },
   );
@@ -24,7 +24,7 @@ describe("issue report", () => {
     expect(issueReport("bug", { ...environment, pinnedVersion: "1.2.3" }, "example/railguard"))
       .toContain("- Railguard: 1.2.3\n");
     expect(issueReport("bug", { ...environment, pinnedVersion: "1.0.0" }, "example/railguard"))
-      .toContain("- Railguard: 1.2.3 (este repositorio fija 1.0.0)\n");
+      .toContain("- Railguard: 1.2.3 (this repository pins 1.0.0)\n");
   });
 
   it("has a template for every kind and rejects one without a single label", () => {
