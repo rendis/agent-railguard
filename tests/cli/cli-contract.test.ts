@@ -385,6 +385,11 @@ describe.sequential("production CLI contract", () => {
       await writeFile(launcher, pinned.replace(`version=${engineVersion}`, "version=9.9.9"));
       const delegated = await cli(["status", "--cwd", repository.root], environment);
       expect(delegated).toMatchObject({ code: 0, stdout: `engine 9.9.9 ran status --cwd ${repository.root}\n` });
+      const unobtainable = await cli(["update", "--check", "--to", "9.9.10", "--cwd", repository.root], {
+        ...environment,
+        RAILGUARD_DOWNLOAD_URL: `file://${workspace}/missing`,
+      });
+      expect(unobtainable).toMatchObject({ code: 6, stdout: "Railguard 9.9.10 is available; this repository runs 9.9.9.\n" });
       const report = await cli(["issue", "bug", "--cwd", repository.root], environment);
       expect(report.code, report.stderr).toBe(0);
       expect(report.stdout).toContain(`- Railguard: ${engineVersion} (este repositorio fija 9.9.9)`);

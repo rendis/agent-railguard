@@ -68,9 +68,10 @@ const program = new Command()
   .showHelpAfterError()
   .exitOverride();
 
-// A global railguard runs every command with the engine version the repository pins; an issue
-// report comes from the engine at hand, which names the pinned version itself.
-const commandsWithoutDelegation = new Set(["refresh-latest", "issue"]);
+// A global railguard runs every command with the engine version the repository pins. An issue
+// report names the pinned version itself, and an update moves the repository to another version,
+// so neither needs the pinned engine, which may be unobtainable.
+const commandsWithoutDelegation = new Set(["refresh-latest", "issue", "update"]);
 program.hook("preAction", (_program, actionCommand) => {
   if (commandsWithoutDelegation.has(actionCommand.name())) return;
   const options = actionCommand.optsWithGlobals() as Readonly<Record<string, unknown>>;
@@ -851,7 +852,8 @@ Project content update:
   sections and hooks in the repository with the current content.
 Engine update:
   Each configured repository pins its engine in .railguard/bin/railguard, and a global
-  railguard runs commands with that pinned version. railguard update --check|--plan-only|--yes
+  railguard runs every command but update and issue with that pinned version.
+  railguard update --check|--plan-only|--yes
   moves the repository to the latest release; re-run the install script to update the
   global command itself. A notice on stderr reports a newer release, checked once a day in
   the background (disabled in CI or with RAILGUARD_NO_UPDATE_CHECK=1).
