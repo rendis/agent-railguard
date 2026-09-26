@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -513,7 +513,8 @@ pre-push    →  railguard verify --changed
 CI          →  <mark>.railguard/verify.sh verify</mark>` }] },
   ];
 
-  let lang = new URLSearchParams(location.search).get('lang') || ((navigator.language || 'es').startsWith('es') ? 'es' : 'en');
+  // English by default; ?lang=es opens the Spanish translation.
+  let lang = new URLSearchParams(location.search).get('lang') || 'en';
   if (!UI[lang]) lang = 'en';
   let step = 0, playing = !reduced, timer = null, arrive = null;
   const panel = document.getElementById('panel');
