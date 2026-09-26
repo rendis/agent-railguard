@@ -416,6 +416,26 @@ describe.sequential("production CLI contract", () => {
     }
   }, 60_000);
 
+  it("activates the declared Git hooks in a clone that lacks them, but keeps a developer's own", async () => {
+    const repository = await goRepository("gate-activation");
+    try {
+      expect((await cli(["init", "--add", "git-gate:pre-commit-check", "--harness", "codex", "--yes", "--cwd", repository.root])).code).toBe(0);
+      const hooksPath = async () => (await execute("git", ["-C", repository.root, "config", "--get", "core.hooksPath"]).catch(() => ({ stdout: "" }))).stdout.trim();
+      await execute("git", ["-C", repository.root, "config", "--unset", "core.hooksPath"]);
+
+      const activated = await cli(["status", "--cwd", repository.root]);
+
+      expect(activated.stderr).toContain("railguard: activated this repository's Git hooks (core.hooksPath=.railguard/hooks)");
+      expect(activated.stdout).toContain("State: managed · clean");
+      expect(await hooksPath()).toBe(".railguard/hooks");
+      await execute("git", ["-C", repository.root, "config", "core.hooksPath", ".husky"]);
+      expect((await cli(["status", "--cwd", repository.root])).stderr).not.toContain("activated");
+      expect(await hooksPath()).toBe(".husky");
+    } finally {
+      await repository.cleanup();
+    }
+  });
+
   it("rejects an update outside a configured repository or to a malformed version", async () => {
     const repository = await goRepository("update-input");
     try {

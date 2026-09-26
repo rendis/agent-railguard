@@ -32,6 +32,7 @@ import {
   renderRun,
   type OutputFormat,
 } from "./cli/output.js";
+import { activateDeclaredGitGates } from "./cli/git-gate-activation.js";
 import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
 import { runStopHook } from "./application/agent-stop-hook.js";
@@ -72,11 +73,15 @@ const program = new Command()
 // report names the pinned version itself, and an update moves the repository to another version,
 // so neither needs the pinned engine, which may be unobtainable.
 const commandsWithoutDelegation = new Set(["refresh-latest", "issue", "update"]);
-program.hook("preAction", (_program, actionCommand) => {
-  if (commandsWithoutDelegation.has(actionCommand.name())) return;
+// Commands that change the repository's selection manage the Git hooks through their own plan.
+const commandsWithoutGateActivation = new Set(["refresh-latest", "issue", "update", "init", "remove"]);
+program.hook("preAction", async (_program, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as Readonly<Record<string, unknown>>;
-  const status = delegateToPinnedEngine(rootFrom(options), process.argv.slice(2));
-  if (status !== null) process.exit(status);
+  if (!commandsWithoutDelegation.has(actionCommand.name())) {
+    const status = delegateToPinnedEngine(rootFrom(options), process.argv.slice(2));
+    if (status !== null) process.exit(status);
+  }
+  if (!commandsWithoutGateActivation.has(actionCommand.name())) await activateDeclaredGitGates(rootFrom(options));
 });
 
 const commandsWithoutUpdateNotice = new Set(["stop", "refresh-latest", "update"]);
