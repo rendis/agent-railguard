@@ -88,7 +88,7 @@ printf '{"schema":"railguard/unverified/v1","stage":"check","attempts":3,"record
   > "$(git rev-parse --absolute-git-dir)/railguard/unverified.json"
 printf '{"session_id":"smoke","source":"startup"}' | .railguard/agent-hooks/session-start claude-code | grep -q 'NOT verified' \
   || fail "the session start hook did not report the unverified change"
-railguard report --plain > "$work/report.log" 2>&1 || fail "report failed"
+.railguard/bin/railguard report --plain > "$work/report.log" 2>&1 || fail "report failed"
 grep -q 'refused actions: 2' "$work/report.log" && grep -q 'flagged edits: 1' "$work/report.log" \
   || { cat "$work/report.log" >&2; fail "report did not count the agent hook activity"; }
 
