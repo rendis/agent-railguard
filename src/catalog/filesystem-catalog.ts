@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { lstat, open, opendir } from "node:fs/promises";
 import { dirname, posix, relative, resolve, sep } from "node:path";
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv/dist/2020.js";
 import authoringSchema from "../../schemas/railguard.v1.schema.json" with {
   type: "json",
 };
@@ -32,6 +32,7 @@ import {
   type Sha256Digest,
 } from "../domain/shared/types.js";
 import { parseSafeYaml } from "../shared/safe-yaml.js";
+import { lazyValidator } from "../shared/schema-validator.js";
 
 const maximumSkillDescriptionLength = 320;
 
@@ -189,8 +190,7 @@ const relationOrder: Readonly<Record<CatalogRelationKind, number>> = Object.free
   conflicts: 4,
 });
 
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validateAuthoring = ajv.compile<RailguardAuthoring>(authoringSchema);
+const authoringValidator = lazyValidator<RailguardAuthoring>(authoringSchema);
 
 export class FilesystemCatalog implements Catalog {
   readonly #catalogFile: string;
@@ -233,6 +233,7 @@ export class FilesystemCatalog implements Catalog {
         }),
       ]);
     }
+    const validateAuthoring = authoringValidator();
     if (!validateAuthoring(parsed.value)) {
       const pointer = firstSchemaPointer(validateAuthoring.errors);
       return invalidResult([

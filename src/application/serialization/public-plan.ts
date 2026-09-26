@@ -1,4 +1,4 @@
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv/dist/2020.js";
 import planSchema from "../../../schemas/plan.v1.schema.json" with { type: "json" };
 import type { RailguardCases, InstallPreparation } from "../model.js";
 import type { CatalogSnapshot } from "../../domain/catalog/model.js";
@@ -15,10 +15,10 @@ import type {
   DurableProjectPlan,
   ReadyDesiredState,
 } from "../../domain/transaction/model.js";
+import { lazyValidator } from "../../shared/schema-validator.js";
 
 const maximumPublicPlanBytes = 1024 * 1024;
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validatePublicPlan = ajv.compile<PublicPlan>(planSchema);
+const publicPlanValidator = lazyValidator<PublicPlan>(planSchema);
 
 export interface PublicPlanBasis {
   readonly repository_fingerprint: Sha256Digest;
@@ -264,6 +264,7 @@ function compareBasis(
 }
 
 function assertValidPublicPlan(value: unknown): asserts value is PublicPlan {
+  const validatePublicPlan = publicPlanValidator();
   if (!validatePublicPlan(value)) {
     throw new PublicPlanValidationError(validationIssues(validatePublicPlan.errors));
   }

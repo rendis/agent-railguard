@@ -34,7 +34,7 @@ module.exports = {
     {
       name: "no-orphans",
       severity: "warn",
-      from: { orphan: true, pathNot: "(^|/)(cli|index|model)\\.ts$" },
+      from: { orphan: true, pathNot: "(^|/)(cli|model)\\.ts$" },
       to: {},
     },
   ],

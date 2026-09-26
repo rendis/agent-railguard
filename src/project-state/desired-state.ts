@@ -1,4 +1,4 @@
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv/dist/2020.js";
 import projectStateSchema from "../../schemas/project-state.v1.schema.json" with {
   type: "json",
 };
@@ -21,6 +21,7 @@ import {
   type Sha256Digest,
 } from "../domain/shared/types.js";
 import { parseSafeYaml } from "../shared/safe-yaml.js";
+import { lazyValidator } from "../shared/schema-validator.js";
 
 export interface DesiredSelectionDraft {
   readonly ref: string;
@@ -65,8 +66,7 @@ interface ProjectEnvelope {
   readonly selections: readonly DesiredSelectionDraft[];
 }
 
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validateEnvelope = ajv.compile<ProjectEnvelope>(projectStateSchema);
+const envelopeValidator = lazyValidator<ProjectEnvelope>(projectStateSchema);
 const projectPath = relativePosixPath(".railguard/project.yaml");
 
 export class DesiredStateModule {
@@ -74,6 +74,7 @@ export class DesiredStateModule {
     const decoded = decodeInput(input);
     if (decoded.kind === "invalid") return decoded;
 
+    const validateEnvelope = envelopeValidator();
     if (!validateEnvelope(decoded.value) || decoded.value.schema !== "railguard/project/v1") {
       return invalid([schemaDiagnostic(validateEnvelope.errors)]);
     }

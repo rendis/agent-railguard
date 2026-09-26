@@ -1,13 +1,12 @@
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv/dist/2020.js";
 import eventSchema from "../../../schemas/event.v1.schema.json" with { type: "json" };
 import planSchema from "../../../schemas/plan.v1.schema.json" with { type: "json" };
 import resultSchema from "../../../schemas/result.v1.schema.json" with { type: "json" };
 import { compareUtf8 } from "../../domain/shared/types.js";
+import { lazyValidator } from "../../shared/schema-validator.js";
 
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-ajv.addSchema(planSchema);
-const validateResult = ajv.compile(resultSchema);
-const validateEvent = ajv.compile(eventSchema);
+const resultValidator = lazyValidator(resultSchema, [planSchema]);
+const eventValidator = lazyValidator(eventSchema, [planSchema, resultSchema]);
 
 export class PublicContractValidationError extends TypeError {
   public constructor(
@@ -20,6 +19,7 @@ export class PublicContractValidationError extends TypeError {
 }
 
 export function assertPublicResult<Value>(value: Value): Value {
+  const validateResult = resultValidator();
   if (!validateResult(value)) {
     throw new PublicContractValidationError(
       "result",
@@ -30,6 +30,7 @@ export function assertPublicResult<Value>(value: Value): Value {
 }
 
 export function assertPublicEvent<Value>(value: Value): Value {
+  const validateEvent = eventValidator();
   if (!validateEvent(value)) {
     throw new PublicContractValidationError(
       "event",

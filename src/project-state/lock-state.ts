@@ -1,4 +1,4 @@
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv/dist/2020.js";
 import projectStateSchema from "../../schemas/project-state.v1.schema.json" with {
   type: "json",
 };
@@ -32,6 +32,7 @@ import {
 } from "../domain/shared/types.js";
 import { jsonMemberDigest } from "../domain/managed-json/managed-json.js";
 import { parseSafeJson } from "../shared/safe-json.js";
+import { lazyValidator } from "../shared/schema-validator.js";
 
 export interface LockTargetDraft {
   readonly id: HarnessTargetId;
@@ -151,8 +152,7 @@ export type LockStateResult =
       readonly diagnostics: readonly [Diagnostic, ...Diagnostic[]];
     };
 
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validateLock = ajv.compile<LockState>(projectStateSchema);
+const lockValidator = lazyValidator<LockState>(projectStateSchema);
 const lockPath = relativePosixPath(".railguard/lock.json");
 
 export class LockStateModule {
@@ -278,6 +278,7 @@ export class LockStateModule {
       artifacts: Object.freeze(normalizeArtifacts(input.artifacts)),
       local_effects: Object.freeze(normalizeEffects(input.localEffects)),
     });
+    const validateLock = lockValidator();
     if (!validateLock(state)) return invalid([schemaDiagnostic(validateLock.errors)]);
 
     return ready(state);
@@ -290,6 +291,7 @@ export class LockStateModule {
         lockDiagnostic("lock.json-invalid", "The portable lock is not valid JSON.", parsed.errors),
       ]);
     }
+    const validateLock = lockValidator();
     if (!validateLock(parsed.value) || parsed.value.schema !== "railguard/lock/v1") {
       return invalid([schemaDiagnostic(validateLock.errors)]);
     }
