@@ -55,12 +55,13 @@ function repositoryRelative(root: string, path: string): string | null {
 }
 
 /**
- * Resolves symbolic links in the part of a path that exists, such as macOS's /var to /private/var,
- * so a path the harness spells differently still compares with the repository root.
+ * Resolves the part of a path that exists the way the operating system does, like the repository
+ * root: symbolic links such as macOS's /var to /private/var, and Windows 8.3 short names such as
+ * RUNNER~1. A path the harness spells differently then still compares with the root.
  */
 function realLocation(path: string): string {
   try {
-    return realpathSync(path);
+    return realpathSync.native(path);
   } catch {
     const parent = dirname(path);
     return parent === path ? path : join(realLocation(parent), basename(path));
