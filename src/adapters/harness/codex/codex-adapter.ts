@@ -17,6 +17,7 @@ import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-
 import { nativeComponents } from "../shared/native-components.js";
 import {
   agentGuardScript,
+  agentSessionStartScript,
   agentStopScript,
   componentId,
   nativeFileUnit,
@@ -106,7 +107,10 @@ function codexHooks(hooks: readonly CatalogAgentHookComponent[]): Readonly<Recor
         }
       : {}),
     ...(hooks.some((hook) => hook.event === "stop")
-      ? { Stop: [{ hooks: [{ type: "command", command: command(agentStopScript), timeout: 900 }] }] }
+      ? {
+          SessionStart: [{ hooks: [{ type: "command", command: command(agentSessionStartScript), timeout: 60 }] }],
+          Stop: [{ hooks: [{ type: "command", command: command(agentStopScript), timeout: 900 }] }],
+        }
       : {}),
   };
 }

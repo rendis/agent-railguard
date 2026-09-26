@@ -17,6 +17,7 @@ import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-
 import { nativeComponents } from "../shared/native-components.js";
 import {
   agentGuardScript,
+  agentSessionStartScript,
   agentStopScript,
   componentId,
   nativeFileUnit,
@@ -103,7 +104,10 @@ function cursorHooks(hooks: readonly CatalogAgentHookComponent[]): Readonly<Reco
       ? { preToolUse: [{ command: `${agentGuardScript} cursor`, matcher: "Shell|Write|Delete", timeout: 60 }] }
       : {}),
     ...(hooks.some((hook) => hook.event === "stop")
-      ? { stop: [{ command: `${agentStopScript} cursor`, loop_limit: 3 }] }
+      ? {
+          sessionStart: [{ command: `${agentSessionStartScript} cursor`, timeout: 60 }],
+          stop: [{ command: `${agentStopScript} cursor`, loop_limit: 3 }],
+        }
       : {}),
   };
 }

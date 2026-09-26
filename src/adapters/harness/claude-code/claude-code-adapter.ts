@@ -16,6 +16,7 @@ import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-
 import { nativeComponents } from "../shared/native-components.js";
 import {
   agentGuardScript,
+  agentSessionStartScript,
   agentStopScript,
   componentId,
   nativeFileUnit,
@@ -120,6 +121,24 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
                   type: "command",
                   command: `"$CLAUDE_PROJECT_DIR"/${agentStopScript} claude-code`,
                   timeout: 900,
+                },
+              ],
+            },
+          ],
+          sources: stopHooks.map((hook) => hook.ref),
+        }),
+        nativeJsonMemberUnit({
+          target: this.id,
+          role: "hook",
+          path: ".claude/settings.json",
+          pointer: ["hooks", "SessionStart"],
+          value: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: `"$CLAUDE_PROJECT_DIR"/${agentSessionStartScript} claude-code`,
+                  timeout: 60,
                 },
               ],
             },

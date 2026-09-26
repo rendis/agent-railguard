@@ -407,7 +407,7 @@ catalog:
     stop-check:
       version: 0.1.0
       description: Keep a coding agent working until `railguard check --changed` passes.
-      details: Adds a Stop hook to Claude Code, Codex and Cursor. When the agent tries to finish, the check stage of every selected verification profile runs on the change; failures return to the agent as its next instruction, at most three times per session, after which the agent may stop and the change is reported as not verified. Missing tools never trap the agent. Codex asks each developer to trust the hook once; Cursor runs it in the editor and its interactive CLI.
+      details: Adds a Stop hook to Claude Code, Codex and Cursor. When the agent tries to finish, the check stage of every selected verification profile runs on the change; failures return to the agent as its next instruction, at most three times per session, after which the agent may stop and the change is reported as not verified. A SessionStart hook then tells the next agent session which checks were failing until a later --changed run passes. Missing tools never trap the agent. Codex asks each developer to trust the hook once; Cursor runs it in the editor and its interactive CLI.
       event: stop
       operation: check
 

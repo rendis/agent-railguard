@@ -1,8 +1,14 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
+import { UnverifiedChangeStore } from "../../src/adapters/verification/unverified-change-store.js";
+import { runSessionStartHook } from "../../src/application/agent-session-start.js";
 import { runStopHook, type StopHookHarness } from "../../src/application/agent-stop-hook.js";
+import type { UnverifiedChange, UnverifiedChanges } from "../../src/domain/verification/unverified-change.js";
 import type {
   VerificationReport,
   VerificationRequest,
@@ -49,6 +55,46 @@ describe("runStopHook", () => {
     expect(outputs[4]).toBe("block");
   });
 
+  it("remembers a change left unverified until a later run passes, and tells the next session", async () => {
+    const state = await stateDirectory();
+    const store = memoryStore();
+    const verification = fakeVerification(["failed", "failed", "failed", "failed", "passed"]);
+    for (let attempt = 0; attempt < 4; attempt += 1) await hook("codex", verification, { session_id: "s" }, state, store);
+
+    expect(store.change).toMatchObject({
+      schema: "railguard/unverified/v1",
+      stage: "check",
+      attempts: 3,
+      failures: ["secret-guard/secrets: 1 secret(s) exposed by the change"],
+    });
+    const claude = JSON.parse(await runSessionStartHook("claude-code", "/repo", store));
+    const cursor = JSON.parse(await runSessionStartHook("cursor", "/repo", store));
+    expect(claude.hookSpecificOutput).toEqual({
+      hookEventName: "SessionStart",
+      additionalContext: expect.stringContaining("NOT verified:\n- secret-guard/secrets: 1 secret(s) exposed by the change\nBefore other work"),
+    });
+    expect(cursor).toEqual({ additional_context: claude.hookSpecificOutput.additionalContext });
+
+    await hook("codex", verification, { session_id: "s" }, state, store);
+    expect(store.change).toBeNull();
+    expect(await runSessionStartHook("codex", "/repo", store)).toBe("");
+    expect(await runSessionStartHook("cursor", "/repo", store)).toBe("{}\n");
+  });
+
+  it("keeps the unverified record in the worktree's Git directory, out of versioned files", async () => {
+    const root = await stateDirectory();
+    await promisify(execFile)("git", ["init", "-q"], { cwd: root });
+    const store = new UnverifiedChangeStore(new NodeProcessRunner());
+    const change: UnverifiedChange = { schema: "railguard/unverified/v1", stage: "check", attempts: 3, recordedAt: "t", failures: ["x"] };
+
+    await store.record(root, change);
+    expect(await store.read(root)).toEqual(change);
+    expect(await readdir(join(root, ".git", "railguard"))).toEqual(["unverified.json"]);
+    await store.clear(root);
+    expect(await store.read(root)).toBeNull();
+    expect(await new UnverifiedChangeStore(new NodeProcessRunner()).read(tmpdir())).toBeNull();
+  });
+
   it("keeps separate retry budgets per session and resets after a pass", async () => {
     const state = await stateDirectory();
     const verification = fakeVerification(["failed", "failed", "passed", "failed"]);
@@ -85,6 +131,7 @@ async function hook(
   verification: ReturnType<typeof fakeVerification>,
   input: Readonly<Record<string, unknown>>,
   state?: string,
+  unverified: Pick<UnverifiedChanges, "record" | "clear"> = memoryStore(),
 ) {
   return await runStopHook(
     {
@@ -96,7 +143,18 @@ async function hook(
     },
     verification,
     (report) => `REPORT ${report.verdict}`,
+    unverified,
   );
+}
+
+function memoryStore() {
+  let change: UnverifiedChange | null = null;
+  return {
+    get change() { return change; },
+    async read() { return change; },
+    async record(_root: string, value: UnverifiedChange) { change = value; },
+    async clear() { change = null; },
+  };
 }
 
 function fakeVerification(verdicts: readonly VerificationVerdict[]) {
@@ -108,7 +166,16 @@ function fakeVerification(verdicts: readonly VerificationVerdict[]) {
       requests.push(request);
       const verdict = verdicts[Math.min(index, verdicts.length - 1)]!;
       index += 1;
-      return { stage: "check", mode: "changed", base: null, baseRef: null, verdict, results: [], diagnostics: [] };
+      const results = verdict === "failed"
+        ? [{
+            profile: "verification-profile:secret-guard" as never,
+            check: "secrets",
+            kind: "secret-exposure",
+            unit: ".",
+            outcome: { status: "failed" as const, summary: "1 secret(s) exposed by the change", details: [] },
+          }]
+        : [];
+      return { stage: "check", mode: "changed", base: null, baseRef: null, verdict, results, diagnostics: [] };
     },
   };
 }

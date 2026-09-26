@@ -36,8 +36,9 @@ import { activateDeclaredGitGates } from "./cli/git-gate-activation.js";
 import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
 import { guardAction } from "./application/agent-action-guard.js";
+import { runSessionStartHook } from "./application/agent-session-start.js";
 import { runStopHook, type StopHookHarness } from "./application/agent-stop-hook.js";
-import { createDefaultApplication } from "./application/composition-root.js";
+import { createDefaultApplication, createUnverifiedChanges } from "./application/composition-root.js";
 import { engineVersion, releaseRepository } from "./application/engine-release.js";
 import {
   encodeVerificationReport,
@@ -335,6 +336,20 @@ hook
   });
 
 hook
+  .command("session-start")
+  .description("Tell a new agent session that an earlier one left the change unverified")
+  .requiredOption("--harness <harness>", "claude-code, codex or cursor")
+  .action(async (_options, command: Command) => {
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const harness = hookHarness(options.harness);
+      process.stdout.write(
+        await runSessionStartHook(harness, rootFrom(options), createUnverifiedChanges()),
+      );
+    });
+  });
+
+hook
   .command("stop")
   .description("Block a coding agent from finishing while its change fails verification")
   .requiredOption("--harness <harness>", "claude-code, codex or cursor")
@@ -360,6 +375,7 @@ hook
           },
           runtime.verification,
           (report) => renderVerificationReport(report, true),
+          runtime.unverified,
         );
         process.stdout.write(response.stdout);
         process.stderr.write(response.stderr);
@@ -695,6 +711,7 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
       format === "text" ? renderVerificationReport(report, plain) : encodeVerificationReport(report),
     );
     process.exitCode = verificationExitCodes[report.verdict];
+    if (report.mode === "changed" && report.verdict === "passed") await runtime.unverified.clear(root);
   } finally {
     await runtime.dispose();
   }

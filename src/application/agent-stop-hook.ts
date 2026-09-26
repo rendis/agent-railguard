@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sha256 } from "../domain/shared/types.js";
 import type { CheckStage } from "../domain/verification/checks.js";
+import type { UnverifiedChanges } from "../domain/verification/unverified-change.js";
 import type { VerificationReport, VerificationService } from "./verification-service.js";
 
 export type StopHookHarness = "claude-code" | "codex" | "cursor";
@@ -28,13 +29,15 @@ const maxReasonLength = 8_000;
 /**
  * Decides whether a coding agent may finish its turn. A failed change sends the report back to the
  * agent as its next instruction, at most `maxRetries` times per session; after that the agent may
- * stop and the change is reported as unverified. Readiness problems (a tool that is not installed,
- * a repository without selection) never trap the agent in a loop: they are reported and allowed.
+ * stop, the change is reported as unverified and the next session is told about it until a later
+ * run passes. Readiness problems (a tool that is not installed, a repository without selection)
+ * never trap the agent in a loop: they are reported and allowed.
  */
 export async function runStopHook(
   request: StopHookRequest,
   verification: Pick<VerificationService, "run">,
   render: (report: VerificationReport) => string,
+  unverified: Pick<UnverifiedChanges, "record" | "clear">,
 ): Promise<StopHookResponse> {
   const input = parseInput(request.input);
   if (request.harness === "cursor" && input.status !== undefined && input.status !== "completed") {
@@ -47,6 +50,7 @@ export async function runStopHook(
   const report = await verification.run({ root: request.root, stage: request.stage, changed: true });
   if (report.verdict !== "failed") {
     await rm(counter, { force: true });
+    if (report.verdict === "passed") await unverified.clear(request.root);
     return {
       stdout: "",
       stderr: report.verdict === "passed"
@@ -58,6 +62,15 @@ export async function runStopHook(
   const maxRetries = request.maxRetries ?? defaultMaxRetries;
   if (attempts > maxRetries) {
     await rm(counter, { force: true });
+    await unverified.record(request.root, {
+      schema: "railguard/unverified/v1",
+      stage: request.stage,
+      attempts: maxRetries,
+      recordedAt: new Date().toISOString(),
+      failures: report.results
+        .filter((result) => result.outcome.status === "failed")
+        .map((result) => `${result.profile.slice(result.profile.indexOf(":") + 1)}/${result.check}: ${result.outcome.summary}`),
+    });
     return {
       stdout: "",
       stderr: `Railguard: the change is still failing after ${maxRetries} attempts and is NOT verified. Run \`railguard ${request.stage} --changed\`.\n`,

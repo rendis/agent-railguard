@@ -166,7 +166,7 @@ describe("Harness adapter contract", () => {
     }
   });
   it.each(cases.filter(({ id }) => id !== "vscode" && id !== "opencode"))(
-    "$id calls the pre-action guard before commands and file edits, next to the stop hook",
+    "$id calls the pre-action guard before commands and file edits, next to the stop and session hooks",
     async ({ id, adapter }) => {
       const catalog = await loadCatalog();
       const repository = await createTempRepository({});
@@ -194,6 +194,9 @@ describe("Harness adapter contract", () => {
               matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit",
               hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/.railguard/agent-hooks/guard claude-code', timeout: 60 }],
             }],
+            "hooks.SessionStart": [{
+              hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/.railguard/agent-hooks/session-start claude-code', timeout: 60 }],
+            }],
             "hooks.Stop": [{
               hooks: [{ type: "command", command: '"$CLAUDE_PROJECT_DIR"/.railguard/agent-hooks/stop claude-code', timeout: 900 }],
             }],
@@ -204,6 +207,9 @@ describe("Harness adapter contract", () => {
                 PreToolUse: [{
                   matcher: "^(Bash|apply_patch)$",
                   hooks: [{ type: "command", command: '"$(git rev-parse --show-toplevel)/.railguard/agent-hooks/guard" codex', timeout: 60 }],
+                }],
+                SessionStart: [{
+                  hooks: [{ type: "command", command: '"$(git rev-parse --show-toplevel)/.railguard/agent-hooks/session-start" codex', timeout: 60 }],
                 }],
                 Stop: [{
                   hooks: [{ type: "command", command: '"$(git rev-parse --show-toplevel)/.railguard/agent-hooks/stop" codex', timeout: 900 }],
@@ -216,6 +222,7 @@ describe("Harness adapter contract", () => {
               version: 1,
               hooks: {
                 preToolUse: [{ command: ".railguard/agent-hooks/guard cursor", matcher: "Shell|Write|Delete", timeout: 60 }],
+                sessionStart: [{ command: ".railguard/agent-hooks/session-start cursor", timeout: 60 }],
                 stop: [{ command: ".railguard/agent-hooks/stop cursor", loop_limit: 3 }],
               },
             },

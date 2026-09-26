@@ -159,6 +159,14 @@ export class QualityProjector implements ProjectArtifactProjector {
           bytes: new ReadonlyBytes(Buffer.from(agentStopBody(stopHooks), "utf8")),
           mode: 0o755,
         }),
+        Object.freeze({
+          kind: "file",
+          owner: "agent-hooks:session-start",
+          scopeRoot: relativePosixPath(".railguard/agent-hooks"),
+          path: relativePosixPath(agentSessionStartScriptPath),
+          bytes: new ReadonlyBytes(Buffer.from(agentSessionStartBody(), "utf8")),
+          mode: 0o755,
+        }),
       );
     }
     if (guardHooks.length > 0) {
@@ -219,6 +227,14 @@ export class QualityProjector implements ProjectArtifactProjector {
         return Object.freeze({
           kind: "artifact",
           ownershipId: "project.agent-hook.stop",
+          sources: Object.freeze(stopHooks.map((hook) => hook.ref)),
+          intent,
+        });
+      }
+      if (intent.path === agentSessionStartScriptPath) {
+        return Object.freeze({
+          kind: "artifact",
+          ownershipId: "project.agent-hook.session-start",
           sources: Object.freeze(stopHooks.map((hook) => hook.ref)),
           intent,
         });
@@ -303,6 +319,21 @@ function groupGatesByEvent(
 
 const agentStopScriptPath = ".railguard/agent-hooks/stop";
 const agentGuardScriptPath = ".railguard/agent-hooks/guard";
+const agentSessionStartScriptPath = ".railguard/agent-hooks/session-start";
+
+/**
+ * Called by every harness when an agent session starts: it tells the agent about a change an
+ * earlier session left unverified. Without the engine it adds nothing.
+ */
+function agentSessionStartBody(): string {
+  return [
+    "#!/bin/sh",
+    "# Managed by Railguard: runs when a coding agent session starts.",
+    'cd "$(git rev-parse --show-toplevel)" || exit 0',
+    `${launcherPath} hook session-start --harness "$1" || exit 0`,
+    "",
+  ].join("\n");
+}
 const changeGuardRef = "verification-profile:change-guard";
 
 /**

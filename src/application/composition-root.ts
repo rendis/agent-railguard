@@ -28,6 +28,7 @@ import { registeredCheckProviders, registeredStackAdapters } from "../adapters/s
 import { ChangeCheckProvider, ChangeReview } from "../adapters/verification/change-check-provider.js";
 import { SecretCheckProvider } from "../adapters/verification/secret-check-provider.js";
 import { NodeVerifyScript } from "../adapters/verification/node-verify-script.js";
+import { UnverifiedChangeStore } from "../adapters/verification/unverified-change-store.js";
 import { createDefaultContentSource } from "../catalog/source/content-source-composition.js";
 import type { ContentSource, ContentSourceProgress } from "../catalog/source/content-source.js";
 import { SourcedCatalog } from "../catalog/source/sourced-catalog.js";
@@ -61,7 +62,13 @@ export interface DefaultApplicationRuntime {
   readonly application: RailguardApplication;
   readonly verification: VerificationService;
   readonly review: ChangeReview;
+  readonly unverified: UnverifiedChangeStore;
   dispose(): Promise<void>;
+}
+
+/** The unverified-change record alone, for hooks that must answer without loading the catalog. */
+export function createUnverifiedChanges(): UnverifiedChangeStore {
+  return new UnverifiedChangeStore(new NodeProcessRunner());
 }
 
 export async function createDefaultApplication(
@@ -173,6 +180,7 @@ export async function createDefaultApplication(
     application,
     verification,
     review,
+    unverified: new UnverifiedChangeStore(processRunner),
     async dispose() {
       // Durable state is repository-owned; there is no process-local store to remove.
     },
