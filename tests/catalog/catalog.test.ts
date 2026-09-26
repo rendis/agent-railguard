@@ -84,7 +84,6 @@ describe("FilesystemCatalog", () => {
       "verification-profile:go-fuzz",
       "verification-profile:go-mutation",
       "verification-profile:go-quality",
-      "verification-profile:handoff-review",
       "verification-profile:secret-guard",
     ]);
     expect(

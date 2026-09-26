@@ -339,16 +339,6 @@ catalog:
           kind: change-size
           stage: verify
 
-    handoff-review:
-      version: 0.1.0
-      description: Require a current review of the change against every active knowledge-os handoff before delivery.
-      details: "Verify fails while a handoff in .knowledge-os-handoffs/ACTIVE.yaml is active and the change has no review recorded with `railguard review record` for its exact content. The review lists each acceptance criterion as met, not_met or not_applicable with evidence; the reviewer should be a subagent given only the handoff and the diff. Railguard checks that the record is current, covers every active handoff, cites files that exist and has no unmet criterion. Without an active handoff it is skipped."
-      executables: [git]
-      checks:
-        - id: review
-          kind: change-review
-          stage: verify
-
     secret-guard:
       version: 0.1.0
       description: Block changes that expose secrets, found locally by a pinned Betterleaks; only a person, never the agent, may accept a finding with a Railguard-Allow trailer.
@@ -479,9 +469,6 @@ catalog:
         - kind: includes
           target: verification-profile:change-guard
           reason: The foundation rejects changes that silence checks, delete tests or grow past a reviewable size.
-        - kind: includes
-          target: verification-profile:handoff-review
-          reason: The foundation reviews a change against its active handoff before delivery.
         - kind: includes
           target: verification-profile:secret-guard
           reason: The foundation blocks changes that expose secrets before they are committed or pushed.

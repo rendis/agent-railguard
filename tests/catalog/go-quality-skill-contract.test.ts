@@ -144,7 +144,6 @@ describe("configure-go-quality contract", () => {
       "go-fuzz",
       "go-mutation",
       "go-quality",
-      "handoff-review",
       "secret-guard",
     ]);
     for (const id of ["go-architecture", "go-assurance", "go-e2e", "go-fuzz", "go-mutation", "go-quality"]) {

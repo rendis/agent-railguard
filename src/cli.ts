@@ -63,7 +63,6 @@ import { clackUi } from "./tui/clack-ui.js";
 import { runWizard } from "./tui/wizard.js";
 
 const version = engineVersion;
-const reviewRecordExitCodes = Object.freeze({ recorded: 0, invalid: 2, blocked: 5, "not-met": 8 });
 
 const program = new Command()
   .name("railguard")
@@ -275,44 +274,6 @@ for (const stage of ["check", "verify"] as const) {
     await direct(() => runVerification(stage, command));
   });
 }
-
-const review = program
-  .command("review")
-  .description("Show what a review of this change against its active handoff needs")
-  .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch")
-  .action(async (_options, command: Command) => {
-    await direct(async () => {
-      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-      const root = rootFrom(options);
-      const base = baseFrom(options);
-      const runtime = await createDefaultApplication();
-      try {
-        process.stdout.write(await runtime.review.brief(root, base));
-      } finally {
-        await runtime.dispose();
-      }
-    });
-  });
-
-review
-  .command("record")
-  .description("Record a reviewer's criteria JSON for the current change content")
-  .argument("<file>", "JSON file with the reviewed criteria")
-  .action(async (file: string, _options, command: Command) => {
-    await direct(async () => {
-      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
-      const root = rootFrom(options);
-      const base = baseFrom(options);
-      const runtime = await createDefaultApplication();
-      try {
-        const result = await runtime.review.record(root, file, base);
-        process.stdout.write(`${result.message}\n`);
-        process.exitCode = reviewRecordExitCodes[result.outcome];
-      } finally {
-        await runtime.dispose();
-      }
-    });
-  });
 
 const hook = program
   .command("hook", { hidden: true })
@@ -1079,23 +1040,6 @@ script CI runs; a script that does not match the selection is blocked until rail
 Exit codes: 0 passed; 2 invalid input; 4 a check could not run; 5 blocked; 8 a check failed.
 Output: --format text|json (railguard/verification-report/v1).`);
   }
-  const reviewCommand = command(root, "review");
-  reviewCommand.addHelpText("after", `
-Examples:
-  railguard review
-  railguard review --base origin/release
-
-Effect: prints the review status of this change against its active handoffs and what a
-reviewer needs. No repository mutation is attempted.`);
-  command(reviewCommand, "record").addHelpText("after", `
-Examples:
-  railguard review record /tmp/review.json
-
-Effect: stores the reviewed criteria for the exact current change content inside the
-Git directory, never in versioned files.
-
-Exit codes: 0 recorded; 2 unreadable or incomplete review; 5 no active handoff;
-8 recorded with an unmet criterion.`);
   catalogCommand.addHelpText("after", `
 Reads the current verified project-content source. Use --source <path> globally to
 inspect a local authoring checkout.

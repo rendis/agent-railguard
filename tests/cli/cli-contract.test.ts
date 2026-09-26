@@ -70,7 +70,7 @@ describe.sequential("production CLI contract", () => {
     expect(mcpLogoutHelp).toContain("does not uninstall the");
     expect(mcpLogoutHelp).toContain("MCP, edit project files");
 
-    for (const help of [["check", "--help"], ["verify", "--help"], ["review", "--help"], ["review", "record", "--help"]]) {
+    for (const help of [["check", "--help"], ["verify", "--help"]]) {
       expect((await cli(help)).stdout, help.join(" ")).toContain("Examples:");
     }
     expect((await cli(["verify", "--help"])).stdout).toContain("8 a check failed");
@@ -343,15 +343,12 @@ describe.sequential("production CLI contract", () => {
       for (const args of [
         ["verify", "--format", "ndjson"],
         ["check", "--changed", "--base", ""],
-        ["review", "--base", ""],
         ["hook", "stop", "--harness", "vscode"],
       ]) {
         const result = await cli([...args, "--cwd", repository.root]);
         expect(result.code, `${args.join(" ")}: ${result.stderr}`).toBe(2);
         expect(result.stderr).toContain("--help");
       }
-      const unreviewable = await cli(["review", "record", join(repository.root, "missing.json"), "--cwd", repository.root]);
-      expect(unreviewable.code).toBe(5);
     } finally {
       await repository.cleanup();
     }

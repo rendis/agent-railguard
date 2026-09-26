@@ -21,7 +21,7 @@ describe("testing assurance contract", () => {
     ]) {
       expect(behavioralProof).toContain(`\`${field}\``);
     }
-    expect(designSkill).toContain("`planned` is a normal handoff to `tdd`");
+    expect(designSkill).toContain("`planned` rows are what `tdd` proves next");
     const contractIndex = tddSkill.indexOf("**Inventory.**");
     const redIndex = tddSkill.indexOf("**RED.**");
     expect(contractIndex).toBeGreaterThan(-1);

@@ -2,7 +2,7 @@
 
 ## Keep a task-local inventory
 
-Track one row per authorized behavior or material risk: `behavior/risk`; `reason` it's in scope; `plausible defect`, the smallest wrong behavior to reject; `seam`; and `evidence state` — `planned` (designed, not yet observed — the normal handoff to `tdd`), `proved` (observed discriminating evidence), `removed` (the owning workflow dropped the production decision and rechecked affected behavior), `not_applicable` (concrete evidence the risk has no executable decision in scope), `blocked`/`unavailable` (required evidence not yet available, delivery not closed), or `out_of_scope` (pre-existing behavior outside edit reach only — never something this change created or touched).
+Track one row per authorized behavior or material risk: `behavior/risk`; `reason` it's in scope; `plausible defect`, the smallest wrong behavior to reject; `seam`; and `evidence state` — `planned` (designed, not yet observed; `tdd` proves it next), `proved` (observed discriminating evidence), `removed` (the owning workflow dropped the production decision and rechecked affected behavior), `not_applicable` (concrete evidence the risk has no executable decision in scope), `blocked`/`unavailable` (required evidence not yet available, delivery not closed), or `out_of_scope` (pre-existing behavior outside edit reach only — never something this change created or touched).
 
 Return the inventory to the caller and update it as implementation reveals decisions; it is not a versioned ledger. Complete once every known in-scope item has a row, even at `planned`.
 

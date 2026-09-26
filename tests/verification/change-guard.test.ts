@@ -1,12 +1,11 @@
 import { execFile } from "node:child_process";
 import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeChangeSetReader } from "../../src/adapters/platform/git/node-change-set-reader.js";
 import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
-import { ChangeCheckProvider, ChangeReview } from "../../src/adapters/verification/change-check-provider.js";
-import { parseReviewInput } from "../../src/domain/verification/change-review.js";
+import { ChangeCheckProvider } from "../../src/adapters/verification/change-check-provider.js";
 import {
   changedLineCount,
   globToRegExp,
@@ -85,30 +84,6 @@ describe("change guard rules", () => {
     expect(parseAllowances("fix\n\nRailguard-Allow: change-size: generated client\nRailguard-Allow: change-integrity:")).toEqual(
       new Map([["change-size", "generated client"]]),
     );
-  });
-});
-
-describe("review input", () => {
-  it("rejects a review that cannot be checked", () => {
-    expect(parseReviewInput([])).toEqual({ errors: ["The review must be a JSON object with a criteria array."] });
-    expect(parseReviewInput({ criteria: [] })).toEqual({ errors: ["criteria must be a non-empty array."] });
-    expect(parseReviewInput({ criteria: [null, { status: "done" }, { handoff: "h", criterion: "c", status: "met" }, { handoff: "h", criterion: "c", status: "not_applicable" }] })).toEqual({
-      errors: [
-        "criteria[0] must be an object.",
-        "criteria[1].handoff must name the handoff family or id.",
-        "criteria[1].criterion must state the criterion.",
-        "criteria[1].status must be met, not_met or not_applicable.",
-        "criteria[2] is met but cites no evidence.",
-        "criteria[3] is not_applicable but gives no note explaining why.",
-      ],
-    });
-  });
-
-  it("keeps notes and names an unspecified reviewer", () => {
-    expect(parseReviewInput({ criteria: [{ handoff: "h", criterion: "c", status: "not_applicable", note: " out of scope " }] })).toEqual({
-      reviewer: "unspecified",
-      criteria: [{ handoff: "h", criterion: "c", status: "not_applicable", evidence: [], note: "out of scope" }],
-    });
   });
 });
 
@@ -242,71 +217,8 @@ describe("ChangeCheckProvider", () => {
   });
 });
 
-describe("ChangeReview", () => {
-  it("requires a current review of the change against every active handoff", async () => {
-    const { root, git } = await repository({ "a.go": "package a\n", ".gitignore": ".knowledge-os-handoffs/\n" });
-    await handoff(root, "work-1--svc", "v0001");
-    await git("checkout", "-q", "-b", "feature");
-    await writeFile(join(root, "a.go"), "package a\n\nfunc A() int { return 1 }\n");
-    const review = new ChangeReview(process, changeSets);
-
-    const missing = await review.evaluate(root, await changeSets.read(root));
-    expect(missing.status).toBe("failed");
-    expect(missing.details.join("\n")).toContain(".knowledge-os-handoffs/work-1--svc/scope.md");
-
-    const invalid = await record(review, root, [{ handoff: "work-1--svc", criterion: "A returns 1", status: "met", evidence: ["a.go:99"] }]);
-    expect(invalid).toEqual({ outcome: "invalid", message: 'Evidence a.go:99 for "A returns 1" does not exist.' });
-
-    const unmet = await record(review, root, [
-      { handoff: "work-1--svc", criterion: "A returns 1", status: "met", evidence: ["a.go:3"] },
-      { handoff: "work-1--svc", criterion: "B exists", status: "not_met", evidence: [] },
-    ]);
-    expect(unmet.outcome).toBe("not-met");
-    expect((await review.evaluate(root, await changeSets.read(root))).summary).toBe("1 handoff criterion(s) not met");
-
-    expect(await record(review, root, [
-      { handoff: "work-1--svc", criterion: "A returns 1", status: "met", evidence: ["a.go:3"] },
-    ])).toMatchObject({ outcome: "recorded" });
-    expect((await review.evaluate(root, await changeSets.read(root))).status).toBe("passed");
-
-    await writeFile(join(root, "a.go"), "package a\n\nfunc A() int { return 2 }\n");
-    expect((await review.evaluate(root, await changeSets.read(root))).details[0]).toBe(
-      "The change was modified after the recorded review.",
-    );
-
-    await handoff(root, "work-1--svc", "v0002");
-    expect((await review.evaluate(root, await changeSets.read(root))).details).toContain(
-      "Handoff work-1--svc v0002 was not part of the recorded review.",
-    );
-  });
-
-  it("briefs the reviewer and refuses to record without a handoff or a readable review", async () => {
-    const { root, git } = await repository({ "a.go": "package a\n", ".gitignore": ".knowledge-os-handoffs/\n" });
-    const review = new ChangeReview(process, changeSets);
-    expect(await review.brief(root)).toContain("nothing to review");
-    expect(await review.record(root, join(root, "missing.json"))).toEqual({ outcome: "blocked", message: "No active handoff to record a review for." });
-
-    await handoff(root, "work-2--svc", "v0001");
-    await git("checkout", "-q", "-b", "feature");
-    await writeFile(join(root, "a.go"), "package a\n\nvar A = 1\n");
-    expect(await review.brief(root)).toContain("Review status: failed — This change has no current review against its handoff");
-    expect((await review.record(root, join(root, "missing.json"))).message).toMatch(/^Cannot read the review/u);
-    expect(provider().full()).toEqual({ kind: "skipped", reason: "Judges a change; run with --changed" });
-  });
-
-  it("skips a repository without an active handoff", async () => {
-    const { root, git } = await repository({ "a.go": "package a\n" });
-    await git("checkout", "-q", "-b", "feature");
-    await writeFile(join(root, "a.go"), "package b\n");
-
-    const outcome = await new ChangeReview(process, changeSets).evaluate(root, await changeSets.read(root));
-
-    expect(outcome).toMatchObject({ status: "skipped", summary: "No active handoff to review against" });
-  });
-});
-
 function provider(): ChangeCheckProvider {
-  return new ChangeCheckProvider(process, changeSets, new ChangeReview(process, changeSets));
+  return new ChangeCheckProvider(process, changeSets);
 }
 
 async function request(root: string, inputs: Record<string, readonly string[]> = {}): Promise<CheckRequest> {
@@ -330,27 +242,4 @@ async function repository(files: Record<string, string>) {
   await git("config", "user.email", "a@b");
   await git("config", "user.name", "t");
   return { root, git };
-}
-
-async function handoff(root: string, family: string, revision: string): Promise<void> {
-  const directory = join(root, ".knowledge-os-handoffs", family);
-  await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, "scope.md"), "# Scope\n\n1. A returns 1.\n");
-  await writeFile(join(root, ".knowledge-os-handoffs", "ACTIVE.yaml"), [
-    "schema-version: 2",
-    "handoffs:",
-    `  - handoff-id: id-${family}`,
-    `    family: ${family}`,
-    `    revision: ${revision}`,
-    `    manifest: ${family}/handoff.yaml`,
-    "    state: active",
-    "",
-  ].join("\n"));
-}
-
-async function record(review: ChangeReview, root: string, criteria: readonly object[]) {
-  const file = join(dirname(root), `${root.split("/").at(-1)}-review.json`);
-  await writeFile(file, JSON.stringify({ reviewer: "subagent", criteria }));
-  cleanups.push(() => rm(file, { force: true }));
-  return await review.record(root, file);
 }
