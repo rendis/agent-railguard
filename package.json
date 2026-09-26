@@ -1,6 +1,6 @@
 {
   "name": "agent-railguard",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "Configure a repository so coding agents work inside deterministic quality guardrails",
   "repository": "github:rendis/agent-railguard",
