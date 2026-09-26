@@ -689,6 +689,7 @@ function parseCatalogKind(value: string): CatalogComponent["kind"] {
     packs: "pack",
     agent: "agent",
     agents: "agent",
+    "agent-hook": "agent-hook",
   };
   const kind = aliases[value];
   if (kind === undefined) throw new CommandInputError(`Unknown catalog type: ${value}`);
@@ -753,7 +754,7 @@ Content source precedence:
 
 Component references:
   skill:NAME | mcp:NAME | verification-profile:NAME | git-gate:NAME |
-  pack:NAME | agent:NAME
+  agent-hook:NAME | pack:NAME | agent:NAME
 Harness targets:
   codex | claude-code | opencode | cursor | vscode
 
@@ -831,6 +832,38 @@ Examples:
   railguard doctor --cwd . --format json
 
 Effect: diagnoses content, repository and materialization without mutation.`));
+  for (const stage of ["check", "verify"] as const) {
+    command(root, stage).addHelpText("after", `
+Examples:
+  railguard ${stage} --changed
+  railguard ${stage} --changed --base origin/release --format json
+  railguard ${stage}
+
+Effect: runs the ${stage === "check" ? "fast checks" : "checks of both stages"} of every selected verification profile.
+With --changed each check judges only what changed since the merge-base with the default
+branch (or --base); a repository with commits but no resolvable base is blocked. Without
+--changed every project unit is judged completely. No repository mutation is attempted.
+
+Exit codes: 0 passed; 2 invalid input; 4 a check could not run; 5 blocked; 8 a check failed.
+Output: --format text|json (railguard/verification-report/v1).`);
+  }
+  const reviewCommand = command(root, "review");
+  reviewCommand.addHelpText("after", `
+Examples:
+  railguard review
+  railguard review --base origin/release
+
+Effect: prints the review status of this change against its active handoffs and what a
+reviewer needs. No repository mutation is attempted.`);
+  command(reviewCommand, "record").addHelpText("after", `
+Examples:
+  railguard review record /tmp/review.json
+
+Effect: stores the reviewed criteria for the exact current change content inside the
+Git directory, never in versioned files.
+
+Exit codes: 0 recorded; 2 unreadable or incomplete review; 5 no active handoff;
+8 recorded with an unmet criterion.`);
   catalogCommand.addHelpText("after", `
 Reads the current verified project-content source. Use --source <path> globally to
 inspect a local authoring checkout.
@@ -839,7 +872,7 @@ Examples:
   railguard catalog list --format json
   railguard catalog show skill:tdd --format json`);
   command(catalogCommand, "list").addHelpText("after", commonReadHelp(`
-Types: skill, mcp, verification-profile, git-gate, pack, agent.
+Types: skill, mcp, verification-profile, git-gate, agent-hook, pack, agent.
 
 Examples:
   railguard catalog list --type skill --format json`));

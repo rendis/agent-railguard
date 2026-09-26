@@ -62,6 +62,11 @@ describe.sequential("production CLI contract", () => {
     const mcpLogoutHelp = (await cli(["mcp", "logout", "--help"])).stdout;
     expect(mcpLogoutHelp).toContain("does not uninstall the");
     expect(mcpLogoutHelp).toContain("MCP, edit project files");
+
+    for (const help of [["check", "--help"], ["verify", "--help"], ["review", "--help"], ["review", "record", "--help"]]) {
+      expect((await cli(help)).stdout, help.join(" ")).toContain("Examples:");
+    }
+    expect((await cli(["verify", "--help"])).stdout).toContain("8 a check failed");
   });
 
   it("uses one global local source override before or after a CLI subcommand", async () => {
@@ -91,6 +96,9 @@ describe.sequential("production CLI contract", () => {
     expect(result.code).toBe(0);
     const components = JSON.parse(result.stdout).data.components as { ref: string }[];
     expect(components.some(({ ref }) => ref.startsWith("instruction-fragment:"))).toBe(false);
+
+    const hooks = await cli(["catalog", "list", "--type", "agent-hook", "--format", "json"]);
+    expect(JSON.parse(hooks.stdout).data.components.map(({ ref }: { ref: string }) => ref)).toEqual(["agent-hook:stop-check"]);
   });
 
   it("blocks catalog work instead of falling back when an explicit source is unavailable", async () => {
