@@ -9,6 +9,7 @@ import {
   compareDiagnostics,
   compareUtf8,
   relativePosixPath,
+  type CapabilityId,
   type Diagnostic,
   type HarnessTargetId,
   type RelativePosixPath,
@@ -21,6 +22,11 @@ export const harnessCapabilities = Object.freeze([
   capabilityId("project.skills"),
 ]);
 
+/** Harnesses whose adapter installs Railguard's agent stop hook. */
+export const agentHookHarnessCapabilities = Object.freeze(
+  [...harnessCapabilities, capabilityId("project.agent-hooks")].sort(compareUtf8),
+);
+
 export interface HarnessSurfaceSpec {
   readonly role: HarnessSurface["role"];
   readonly path: string;
@@ -29,6 +35,7 @@ export interface HarnessSurfaceSpec {
 
 export async function inspectHarness(input: {
   readonly target: HarnessTargetId;
+  readonly capabilities: readonly CapabilityId[];
   readonly command: string;
   readonly probe: ExecutableProbe;
   readonly snapshot: RepositorySnapshot;
@@ -61,7 +68,7 @@ export async function inspectHarness(input: {
     detected: executable.detected,
     executablePath: executable.path,
     version: executable.version,
-    capabilities: harnessCapabilities,
+    capabilities: input.capabilities,
     surfaces: Object.freeze(surfaces),
     diagnostics: Object.freeze(diagnostics.sort(compareDiagnostics)),
   });

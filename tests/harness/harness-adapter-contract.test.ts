@@ -90,12 +90,7 @@ describe("Harness adapter contract", () => {
 
       expect(inspection.target).toBe(id);
       expect(inspection.detected).toBe(false);
-      expect(inspection.capabilities).toEqual([
-        "project.agents",
-        "project.instructions",
-        "project.mcp",
-        "project.skills",
-      ]);
+      expect(inspection.capabilities).toEqual(expectedCapabilities(id));
       const roles = new Set(inspection.surfaces.map((surface) => surface.role));
       roles.delete("hooks");
       expect(roles).toEqual(new Set(["agents", "instructions", "mcp", "skills"]));
@@ -117,12 +112,7 @@ describe("Harness adapter contract", () => {
     expect(projection.identity).toEqual({
       target: definition.id,
       adapter: { id: definition.id, version: "0.1.0" },
-      capabilities: [
-        "project.agents",
-        "project.instructions",
-        "project.mcp",
-        "project.skills",
-      ],
+      capabilities: expectedCapabilities(definition.id),
     });
     expect(new Set(artifacts.map((unit) => unit.intent.path))).toEqual(
       new Set([definition.agentPath, definition.mcpPath]),
@@ -148,6 +138,32 @@ describe("Harness adapter contract", () => {
       unit.intent.kind === "file" &&
       (unit.intent.path.startsWith(".agents/skills/") || unit.intent.path.startsWith(".claude/skills/")),
     )).toBe(false);
+  });
+
+  it.each(cases)("$id installs the agent stop hook or blocks it explicitly", async ({ id, adapter }) => {
+    const catalog = await loadCatalog();
+    const repository = await createTempRepository({});
+    try {
+      const inspection = await adapter().inspect(await new NodeRepositoryInventory().snapshot(repository.root));
+      const result = new DefaultResolver().resolve({
+        catalog,
+        directSelections: [componentRef("agent-hook:stop-check")],
+        projectUnits: [],
+        targets: [{ target: inspection.target, capabilities: inspection.capabilities }],
+      });
+
+      if (id === "vscode" || id === "opencode") {
+        expect(result.kind).toBe("blocked");
+        expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("resolution.capability.unsupported");
+      } else {
+        expect(result.kind).toBe("ready");
+        if (result.kind !== "ready") return;
+        const projection = adapter().project(result, catalog);
+        expect(projection.units.some((unit) => unit.sources.includes(componentRef("agent-hook:stop-check")))).toBe(true);
+      }
+    } finally {
+      await repository.cleanup();
+    }
   });
 });
 
@@ -180,6 +196,12 @@ function resolveNative(catalog: CatalogSnapshot, target: string) {
   });
   if (result.kind !== "ready") throw new Error(`Expected ${target} resolution to be ready`);
   return result;
+}
+
+/** Only the harnesses whose adapter installs the agent stop hook declare that capability. */
+function expectedCapabilities(target: string): readonly string[] {
+  const common = ["project.agents", "project.instructions", "project.mcp", "project.skills"];
+  return target === "vscode" || target === "opencode" ? common : ["project.agent-hooks", ...common];
 }
 
 function intentText(intent: ReturnType<HarnessAdapter["project"]>["units"][number]["intent"] | undefined): string {

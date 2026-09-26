@@ -842,7 +842,7 @@ export class FilesystemCatalog implements Catalog {
       version,
       description: definition.description,
       details: definition.details,
-      capabilities: Object.freeze([]),
+      capabilities: Object.freeze([capabilityId("project.agent-hooks")]),
       trust: "local-agent-execution",
       applies: null,
       relations,

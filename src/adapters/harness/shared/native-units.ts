@@ -7,16 +7,19 @@ import {
   relativePosixPath,
   semVer,
   sha256,
+  type CapabilityId,
   type ComponentRef,
   type HarnessTargetId,
 } from "../../../domain/shared/types.js";
-import { harnessCapabilities } from "./harness-inspection.js";
 
-export function nativeProjectionIdentity(target: HarnessTargetId): ProjectionIdentity {
+export function nativeProjectionIdentity(
+  target: HarnessTargetId,
+  capabilities: readonly CapabilityId[],
+): ProjectionIdentity {
   return Object.freeze({
     target,
     adapter: Object.freeze({ id: target, version: semVer("0.1.0") }),
-    capabilities: harnessCapabilities,
+    capabilities,
   });
 }
 

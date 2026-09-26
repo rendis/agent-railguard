@@ -12,7 +12,7 @@ import type {
 import type { RepositorySnapshot } from "../../../domain/repository/model.js";
 import type { ReadyResolution } from "../../../domain/resolution/model.js";
 import { compareUtf8, harnessTargetId } from "../../../domain/shared/types.js";
-import { inspectHarness } from "../shared/harness-inspection.js";
+import { agentHookHarnessCapabilities, inspectHarness } from "../shared/harness-inspection.js";
 import { nativeComponents } from "../shared/native-components.js";
 import {
   agentStopScript,
@@ -36,6 +36,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   public inspect(snapshot: RepositorySnapshot): Promise<HarnessInspection> {
     return inspectHarness({
       target: this.id,
+      capabilities: agentHookHarnessCapabilities,
       command: "claude",
       probe: this.#executableProbe,
       snapshot,
@@ -102,7 +103,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       );
     }
     units.sort((left, right) => compareUtf8(left.ownershipId, right.ownershipId));
-    return Object.freeze({ identity: nativeProjectionIdentity(this.id), units: Object.freeze(units) });
+    return Object.freeze({ identity: nativeProjectionIdentity(this.id, agentHookHarnessCapabilities), units: Object.freeze(units) });
   }
 }
 

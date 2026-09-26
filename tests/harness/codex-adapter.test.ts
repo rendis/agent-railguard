@@ -46,6 +46,7 @@ describe("CodexAdapter", () => {
         executablePath: "/opt/internal/bin/codex",
         version: "codex-cli 0.142.5",
         capabilities: [
+          "project.agent-hooks",
           "project.agents",
           "project.instructions",
           "project.mcp",
@@ -97,6 +98,7 @@ describe("CodexAdapter", () => {
       target: "codex",
       adapter: { id: "codex", version: "0.1.0" },
       capabilities: [
+        "project.agent-hooks",
         "project.agents",
         "project.instructions",
         "project.mcp",

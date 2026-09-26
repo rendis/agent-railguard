@@ -96,6 +96,7 @@ describe("RailguardApplication", () => {
         target: "codex",
         detected: true,
         capabilities: [
+          "project.agent-hooks",
           "project.agents",
           "project.instructions",
           "project.mcp",
