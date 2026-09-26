@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Railguard marketplace authoring v1",
+  "title": "Railguard catalog authoring v1",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "version", "catalog"],

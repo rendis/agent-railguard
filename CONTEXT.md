@@ -66,30 +66,32 @@ Definición interna, no seleccionable, que un adapter renderiza como una managed
 por grupo de componentes sin apropiarse del archivo de destino completo.
 _Avoid_: Prompt, managed file
 
-**Harness hook**:
-Componente ejecutado en un evento del ciclo de vida de un Railguard, como antes de
-una llamada de herramienta o al terminar una sesión del agente.
+**Agent hook**:
+Componente (`agent-hook:*`) que un harness ejecuta en un evento del ciclo de vida del
+agente, como al terminar su turno. Sólo lo admiten los harnesses con la capability
+`project.agent-hooks`.
 _Avoid_: Git gate, hook
 
 **Git gate**:
 Verificación local que asocia uno o más canonical checks a un evento de Git como
 commit o push. Aporta feedback temprano y no equivale al enforcement de CI.
-_Avoid_: Harness hook, hook
+_Avoid_: Agent hook, hook
 
 **Verification profile**:
 Componente de configuración que define una base reproducible de checks y los inputs
 semánticos necesarios para adaptarla a una clase de repositorio.
 _Avoid_: Quality skill, Git gate
 
-**Verification manifest**:
-Declaración resuelta del proyecto que vincula un verification profile y sus inputs
-aprobados con canonical checks y eventos de Git.
-_Avoid_: Lock state, skill configuration
-
 **Canonical check**:
-Entrada ejecutable propiedad del repositorio, con scope explícito y fallo no cero,
-que implementa una verificación mecánica sin depender de una skill.
+Check de un verification profile que `railguard check|verify` ejecuta con scope
+explícito, veredicto determinista y fallo no cero, sin depender de una skill.
 _Avoid_: Skill helper, agent instruction
+
+**Launcher**:
+Script versionado en `.railguard/bin/railguard` que fija la versión del motor de un
+repositorio y la obtiene, verificada, cuando falta. Hooks, instrucciones y el comando
+global ejecutan el motor a través de él.
+_Avoid_: Wrapper, global binary
 
 **Pack**:
 Selección instalable de componentes que entrega una capacidad completa. Un pack
@@ -104,7 +106,7 @@ _Avoid_: Direct selection, transitive requirement
 
 **Plugin**:
 Extensión nativa de un harness, empaquetada conforme al contrato de ese host. No es
-el nombre de una agrupación genérica del marketplace.
+el nombre de una agrupación genérica del catálogo.
 _Avoid_: Pack
 
 **Repository assessment**:
@@ -147,8 +149,8 @@ reescribirse sin atribuir ownership al resto del archivo.
 _Avoid_: Generated file
 
 **Managed unit**:
-Unidad mínima de ownership registrada en el lock: un archivo completo creado por AI
-Harness o una managed section delimitada dentro de un container compartido. Su estado
+Unidad mínima de ownership registrada en el lock: un archivo completo creado por
+Railguard o una managed section delimitada dentro de un container compartido. Su estado
 locked es autoritativo; una edición manual interna puede ser reemplazada por repair o
 retirada por remove después del plan normal.
 _Avoid_: Destination file, observed path
@@ -179,8 +181,8 @@ se instala hasta formar parte de una selección aprobada.
 _Avoid_: Dependency, default install
 
 **Desired state**:
-Selecciones directas, harnesses objetivo y políticas que el consumidor espera que AI
-Harness mantenga para un repositorio. Expresa intención; nunca demuestra por sí solo
+Selecciones directas, harnesses objetivo y políticas que el consumidor espera que
+Railguard mantenga para un repositorio. Expresa intención; nunca demuestra por sí solo
 que un componente o artefacto esté instalado.
 _Avoid_: Lock state, installed files
 

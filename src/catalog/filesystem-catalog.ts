@@ -110,7 +110,7 @@ export class FilesystemCatalog implements Catalog {
         diagnostic({
           code: "catalog.authoring.schema-invalid",
           phase: "schema",
-          message: "railguard.yaml does not satisfy the closed marketplace schema.",
+          message: "railguard.yaml does not satisfy the closed catalog schema.",
           path: relativePosixPath("railguard.yaml"),
           ...(pointer === undefined ? {} : { pointer }),
           evidence: schemaEvidence(validateAuthoring.errors),
