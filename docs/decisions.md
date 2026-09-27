@@ -507,6 +507,18 @@ adding another, and a person accepts it with the same
 declared is out of scope: judging it is semantics, and it is measured by the stack's
 coverage and mutation testing.
 
+### D-030 — A commit is judged by what it holds
+
+The `pre-commit` gate runs `check|verify --changed --staged`: the change is the index
+compared with the base, file content comes from the index, and unstaged edits and
+untracked files are left out. A commit is then blocked only by what it would record, never
+by unrelated work in progress, and a problem that is staged but already fixed in the
+working tree still blocks it. `pre-push`, the end-of-turn hook and CI keep judging the
+whole branch, so nothing hidden outside a commit reaches the remote unjudged. Code tools
+such as tests and lint still run on the working tree: isolating the index in a separate
+tree would double the cost of every commit, and the push gate judges the same code with
+nothing left out.
+
 ## Closed observable flow
 
 ```text

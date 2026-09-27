@@ -109,6 +109,25 @@ describe("ChangeCheckProvider", () => {
     ]);
   });
 
+  it("judges only what the commit will hold when the change is staged", async () => {
+    const { root, git } = await repository({ "a.go": "package a\n" });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a.go"), "package a\n\nfunc A() {}\n");
+    await git("add", "a.go");
+    await mkdir(join(root, "tool"));
+    await writeFile(join(root, "tool", "client.py"), "def request():  # pragma: no cover\n    pass\n");
+
+    expect((await provider().run("change-integrity", await request(root))).status).toBe("failed");
+    expect(await provider().run("change-integrity", await request(root, {}, true))).toMatchObject({ status: "passed" });
+
+    await writeFile(join(root, "a.go"), "package a\n\nfunc A() {} //nolint:all\n");
+    await git("add", "a.go");
+    await writeFile(join(root, "a.go"), "package a\n\nfunc A() {}\n");
+    const staged = await provider().run("change-integrity", await request(root, {}, true));
+    expect(staged.status).toBe("failed");
+    expect(staged.details[0]).toBe("a.go:3: lint suppression: func A() {} //nolint:all");
+  });
+
   it("fails a change that removes a test from a test file it keeps", async () => {
     const { root, git } = await repository({
       "internal/orders/orders.go": "package orders\n",
@@ -221,13 +240,17 @@ function provider(): ChangeCheckProvider {
   return new ChangeCheckProvider(process, changeSets);
 }
 
-async function request(root: string, inputs: Record<string, readonly string[]> = {}): Promise<CheckRequest> {
+async function request(
+  root: string,
+  inputs: Record<string, readonly string[]> = {},
+  staged = false,
+): Promise<CheckRequest> {
   return {
     repositoryRoot: root,
     unitRoot: ".",
     params: {},
     inputs: { protected_paths: [".golangci.*"], size_excluded_paths: ["go.sum"], ...inputs },
-    changes: await changeSets.read(root),
+    changes: await changeSets.read(root, undefined, { staged }),
   };
 }
 

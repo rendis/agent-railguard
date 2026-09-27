@@ -36,7 +36,7 @@ async function module(gremlinsExit: number) {
     "",
   ].join("\n"));
   await chmod(join(bin, "go"), 0o755);
-  const changes: ChangeSet = { base: null, baseRef: null, files: new Map([["internal/port/port.go", "all"]]), deleted: [] };
+  const changes: ChangeSet = { base: null, baseRef: null, files: new Map([["internal/port/port.go", "all"]]), deleted: [], staged: false };
   return { root, environment: { PATH: `${bin}:${process.env.PATH ?? ""}` }, changes };
 }
 

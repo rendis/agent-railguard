@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import {
   changedLineCount,
   isTestFile,
@@ -27,7 +25,7 @@ export class ChangeCheckProvider implements CheckProvider {
 
   public constructor(
     private readonly process: ProcessRunner,
-    changeSets: ChangeSetReader,
+    private readonly changeSets: ChangeSetReader,
   ) {
     this.#acceptance = new ChangeAcceptance(process, changeSets);
   }
@@ -58,7 +56,7 @@ export class ChangeCheckProvider implements CheckProvider {
         }
         continue;
       }
-      const content = await readChanged(request.repositoryRoot, path);
+      const content = await this.changeSets.content(request.repositoryRoot, path, changes.staged);
       if (content === null || isBinary(content)) continue;
       if (content.length > maxScannedBytes) {
         findings.push(`${path}: too large to scan for suppressions (over ${maxScannedBytes / 1024 / 1024} MiB)`);
@@ -93,7 +91,7 @@ export class ChangeCheckProvider implements CheckProvider {
         continue;
       }
       // A binary file has no reviewable lines; every text file counts, however large.
-      const content = await readChanged(request.repositoryRoot, path);
+      const content = await this.changeSets.content(request.repositoryRoot, path, changes.staged);
       if (content === null || isBinary(content)) continue;
       counted.push({ path, lines: changedLineCount(content.toString("utf8"), lines) });
     }
@@ -115,7 +113,7 @@ export class ChangeCheckProvider implements CheckProvider {
     if (changes.base === null) return tests;
     for (const path of changes.files.keys()) {
       if (!isTestFile(path)) continue;
-      const content = await readChanged(root, path);
+      const content = await this.changeSets.content(root, path, changes.staged);
       if (content === null || isBinary(content) || content.length > maxScannedBytes) continue;
       tests.push({ path, before: await this.#atBase(root, changes.base, path), after: content.toString("utf8") });
     }
@@ -134,15 +132,6 @@ export class ChangeCheckProvider implements CheckProvider {
     if (base === null) return false;
     const result = await this.process.run("git", ["cat-file", "-e", `${base}:${path}`], { cwd: root, timeoutMs: 30_000 });
     return result.exitCode === 0;
-  }
-}
-
-/** Content of a changed path, or null when it is not a readable file (a submodule, for example). */
-async function readChanged(root: string, path: string): Promise<Buffer | null> {
-  try {
-    return await readFile(join(root, path));
-  } catch {
-    return null;
   }
 }
 

@@ -116,14 +116,16 @@ export class SecretCheckProvider implements CheckProvider {
         if ("error" in committed) return scanFailed(committed.error);
         findings.push(...committed.findings);
       }
-      // Committed content is judged above; this covers what is still only in the working tree.
+      // Committed content is judged above; this covers what is still only in the working tree, or
+      // only in the index when the change is what is staged for the next commit.
       const pending = scope.base === null
         ? scope.files
-        : changesAt(await this.changeSets.read(root, "HEAD"), request.paths).files;
-      const paths = await regularFiles(root, [...pending.keys()]);
+        : changesAt(await this.changeSets.read(root, "HEAD", { staged: scope.staged }), request.paths).files;
+      const scanRoot = scope.staged ? await this.#stagedCopy(root, [...pending.keys()], join(work, "staged")) : root;
+      const paths = await regularFiles(scanRoot, [...pending.keys()]);
       for (let start = 0; start < paths.length; start += pathsPerScan) {
         const chunk = paths.slice(start, start + pathsPerScan);
-        const uncommitted = await this.#betterleaks(executable, root, ["dir", ...options, "--", ...chunk], request.signal);
+        const uncommitted = await this.#betterleaks(executable, scanRoot, ["dir", ...options, "--", ...chunk], request.signal);
         if ("error" in uncommitted) return scanFailed(uncommitted.error);
         for (const finding of uncommitted.findings) {
           const file = finding.File.replaceAll("\\", "/");
@@ -144,6 +146,19 @@ export class SecretCheckProvider implements CheckProvider {
     } finally {
       await rm(work, { recursive: true, force: true });
     }
+  }
+
+  /** Writes the staged content of `paths` under `target`, so the scan sees what the commit will hold. */
+  async #stagedCopy(root: string, paths: readonly string[], target: string): Promise<string> {
+    await mkdir(target);
+    for (const path of paths) {
+      if (path.split("/").some((segment) => segment === ".." || segment === "")) continue;
+      const content = await this.changeSets.content(root, path, true);
+      if (content === null) continue;
+      await mkdir(dirname(join(target, path)), { recursive: true });
+      await writeFile(join(target, path), content);
+    }
+    return target;
   }
 
   /**

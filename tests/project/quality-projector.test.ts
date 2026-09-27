@@ -190,7 +190,7 @@ describe("QualityProjector", () => {
       );
       expect(hook?.kind === "artifact" && hook.intent.kind === "file"
         ? Buffer.from(hook.intent.bytes.copy()).toString("utf8")
-        : "").toContain(".railguard/bin/railguard check --changed");
+        : "").toContain(".railguard/bin/railguard check --changed --staged || status=$?");
     } finally {
       await repository.cleanup();
     }

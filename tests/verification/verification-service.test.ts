@@ -102,6 +102,7 @@ describe("VerificationService", () => {
       baseRef: "main",
       files: new Map<string, ChangedLines>([["a.go", "all"], ["b.go", new Set([3])]]),
       deleted: ["old_test.go"],
+      staged: false,
     };
     const { service } = await serviceFor(
       provider,
@@ -130,6 +131,7 @@ describe("VerificationService", () => {
       baseRef: "main",
       files: new Map([["svc/b/main.go", "all"]]),
       deleted: [],
+      staged: false,
     };
     const { service } = await serviceFor(provider, ["verification-profile:go-quality"], {}, ["svc/a", "svc/b"], changes);
 
@@ -142,7 +144,7 @@ describe("VerificationService", () => {
 
   it("runs a profile without languages once for the whole repository", async () => {
     const provider = recordingProvider(() => passed());
-    const changes: ChangeSet = { base: "a".repeat(40), baseRef: "main", files: new Map([["svc/b/main.go", "all"]]), deleted: [] };
+    const changes: ChangeSet = { base: "a".repeat(40), baseRef: "main", files: new Map([["svc/b/main.go", "all"]]), deleted: [], staged: false };
     const { service } = await serviceFor(
       { ...provider, kinds: ["change-integrity", "change-size"] },
       ["verification-profile:change-guard"],
@@ -158,7 +160,7 @@ describe("VerificationService", () => {
   });
 
   it("reports a changed-mode check kind without provider as unavailable", async () => {
-    const changes: ChangeSet = { base: "a".repeat(40), baseRef: "main", files: new Map([["main.go", "all"]]), deleted: [] };
+    const changes: ChangeSet = { base: "a".repeat(40), baseRef: "main", files: new Map([["main.go", "all"]]), deleted: [], staged: false };
     const { service } = await serviceFor(
       { kinds: [], async run() { return passed(); }, full() { return { kind: "skipped", reason: "none" }; } },
       ["verification-profile:go-quality"],
@@ -258,6 +260,7 @@ async function serviceFor(
         if (changes === undefined) throw new Error("no change set in this test");
         return changes;
       },
+      content: async () => null,
     },
     providers: [provider],
     script: {

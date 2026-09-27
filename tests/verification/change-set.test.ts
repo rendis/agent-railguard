@@ -60,6 +60,26 @@ describe("NodeChangeSetReader", () => {
     expect(changes.files.get("new.go")).toBe("all");
   });
 
+  it("reads only what is staged, with its content from the index, when staged", async () => {
+    const root = await repository({ "a.go": "package a\n", "b.go": "package a\n" });
+    await git(root, "checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a.go"), "package a\n\nvar staged = 1\n");
+    await git(root, "add", "a.go");
+    await writeFile(join(root, "a.go"), "package a\n\nvar staged = 1\n\nvar unstaged = 2\n");
+    await writeFile(join(root, "b.go"), "package a\n\nvar unstaged = 3\n");
+    await writeFile(join(root, "untracked.go"), "package a\n");
+    const reader = new NodeChangeSetReader(new NodeProcessRunner());
+
+    const changes = await reader.read(root, undefined, { staged: true });
+
+    expect(changes.staged).toBe(true);
+    expect([...changes.files.keys()]).toEqual(["a.go"]);
+    expect([...(changes.files.get("a.go") as ReadonlySet<number>)]).toEqual([2, 3]);
+    expect((await reader.content(root, "a.go", true))?.toString("utf8")).toBe("package a\n\nvar staged = 1\n");
+    expect(await reader.content(root, "untracked.go", true)).toBeNull();
+    expect((await reader.read(root)).files.has("untracked.go")).toBe(true);
+  });
+
   it("uses only uncommitted work when HEAD is the default branch", async () => {
     const root = await repository({ "a.go": "package a\n" });
     await writeFile(join(root, "a.go"), "package a\n\nvar x = 1\n");

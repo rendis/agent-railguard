@@ -229,8 +229,10 @@ function mappingGuidance(
     case "verification-profile":
       return component.description;
     case "git-gate": {
-      const timing = component.event === "pre-commit" ? "Before committing" : "Before pushing";
-      return `${timing}, \`.railguard/bin/railguard ${component.operation} --changed\` runs automatically; run it yourself to reproduce a failure.`;
+      if (component.event === "pre-commit") {
+        return `Before committing, \`.railguard/bin/railguard ${component.operation} --changed --staged\` runs automatically on what the commit holds; run it yourself to reproduce a failure.`;
+      }
+      return `Before pushing, \`.railguard/bin/railguard ${component.operation} --changed\` runs automatically; run it yourself to reproduce a failure.`;
     }
     case "agent-hook":
       if (component.event === "pre-action") {

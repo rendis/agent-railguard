@@ -135,6 +135,8 @@ describe("secret-exposure", () => {
       '  if [ "$prev" = --gitleaks-ignore-path ]; then for f in "$arg"/.* "$arg"/*; do [ -f "$f" ] && { basename "$f"; cat "$f"; } >> "$out/ignore-$sub.txt"; done; fi',
       '  prev=$arg',
       'done',
+      '# Files scanned in the working tree (or a staged copy) are recorded with their content.',
+      'if [ "$sub" = dir ]; then seen=; for arg in "$@"; do if [ -n "$seen" ]; then printf "%s\\n" "$arg" >> "$out/dir-files.txt"; cat "$arg" >> "$out/dir-files.txt"; fi; [ "$arg" = -- ] && seen=1; done; fi',
       'if [ -f "$out/fail" ]; then echo "config error" >&2; exit 1; fi',
       'if [ -f "$out/$sub.json" ]; then cat "$out/$sub.json"; else echo null; fi',
       "",
@@ -178,9 +180,9 @@ describe("secret-exposure", () => {
     return { root, base, git, commit };
   }
 
-  async function check(root: string, locator: ToolLocator) {
+  async function check(root: string, locator: ToolLocator, staged = false) {
     const request: CheckRequest = {
-      repositoryRoot: root, unitRoot: ".", params: {}, inputs: {}, changes: await changeSets.read(root),
+      repositoryRoot: root, unitRoot: ".", params: {}, inputs: {}, changes: await changeSets.read(root, undefined, { staged }),
     };
     return await new SecretCheckProvider(runner, changeSets, locator).run("secret-exposure", request);
   }
@@ -241,6 +243,20 @@ describe("secret-exposure", () => {
     expect(outcome.status).toBe("failed");
     expect(outcome.details[0]).toBe("settings.env:2: github-pat, not committed (fingerprint settings.env:github-pat:2)");
     expect(outcome.details).toHaveLength(3);
+  });
+
+  it("scans the staged content of a staged change, leaving unstaged and untracked files out", async () => {
+    const fake = await scanner();
+    const repo = await repository({ "settings.env": "A=1\nB=2\n" });
+    await writeFile(join(repo.root, "settings.env"), "A=1\nB=staged\n");
+    await repo.git("add", "settings.env");
+    await writeFile(join(repo.root, "settings.env"), "A=1\nB=unstaged\n");
+    await writeFile(join(repo.root, "notes.env"), "C=untracked\n");
+
+    const outcome = await check(repo.root, fake.locator, true);
+
+    expect(outcome.status).toBe("passed");
+    expect(await fake.read("dir-files.txt")).toBe("settings.env\nA=1\nB=staged\n");
   });
 
   it("takes exceptions from the base, so a change cannot exempt itself", async () => {

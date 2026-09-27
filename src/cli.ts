@@ -270,6 +270,7 @@ for (const stage of ["check", "verify"] as const) {
           : "Run every check of the selected verification profiles",
       )
       .option("--changed", "judge only what changed relative to the base branch", false)
+      .option("--staged", "with --changed, judge only what is staged for the next commit", false)
       .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch"),
     ["text", "json"],
   ).action(async (_options, command: Command) => {
@@ -723,6 +724,7 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
   const sourcePath = sourceFrom(options);
   const root = rootFrom(options);
   const base = baseFrom(options);
+  if (options.staged === true && options.changed !== true) throw new CommandInputError("--staged requires --changed");
   const runtime = await createDefaultApplication({
     ...(sourcePath === undefined ? {} : { sourcePath }),
   });
@@ -732,6 +734,7 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
         root,
         stage,
         changed: options.changed === true,
+        staged: options.staged === true,
         ...(base === undefined ? {} : { base }),
       },
       (event) => {
@@ -1057,13 +1060,16 @@ Effect: diagnoses content, repository and materialization without mutation.`));
     command(root, stage).addHelpText("after", `
 Examples:
   railguard ${stage} --changed
+  railguard ${stage} --changed --staged
   railguard ${stage} --changed --base origin/release --format json
   railguard ${stage}
 
 Effect: runs the ${stage === "check" ? "fast checks" : "checks of both stages"} of every selected verification profile.
 With --changed each check judges only what changed since the merge-base with the default
-branch (or --base); a repository with commits but no resolvable base is blocked. Without
---changed every project unit is judged completely by the steps of .railguard/verify.sh, the
+branch (or --base); a repository with commits but no resolvable base is blocked. --staged
+narrows it to what is staged for the next commit, as the pre-commit hook runs it: unstaged
+edits and untracked files are left out and file content comes from the index, while code tools
+such as tests still run on the working tree. Without --changed every project unit is judged completely by the steps of .railguard/verify.sh, the
 script CI runs; a script that does not match the selection is blocked until railguard sync
 --yes regenerates it. No repository mutation is attempted.
 

@@ -28,6 +28,8 @@ export interface VerificationRequest {
   readonly stage: CheckStage;
   /** Judge only what changed relative to the base instead of every project unit completely. */
   readonly changed: boolean;
+  /** With `changed`, judge only what is staged for the next commit, as a pre-commit hook does. */
+  readonly staged?: boolean;
   readonly base?: string;
   /** With `changed`, judge only these repository paths of the change, such as an agent's edit. */
   readonly paths?: readonly string[];
@@ -48,7 +50,7 @@ export type VerificationVerdict = "passed" | "failed" | "unavailable" | "blocked
 
 export interface VerificationReport {
   readonly stage: CheckStage;
-  readonly mode: "changed" | "full";
+  readonly mode: "changed" | "staged" | "full";
   readonly base: string | null;
   readonly baseRef: string | null;
   readonly verdict: VerificationVerdict;
@@ -89,7 +91,7 @@ export class VerificationService {
     request: VerificationRequest,
     progress: VerificationProgress = () => undefined,
   ): Promise<VerificationReport> {
-    const mode = request.changed ? "changed" : "full";
+    const mode = !request.changed ? "full" : request.staged === true ? "staged" : "changed";
     const scan = await this.#dependencies.scan(request.root);
     if (scan.kind === "blocked") return blocked(request.stage, mode, scan.diagnostics);
     if (scan.desired === null) {
@@ -116,7 +118,8 @@ export class VerificationService {
     }
     let changes: ChangeSet;
     try {
-      changes = changesAt(await this.#dependencies.changeSets.read(scan.snapshot.realRoot, request.base), request.paths);
+      const read = await this.#dependencies.changeSets.read(scan.snapshot.realRoot, request.base, { staged: request.staged === true });
+      changes = changesAt(read, request.paths);
     } catch (error) {
       return blocked(request.stage, mode, [changeSetDiagnostic(error)]);
     }

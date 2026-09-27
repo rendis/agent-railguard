@@ -110,6 +110,7 @@ the lock or inside managed markers. It does not delete foreign content.
 
 ```bash
 railguard check --changed            # quick checks on the change
+railguard check --changed --staged   # only what the next commit holds, as pre-commit runs it
 railguard verify --changed           # all checks on the change
 railguard verify --changed --base origin/release
 railguard verify                     # the whole repository with .railguard/verify.sh, like CI
@@ -120,7 +121,9 @@ These run the checks of the verification profiles selected in `.railguard/projec
 runs the fast stage; `verify`, both. With `--changed` the base is the merge-base with the default
 branch (`origin/HEAD`, `origin/main`, `main`, or `master`) or the explicit `--base`, and each
 check judges only what changed: modified files, new lines, affected packages. Untracked files
-count as changes. With no commits yet, the whole repository is the change. If there are commits
+count as changes. `--staged` narrows the change to the index, as the `pre-commit` gate runs it:
+unstaged edits and untracked files are left out and file content comes from the index; code
+tools such as tests still run on the working tree. With no commits yet, the whole repository is the change. If there are commits
 but none of those branches exist (for example, a shallow clone), the result is `blocked`: the
 change is never compared against itself. Fetch the default branch with enough history or pass
 `--base`.

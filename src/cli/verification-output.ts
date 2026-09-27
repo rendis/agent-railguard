@@ -68,8 +68,9 @@ export function label(result: Pick<CheckResult, "profile" | "check" | "unit">): 
 
 function scopeLabel(report: VerificationReport): string {
   if (report.mode === "full") return "all project units";
-  if (report.base === null) return "changed files (no base commit: every file counts as changed)";
-  return `changes since ${report.baseRef ?? "base"} (${report.base.slice(0, 12)})`;
+  const what = report.mode === "staged" ? "staged" : "changed";
+  if (report.base === null) return `${what} files (no base commit: every file counts as changed)`;
+  return `${report.mode === "staged" ? "staged changes" : "changes"} since ${report.baseRef ?? "base"} (${report.base.slice(0, 12)})`;
 }
 
 function mark(result: CheckResult, plain: boolean): string {

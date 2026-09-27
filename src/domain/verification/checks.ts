@@ -5,7 +5,8 @@ export type ChangedLines = ReadonlySet<number> | "all";
 
 /**
  * What a change touched relative to its base commit. Paths are repository-relative POSIX paths of
- * files that exist in the working tree; deleted paths are listed separately.
+ * files that exist in the working tree, or in the index when `staged`; deleted paths are listed
+ * separately.
  */
 export interface ChangeSet {
   /** Base commit, or null when the repository has no commit to compare against. */
@@ -14,10 +15,17 @@ export interface ChangeSet {
   readonly baseRef: string | null;
   readonly files: ReadonlyMap<string, ChangedLines>;
   readonly deleted: readonly string[];
+  /**
+   * Only what is staged for the next commit: unstaged edits and untracked files are left out and
+   * file content comes from the index.
+   */
+  readonly staged: boolean;
 }
 
 export interface ChangeSetReader {
-  read(root: string, baseRef?: string): Promise<ChangeSet>;
+  read(root: string, baseRef?: string, options?: { readonly staged?: boolean }): Promise<ChangeSet>;
+  /** A changed file as the change holds it, or null when it is not a readable file. */
+  content(root: string, path: string, staged: boolean): Promise<Buffer | null>;
 }
 
 export type CheckParams = Readonly<Record<string, string | number | boolean>>;

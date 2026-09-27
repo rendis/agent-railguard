@@ -25,9 +25,10 @@ export class ChangeAcceptance {
   ): Promise<CheckOutcome> {
     const accepted = await this.#acceptedCommit(request.repositoryRoot, request.changes.base, kind);
     if (accepted === null) return await judge(request.changes);
-    const outcome = await judge(changesAt(await this.changeSets.read(request.repositoryRoot, accepted.commit), request.paths));
-    const since = `since ${accepted.commit.slice(0, 12)} (accepted: ${accepted.reason})`;
-    return { ...outcome, summary: `${outcome.summary} ${since}` };
+    const since = await this.changeSets.read(request.repositoryRoot, accepted.commit, { staged: request.changes.staged });
+    const outcome = await judge(changesAt(since, request.paths));
+    const label = `since ${accepted.commit.slice(0, 12)} (accepted: ${accepted.reason})`;
+    return { ...outcome, summary: `${outcome.summary} ${label}` };
   }
 
   async #acceptedCommit(

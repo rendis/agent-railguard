@@ -351,16 +351,16 @@ catalog:
 
   git-gates:
     pre-commit-check:
-      version: 0.3.0
-      description: Run `railguard check --changed` before a local commit.
-      details: Add the check stage of every selected verification profile to the managed pre-commit hook. Only the change since the base branch is judged. The plan blocks until at least one verification profile is selected.
+      version: 0.4.0
+      description: Run `railguard check --changed --staged` before a local commit.
+      details: Add the check stage of every selected verification profile to the managed pre-commit hook. Only what the commit will hold is judged, the staged change since the base branch; unstaged edits and untracked files wait for their own commit. The plan blocks until at least one verification profile is selected.
       event: pre-commit
       operation: check
 
     pre-commit-verify:
-      version: 0.3.0
-      description: Run `railguard verify --changed` before a local commit.
-      details: Add the verify stage of every selected verification profile to the managed pre-commit hook for teams that require full verification before every commit. The plan blocks until at least one verification profile is selected.
+      version: 0.4.0
+      description: Run `railguard verify --changed --staged` before a local commit.
+      details: Add the verify stage of every selected verification profile to the managed pre-commit hook for teams that require full verification before every commit. Only what the commit will hold is judged, the staged change since the base branch. The plan blocks until at least one verification profile is selected.
       event: pre-commit
       operation: verify
 

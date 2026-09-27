@@ -508,7 +508,7 @@ Fix what fails instead.</pre>
       es: 'El cambio queda verificado. Después lo revisan otra vez el commit, el push y el CI, que no necesita Railguard.',
       en: 'The change is verified. Then the commit, the push and CI check it again; CI does not need Railguard.',
       blocks: [{ lbl: '.railguard/hooks · CI', code:
-`pre-commit  →  railguard check --changed
+`pre-commit  →  railguard check --changed --staged
 pre-push    →  railguard verify --changed
 CI          →  <mark>.railguard/verify.sh verify</mark>` }] },
   ];

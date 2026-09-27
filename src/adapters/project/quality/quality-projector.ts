@@ -423,7 +423,8 @@ function agentStopBody(hooks: readonly CatalogAgentHookComponent[]): string {
 }
 
 /**
- * The hook only delegates to the pinned engine, so it judges the same change as agents and CI.
+ * The hook only delegates to the pinned engine, so it judges the same change as agents and CI;
+ * before a commit it judges only what is staged.
  * Without the engine it warns and lets Git continue; CI remains the authoritative gate.
  */
 function hookBody(
@@ -437,7 +438,8 @@ function hookBody(
     "set -u",
     'cd "$(git rev-parse --show-toplevel)" || exit 1',
     "status=0",
-    `${launcherPath} ${operation} --changed || status=$?`,
+    // A commit is judged by what it will hold; a push by everything the branch holds.
+    `${launcherPath} ${operation} --changed${event === "pre-commit" ? " --staged" : ""} || status=$?`,
     `if [ "$status" -eq ${engineUnavailable} ]; then`,
     `  echo "Railguard is unavailable; skipping the ${event} ${operation}." >&2`,
     "  exit 0",

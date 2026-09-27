@@ -112,7 +112,7 @@ describe("InstructionProjector", () => {
       const automation = sections.find((section) => section.id === "automation.mapping")?.body;
       expect(automation).toContain("## Git automation");
       expect(automation).toContain(
-        "`pre-commit-check`: Before committing, `.railguard/bin/railguard check --changed` runs automatically; run it yourself to reproduce a failure.",
+        "`pre-commit-check`: Before committing, `.railguard/bin/railguard check --changed --staged` runs automatically on what the commit holds; run it yourself to reproduce a failure.",
       );
       expect(automation).toContain("Treat hook failures as local feedback");
 

@@ -465,6 +465,7 @@ describe.sequential("production CLI contract", () => {
         diagnostics: expect.arrayContaining([expect.objectContaining({ code: "resolution.git-gate.profile-missing" })]),
       });
       expect((await cli(["init", "--add", "git-gate:pre-commit-check", "verification-profile:change-guard", "--harness", "codex", "--yes", "--cwd", repository.root])).code).toBe(0);
+      expect(await readFile(join(repository.root, ".railguard/hooks/pre-commit"), "utf8")).toContain("check --changed --staged");
       const hooksPath = async () => (await execute("git", ["-C", repository.root, "config", "--get", "core.hooksPath"]).catch(() => ({ stdout: "" }))).stdout.trim();
       await execute("git", ["-C", repository.root, "config", "--unset", "core.hooksPath"]);
 
@@ -480,6 +481,32 @@ describe.sequential("production CLI contract", () => {
       await repository.cleanup();
     }
   });
+
+  it("judges only the staged change with --staged, leaving untracked work for its own commit", async () => {
+    const repository = await goRepository("staged-check");
+    try {
+      expect((await cli(["init", "--add", "verification-profile:change-guard", "--harness", "codex", "--yes", "--cwd", repository.root])).code).toBe(0);
+      const git = (...args: string[]) => execute("git", ["-C", repository.root, "-c", "user.email=a@b", "-c", "user.name=t", ...args]);
+      await git("add", ".");
+      await git("commit", "-qm", "configure railguard", "--no-verify");
+      await git("branch", "-M", "main");
+      await git("checkout", "-qb", "feature");
+      await writeFile(join(repository.root, "notes.md"), "staged\n");
+      await git("add", "notes.md");
+      await mkdir(join(repository.root, "tool"));
+      await writeFile(join(repository.root, "tool", "client.py"), "def request():  # pragma: no cover\n    pass\n");
+
+      const whole = await cli(["check", "--changed", "--base", "main", "--cwd", repository.root]);
+      expect(whole.code).toBe(8);
+      expect(whole.stdout).toContain("tool/client.py:1: coverage exclusion");
+      const staged = await cli(["check", "--changed", "--staged", "--base", "main", "--cwd", repository.root]);
+      expect(staged.code, staged.stdout).toBe(0);
+      expect(staged.stdout).toContain("Railguard check · staged changes since main");
+      expect((await cli(["check", "--staged", "--cwd", repository.root])).code).toBe(2);
+    } finally {
+      await repository.cleanup();
+    }
+  }, 60_000);
 
   it("rejects an update outside a configured repository or to a malformed version", async () => {
     const repository = await goRepository("update-input");

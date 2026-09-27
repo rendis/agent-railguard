@@ -183,8 +183,9 @@ suppression on its own.
    lives in the worktree's Git directory (`railguard/unverified.json`) and the agent's
    next session receives it as context at start (`SessionStart` in Claude Code and Codex,
    `sessionStart` in Cursor), with the checks that were failing and the instruction to
-   fix them before another task. It is cleared when a `check` or `verify --changed` passes
-   again, from the hook, a git gate or the terminal. A missing tool never traps the agent
+   fix them before another task. It is cleared when a `check` or `verify --changed` of the
+   whole change passes again, from the hook, the pre-push gate or the terminal; a
+   `--staged` pass does not clear it, because it leaves unstaged work out. A missing tool never traps the agent
    in a loop. VS Code and OpenCode do not have this hook: selecting it with one of them
    as target blocks the plan (`resolution.capability.unsupported`) instead of silently
    skipping it.
@@ -194,7 +195,9 @@ suppression on its own.
    Code and Cursor run with no configuration: if the repository declares the gates and
    the clone has no `core.hooksPath`, it configures it and reports it on stderr. A
    developer's own `core.hooksPath` is not touched; `railguard status` reports it. Even
-   when activated, `git commit --no-verify` skips them. A gate runs the selected profiles,
+   when activated, `git commit --no-verify` skips them. The pre-commit gate judges only what
+   the commit holds (`--changed --staged`): unrelated unstaged or untracked work never blocks
+   it, and the pre-push gate judges the whole branch. A gate runs the selected profiles,
    whatever stack they belong to; with none, the plan blocks
    (`resolution.git-gate.profile-missing`) instead of installing a hook that always
    passes.
