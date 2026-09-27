@@ -50,6 +50,7 @@ export class EmbeddedContentSource implements ContentSource {
     }
     const local = await new LocalContentSource({
       root,
+      kind: "embedded",
       ...(this.#options.progress === undefined ? {} : { progress: this.#options.progress }),
     }).resolve(signal);
     return Object.freeze({

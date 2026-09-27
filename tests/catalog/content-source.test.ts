@@ -2,6 +2,7 @@ import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ContentSourceProgress } from "../../src/catalog/source/content-source.js";
 import { createDefaultContentSource } from "../../src/catalog/source/content-source-composition.js";
 import type { EmbeddedContent } from "../../src/catalog/source/embedded-content-source.js";
 import { LocalContentSource } from "../../src/catalog/source/local-content-source.js";
@@ -106,6 +107,22 @@ describe("content sources", () => {
     if (catalog.kind === "ready") {
       expect(catalog.diagnostics.some((entry) => entry.code === "catalog.source.embedded")).toBe(true);
     }
+  });
+
+  it("reports embedded content progress as embedded, leaving its location to the diagnostic", async () => {
+    const cacheRoot = await temporaryRoot("railguard-content-cache-");
+    const events: ContentSourceProgress[] = [];
+    await createDefaultContentSource({
+      developmentCatalogFile: join(cacheRoot, "missing", "railguard.yaml"),
+      embeddedContent: embedded(minimalCatalog("0.3.0")),
+      cacheRoot,
+      progress: (event) => events.push(event),
+    }).resolve();
+
+    expect(events.map(({ phase, status, message }) => ({ phase, status, message }))).toEqual([
+      { phase: "embedded", status: "started", message: "Validating the embedded content source" },
+      { phase: "embedded", status: "completed", message: "Embedded content source ready" },
+    ]);
   });
 
   it("rejects embedded content whose paths escape the materialized root", async () => {

@@ -9,7 +9,7 @@ export interface ResolvedContentSource {
 }
 
 export interface ContentSourceProgress {
-  readonly phase: "local";
+  readonly phase: ContentSourceKind;
   readonly status: "started" | "completed" | "failed";
   readonly message: string;
   readonly current?: number;
