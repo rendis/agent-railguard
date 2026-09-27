@@ -22,9 +22,19 @@ export function clackUi(): WizardUi {
     note: (message, title) => note(message, title),
     warn: (message) => log.warn(message),
     error: (message) => log.error(message),
-    async select(message, options) {
-      const result = await select({ message, options: options.map(option) as never });
-      return isCancel(result) ? null : (result as never);
+    async select(message, options, settings = {}) {
+      // `q` cancels the prompt like Esc does; the caller decides what a cancel means.
+      const cancel = new AbortController();
+      const onKeypress = (_input: string | undefined, key: { name?: string; ctrl?: boolean; meta?: boolean } | undefined) => {
+        if (key?.name === "q" && key.ctrl !== true && key.meta !== true) cancel.abort();
+      };
+      if (settings.quitKey === true) process.stdin.on("keypress", onKeypress);
+      try {
+        const result = await select({ message, options: options.map(option) as never, signal: cancel.signal });
+        return isCancel(result) ? null : (result as never);
+      } finally {
+        process.stdin.off("keypress", onKeypress);
+      }
     },
     async multiselect(message, options, initial) {
       const result = await multiselect({

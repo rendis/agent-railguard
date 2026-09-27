@@ -93,7 +93,7 @@ describe("interactive wizard", () => {
       const final = await runWizard(runtime.session, repository.root, script.ui, "test");
 
       const text = script.shown.join("\n");
-      expect(text).toContain("GROUPS Packs,Skills,MCP,Agents,Quality,Git hooks,Agent hooks");
+      expect(text).toContain("GROUPS 📦 Packs,🧠 Skills,🔌 MCP,🤖 Agents,🧪 Quality,🌿 Git hooks,🪝 Agent hooks");
       expect(text).toContain("+ skill:design-tests");
       expect(text).toMatch(/File changes \(\d+\)/);
       expect(text).toContain("Result   succeeded");
@@ -188,6 +188,22 @@ describe("interactive wizard", () => {
       expect(script.shown.join("\n")).toContain("Stack        none detected");
       expect(script.prompts).toEqual(["What do you want to do?"]);
       expect(await readdir(repository.root)).toEqual([]);
+    } finally {
+      await Promise.all([runtime.dispose(), repository.cleanup()]);
+    }
+  });
+
+  it("shows scan details without printing the unchanged summary again", async () => {
+    const repository = await createTempRepository({});
+    const runtime = await createInteractionRuntime({ executableProbe: probe });
+    const script = scriptedUi([{ select: "details" }, { select: "quit" }]);
+    try {
+      await runWizard(runtime.session, repository.root, script.ui, "test");
+
+      const titles = script.shown.map((entry) => entry.split("\n")[0]);
+      expect(titles.filter((title) => title === "Repository")).toHaveLength(1);
+      expect(titles.indexOf("Scan details")).toBeGreaterThan(titles.indexOf("Repository"));
+      expect(script.prompts).toEqual(["What do you want to do?", "What do you want to do?"]);
     } finally {
       await Promise.all([runtime.dispose(), repository.cleanup()]);
     }

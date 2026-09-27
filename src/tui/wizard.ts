@@ -14,6 +14,7 @@ import {
   draftSummary,
   exitSummary,
   families,
+  familyTitle,
   mcpSessionSummary,
   planReview,
   receiptSummary,
@@ -42,7 +43,12 @@ export interface WizardUi {
   note(message: string, title?: string): void;
   warn(message: string): void;
   error(message: string): void;
-  select<Value>(message: string, options: readonly Choice<Value>[]): Promise<Value | null>;
+  /** With `quitKey`, pressing `q` cancels the prompt. */
+  select<Value>(
+    message: string,
+    options: readonly Choice<Value>[],
+    settings?: { readonly quitKey?: boolean },
+  ): Promise<Value | null>;
   multiselect<Value>(
     message: string,
     options: readonly Choice<Value>[],
@@ -84,6 +90,8 @@ export async function runWizard(
 ): Promise<InteractionSnapshot> {
   ui.intro(`Railguard ${version}`);
   let snapshot = await withProgress(ui, session, "Scanning the repository", { type: "scan", root });
+  // The terminal keeps what was printed, so the summary is shown again only when it changes.
+  let summarized: InteractionSnapshot | null = null;
   for (;;) {
     if (snapshot.phase === "blocked") {
       ui.error(snapshot.diagnostics.map(diagnosticLine).join("\n") || "The scan is blocked.");
@@ -95,8 +103,11 @@ export async function runWizard(
       snapshot = await withProgress(ui, session, "Scanning the repository", { type: "scan", root });
       continue;
     }
-    ui.note(scanSummary(snapshot), "Repository");
-    const action = await ui.select<MenuAction>("What do you want to do?", menu(snapshot));
+    if (summarized !== snapshot) {
+      ui.note(scanSummary(snapshot), "Repository");
+      summarized = snapshot;
+    }
+    const action = await ui.select<MenuAction>("What do you want to do?", menu(snapshot), { quitKey: true });
     if (action === null || action === "quit") break;
     if (action === "details") {
       ui.note(scanDetails(snapshot), "Scan details");
@@ -143,7 +154,7 @@ function menu(snapshot: InteractionSnapshot): Choice<MenuAction>[] {
   choices.push(
     { value: "details", label: "Show scan details" },
     { value: "rescan", label: "Scan again" },
-    { value: "quit", label: "Quit" },
+    { value: "quit", label: "Quit", hint: "or press q" },
   );
   return choices;
 }
@@ -285,7 +296,7 @@ async function pickComponents(
   const groups: Record<string, Choice<ComponentRef>[]> = {};
   for (const family of families) {
     const items = catalog.filter((item) => item.kind === family.id);
-    if (items.length > 0) groups[family.label] = items.map(choice);
+    if (items.length > 0) groups[familyTitle(family)] = items.map(choice);
   }
   return await ui.groupMultiselect("Select components (Space toggles, Enter confirms)", groups, selected);
 }

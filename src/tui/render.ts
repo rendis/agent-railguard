@@ -1,3 +1,4 @@
+import { styleText } from "node:util";
 import type {
   CatalogItemView,
   DiagnosticView,
@@ -7,47 +8,88 @@ import type {
 
 /** Plain-text views of the interaction snapshot shown by the interactive wizard. */
 
+// Every icon is a double-width emoji without a variation selector, so labels stay aligned.
 export const families = [
-  { id: "pack", label: "Packs" },
-  { id: "skill", label: "Skills" },
-  { id: "mcp-integration", label: "MCP" },
-  { id: "agent", label: "Agents" },
-  { id: "verification-profile", label: "Quality" },
-  { id: "git-gate", label: "Git hooks" },
-  { id: "agent-hook", label: "Agent hooks" },
-] as const satisfies readonly { readonly id: CatalogItemView["kind"]; readonly label: string }[];
+  { id: "pack", icon: "📦", label: "Packs" },
+  { id: "skill", icon: "🧠", label: "Skills" },
+  { id: "mcp-integration", icon: "🔌", label: "MCP" },
+  { id: "agent", icon: "🤖", label: "Agents" },
+  { id: "verification-profile", icon: "🧪", label: "Quality" },
+  { id: "git-gate", icon: "🌿", label: "Git hooks" },
+  { id: "agent-hook", icon: "🪝", label: "Agent hooks" },
+] as const satisfies readonly {
+  readonly id: CatalogItemView["kind"];
+  readonly icon: string;
+  readonly label: string;
+}[];
 
-export function scanSummary(snapshot: InteractionSnapshot): string {
+export function familyTitle(family: (typeof families)[number]): string {
+  return `${family.icon} ${family.label}`;
+}
+
+export function scanSummary(snapshot: InteractionSnapshot, home = process.env["HOME"] ?? ""): string {
   const repository = snapshot.repository;
   if (repository === null) return "No repository information.";
-  const harnesses = repository.harnesses
-    .map((harness) => `${harness.id}${harness.detected ? "" : " (not detected)"}`)
-    .join(", ");
+  const managed = repository.management !== "uninitialized";
+  const configured = new Set<string>(managed ? repository.installedTargets : []);
+  const harnessGroups = [
+    { label: "configured", ids: repository.harnesses.filter((harness) => configured.has(harness.id)) },
+    {
+      label: managed ? "detected, not configured" : "detected",
+      ids: repository.harnesses.filter((harness) => harness.detected && !configured.has(harness.id)),
+    },
+    { label: "not detected", ids: repository.harnesses.filter((harness) => !harness.detected && !configured.has(harness.id)) },
+  ]
+    .filter((group) => group.ids.length > 0)
+    .map((group) => `${group.ids.map((harness) => harness.id).join(", ")} (${group.label})`);
   const lines = [
-    `Repository   ${repository.root}`,
+    `Path         ${homeRelative(repository.root, home)}`,
     `Stack        ${repository.languages.length === 0 ? "none detected" : repository.languages.join(", ")}`,
-    `Harnesses    ${harnesses}`,
-    `Project      ${projectState(snapshot)}`,
+    `Status       ${projectState(snapshot)}`,
+    ...(harnessGroups.length === 0 ? ["none"] : harnessGroups).map((group, index) => `${index === 0 ? "Harnesses" : ""}`.padEnd(13) + group),
   ];
-  if (repository.management !== "uninitialized") {
-    lines.push(`Installed    ${repository.installedDirectSelections.join(", ") || "nothing"}`);
-    lines.push(`Targets      ${repository.installedTargets.join(", ") || "none"}`);
+  if (managed) {
+    lines.push("", ...refsByFamily(`Installed (${repository.installedDirectSelections.length})`, repository.installedDirectSelections));
   }
   if (snapshot.recommendations.length > 0) {
-    lines.push(`Recommended  ${snapshot.recommendations.map((entry) => entry.ref).join(", ")}`);
+    const recommended = snapshot.recommendations.map((entry) => entry.ref);
+    lines.push("", ...refsByFamily(`Recommended (${recommended.length})`, recommended));
   }
   const warnings = snapshot.diagnostics.filter((diagnostic) => diagnostic.severity !== "info");
-  if (warnings.length > 0) lines.push(`Warnings     ${warnings.length}`);
+  if (warnings.length > 0) lines.push("", `${warnings.length} warning(s): choose "Show scan details" to read them.`);
   return lines.join("\n");
+}
+
+function refsByFamily(title: string, refs: readonly string[]): string[] {
+  if (refs.length === 0) return [`${title.replace(/ \(0\)$/, "")}  nothing`];
+  const groups = new Map<string, string[]>();
+  for (const ref of refs) {
+    const kind = ref.slice(0, ref.indexOf(":"));
+    groups.set(kind, [...(groups.get(kind) ?? []), ref.slice(ref.indexOf(":") + 1)]);
+  }
+  const known = new Set<string>(families.map((family) => family.id));
+  const lines = families
+    .filter((family) => groups.has(family.id))
+    .map((family) => `  ${family.icon} ${family.label.padEnd(12)}${(groups.get(family.id) ?? []).join(", ")}`);
+  for (const [kind, names] of groups) {
+    if (!known.has(kind)) lines.push(`     ${kind.padEnd(12)}${names.join(", ")}`);
+  }
+  return [title, ...lines];
+}
+
+function homeRelative(path: string, home: string): string {
+  return home !== "" && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path;
 }
 
 function projectState(snapshot: InteractionSnapshot): string {
   const repository = snapshot.repository;
   if (repository === null) return "unknown";
-  if (repository.management === "uninitialized") return "not configured by Railguard";
-  const parts: string[] = [repository.management, repository.integrity];
+  if (repository.management === "uninitialized") return "not configured by Railguard yet";
+  const parts = [repository.management === "managed" ? "configured by Railguard" : "partially applied: run Configure to finish"];
+  if (repository.integrity === "clean") parts.push("managed files unchanged");
+  if (repository.integrity === "drifted") parts.push("managed files edited or missing");
   if (repository.updates === "available") parts.push("content updates available");
-  return parts.join(", ");
+  return parts.join("; ");
 }
 
 export function scanDetails(snapshot: InteractionSnapshot): string {
@@ -158,7 +200,7 @@ export function mcpSessionSummary(snapshot: InteractionSnapshot): string {
 export function diagnosticLine(diagnostic: DiagnosticView): string {
   const where = diagnostic.location === null ? "" : ` (${diagnostic.location.path})`;
   const next = diagnostic.action === null ? "" : `\n    next: ${diagnostic.action}`;
-  return `${diagnostic.severity.toUpperCase()} ${diagnostic.code}${where}: ${diagnostic.message}${next}`;
+  return `${styleText(severityColor(diagnostic.severity), diagnostic.severity.toUpperCase())} ${diagnostic.code}${where}: ${diagnostic.message}${next}`;
 }
 
 export function exitSummary(snapshot: InteractionSnapshot): string {
@@ -169,12 +211,17 @@ export function exitSummary(snapshot: InteractionSnapshot): string {
 
 function taskMark(state: string): string {
   switch (state) {
-    case "done": return "✓";
-    case "failed": return "✗";
-    case "warning": return "!";
-    case "running": return "…";
-    default: return "·";
+    case "done": return styleText("green", "✓");
+    case "failed": return styleText("red", "✗");
+    case "warning": return styleText("yellow", "!");
+    case "running": return styleText("cyan", "…");
+    default: return styleText("dim", "·");
   }
+}
+
+function severityColor(severity: DiagnosticView["severity"]): "red" | "yellow" | "dim" {
+  if (severity === "info") return "dim";
+  return severity === "warning" ? "yellow" : "red";
 }
 
 function truncate(text: string, length: number): string {

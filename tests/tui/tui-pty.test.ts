@@ -19,6 +19,22 @@ describe("interactive wizard in a PTY", () => {
     await execute("python3", ["--version"], { timeout: 5_000 });
   }, 35_000);
 
+  it("quits from the main menu when q is pressed", async () => {
+    const repository = await createTempRepository({});
+    const control = await mkdtemp(join(tmpdir(), "railguard-pty-"));
+    const session = startPty(control, ["--cwd", repository.root]);
+    try {
+      await session.answer("What do you want to do?", "q");
+      const exit = await waitForExit(session.child, 20_000, session.output);
+
+      expect(exit.code, session.output().slice(-4_000)).toBe(0);
+      expect(session.output()).toContain("No repository changes applied.");
+    } finally {
+      session.stop();
+      await Promise.all([repository.cleanup(), rm(control, { recursive: true, force: true })]);
+    }
+  }, 35_000);
+
   it("runs the interactive wizard in a real terminal and quits without changes", async () => {
     const repository = await createTempRepository({
       "go.mod": "module example.com/tui-pty\n\ngo 1.24\n",

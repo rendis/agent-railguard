@@ -8,9 +8,10 @@ produce the same plan as `railguard init|plan`.
 
 ## Flow
 
-1. **Scan.** Live progress and a summary: stack, detected harnesses, project status, installed
-   and recommended components. A real blocker shows the diagnostics and offers to scan again;
-   missing Git, language, or harness does not block the scan.
+1. **Scan.** Live progress and a summary: path, stack, Railguard status, harnesses grouped by
+   state (configured, detected, not detected), and installed or recommended components grouped by
+   family. A real blocker shows the diagnostics and offers to scan again; missing Git, language,
+   or harness does not block the scan.
 2. **Menu.** Configure (or change components/harnesses if already managed), actions for installed
    OAuth MCPs (check, log in, and log out), remove everything managed, view the scan detail, scan
    again, or exit.
@@ -27,7 +28,7 @@ produce the same plan as `railguard init|plan`.
 ## Keys
 
 Arrows to move, Space to mark, Enter to confirm. Esc or Ctrl+C in a prompt goes back to the
-previous step; in the main menu, it exits.
+previous step; in the main menu, it exits, and so does `q`.
 
 ## Updating
 
