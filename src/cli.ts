@@ -33,6 +33,7 @@ import {
   type OutputFormat,
 } from "./cli/output.js";
 import { activateDeclaredGitGates } from "./cli/git-gate-activation.js";
+import { engineVersions, runVersions } from "./cli/engine-versions.js";
 import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
 import { issueKinds, issueReport, type IssueKind } from "./cli/issue-report.js";
 import { buildActivityReport } from "./application/activity-report.js";
@@ -75,11 +76,12 @@ const program = new Command()
   .exitOverride();
 
 // A global railguard runs every command with the engine version the repository pins. An issue
-// report names the pinned version itself, and an update moves the repository to another version,
-// so neither needs the pinned engine, which may be unobtainable.
-const commandsWithoutDelegation = new Set(["refresh-latest", "issue", "update"]);
+// report names the pinned version itself, an update moves the repository to another version, and
+// versions manages the machine's engine cache, so none needs the pinned engine, which may be
+// unobtainable.
+const commandsWithoutDelegation = new Set(["refresh-latest", "issue", "update", "versions"]);
 // Commands that change the repository's selection manage the Git hooks through their own plan.
-const commandsWithoutGateActivation = new Set(["refresh-latest", "issue", "update", "init", "remove"]);
+const commandsWithoutGateActivation = new Set(["refresh-latest", "issue", "update", "versions", "init", "remove"]);
 program.hook("preAction", async (_program, actionCommand) => {
   const options = actionCommand.optsWithGlobals() as Readonly<Record<string, unknown>>;
   if (!commandsWithoutDelegation.has(actionCommand.name())) {
@@ -462,6 +464,22 @@ program
     });
   });
 
+program
+  .command("versions")
+  .description("List the Railguard engines cached on this machine and remove the ones not needed")
+  .option("--remove <versions...>", "cached versions to remove")
+  .option("--yes", "remove them; without it, only report what would be removed", false)
+  .action(async (_options, command: Command) => {
+    await direct(async () => {
+      const options = command.optsWithGlobals() as Readonly<Record<string, unknown>>;
+      const remove = Array.isArray(options.remove) ? options.remove.map(String) : [];
+      if (options.yes === true && remove.length === 0) {
+        throw new CommandInputError("--yes requires --remove VERSION...");
+      }
+      process.exitCode = await runVersions(engineVersions(rootFrom(options)), { remove, yes: options.yes === true });
+    });
+  });
+
 addFormat(program.command("doctor").description("Run read-only project diagnostics"))
   .action(async (_options, command) => {
     await invoke("doctor", command, (options) => ({
@@ -535,7 +553,7 @@ program.action(async () => {
     ...(sourcePath === undefined ? {} : { sourcePath }),
   });
   try {
-    await runWizard(runtime.session, root, clackUi(), version);
+    await runWizard(runtime.session, root, clackUi(), version, engineVersions(root));
   } finally {
     await runtime.dispose();
   }
@@ -920,7 +938,8 @@ Engine update:
   railguard runs every command but update and issue with that pinned version.
   railguard update --check|--plan-only|--yes
   moves the repository to the latest release; re-run the install script to update the
-  global command itself. A notice on stderr reports a newer release, checked once a day in
+  global command itself. railguard versions lists the engines cached on this machine and
+  railguard versions --remove VERSION... --yes deletes the ones no repository needs. A notice on stderr reports a newer release, checked once a day in
   the background (disabled in CI or with RAILGUARD_NO_UPDATE_CHECK=1).
 
 Reporting:
@@ -1003,6 +1022,17 @@ rewrites .railguard/bin/railguard with its version and applies the content it sh
 reviewable change of the repository. Exit codes: 0 applied or already current; 2 invalid
 input; 4 release unavailable; 6 a newer release exists (--check).
 Output: --format text|json.`);
+  command(root, "versions").addHelpText("after", `
+Examples:
+  railguard versions
+  railguard versions --remove 0.1.1 0.1.10
+  railguard versions --remove 0.1.1 0.1.10 --yes
+
+Effect: lists the engines launchers cached in $XDG_CACHE_HOME/railguard (or ~/.cache/railguard),
+marking the version this repository pins, the running one and the latest release. --remove
+without --yes only reports what it would delete; a launcher downloads a removed version again
+when a repository needs it. Exit codes: 0 listed or removed; 2 invalid input or a version that
+is not cached; 6 removal available (without --yes).`);
   command(root, "issue").addHelpText("after", `
 Examples:
   railguard issue bug

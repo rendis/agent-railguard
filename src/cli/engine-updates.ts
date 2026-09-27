@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { engineVersion, releaseRepository } from "../application/engine-release.js";
 import {
@@ -10,6 +10,7 @@ import {
   updateNotice,
   type LatestRelease,
 } from "../application/engine-update.js";
+import { engineCacheRoot } from "../adapters/platform/engine-cache/engine-cache.js";
 import { GitHubLatestRelease } from "../adapters/platform/release/github-latest-release.js";
 import { NodeProcessRunner } from "../adapters/platform/process/node-process-runner.js";
 import { posixScript } from "../adapters/platform/process/posix-shell.js";
@@ -28,8 +29,8 @@ function latestReleaseSource(): LatestRelease {
   return new GitHubLatestRelease(new NodeProcessRunner(), releaseRepository);
 }
 
-function latestCacheFile(environment: NodeJS.ProcessEnv = process.env): string {
-  return join(environment.XDG_CACHE_HOME || join(homedir(), ".cache"), "railguard", "latest.json");
+export function latestCacheFile(environment: NodeJS.ProcessEnv = process.env): string {
+  return join(engineCacheRoot(environment), "latest.json");
 }
 
 /** The command that starts this same engine, whether it runs as a Bun binary or a Node bundle. */
@@ -45,9 +46,10 @@ function selfCommand(): { readonly command: string; readonly prefix: readonly st
  */
 export function delegateToPinnedEngine(root: string, args: readonly string[]): number | null {
   if (process.env[launchedVariable] === "1") return null;
+  const launcherFile = repositoryLauncher(root);
   const pinned = repositoryPinnedVersion(root);
-  if (pinned === null || pinned === engineVersion) return null;
-  const launcher = posixScript(join(root, launcherPath));
+  if (launcherFile === null || pinned === null || pinned === engineVersion) return null;
+  const launcher = posixScript(launcherFile);
   const result = spawnSync(launcher.command, [...launcher.args, ...args], {
     stdio: "inherit",
     env: { ...process.env, [launchedVariable]: "1" },
@@ -55,10 +57,23 @@ export function delegateToPinnedEngine(root: string, args: readonly string[]): n
   return result.status ?? 1;
 }
 
-/** The engine version the repository's launcher pins, or null outside a configured repository. */
+/**
+ * The engine version the launcher of the repository containing `root` pins, or null outside a
+ * configured repository.
+ */
 export function repositoryPinnedVersion(root: string): string | null {
-  const launcher = join(root, launcherPath);
-  return existsSync(launcher) ? pinnedVersion(readFileSync(launcher, "utf8")) : null;
+  const launcher = repositoryLauncher(root);
+  return launcher === null ? null : pinnedVersion(readFileSync(launcher, "utf8"));
+}
+
+/** The launcher at `root` or, from a subdirectory, at the root of its Git worktree. */
+function repositoryLauncher(root: string): string | null {
+  const direct = join(root, launcherPath);
+  if (existsSync(direct)) return direct;
+  const topLevel = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: root, encoding: "utf8" });
+  if (topLevel.status !== 0) return null;
+  const launcher = join(topLevel.stdout.trim(), launcherPath);
+  return existsSync(launcher) ? launcher : null;
 }
 
 /** Prints the update notice on stderr; it never delays or fails the command that just ran. */

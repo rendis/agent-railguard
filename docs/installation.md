@@ -80,11 +80,13 @@ If it cannot obtain it, it explains how to and exits with code `127`; hooks trea
 missing engine: they warn and let things continue. It writes only to stderr, so the hooks' stdout
 protocol does not change.
 
-A global `railguard` run inside a repository that pins another version delegates to the
-launcher: every command runs with the repository's version, so no one accidentally rewrites a
-repository with a different version by mistake. `update` and `issue` are the exception: the
+A global `railguard` run inside a repository that pins another version, at its root or in any
+subdirectory, delegates to the launcher: every command runs with the repository's version, so no
+one accidentally rewrites a repository with a different version by mistake. Outside a configured
+repository the global version runs. `update`, `issue` and `versions` are the exception: the
 global `railguard` runs them, so a repository can be updated even if its pinned version is not
-available.
+available. `railguard versions` lists the cached engines and removes the ones no repository needs
+([CLI](cli.md#cached-engine-versions)).
 
 ## Railguard and CI
 

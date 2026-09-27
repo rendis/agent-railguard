@@ -354,6 +354,44 @@ describe.sequential("production CLI contract", () => {
     }
   }, 30_000);
 
+  it("lists the cached engines and removes only the requested ones with --yes", async () => {
+    const cache = await mkdtemp(join(tmpdir(), "railguard-cli-versions-"));
+    const environment = { XDG_CACHE_HOME: cache };
+    try {
+      expect(await cli(["versions"], environment)).toMatchObject({
+        code: 0,
+        stdout: `No Railguard engines are cached in ${join(cache, "railguard")}.\n`,
+      });
+      for (const version of ["0.1.2", "0.1.10"]) {
+        await mkdir(join(cache, "railguard", version), { recursive: true });
+        await writeFile(join(cache, "railguard", version, "railguard"), "engine");
+      }
+      await mkdir(join(cache, "railguard", "content"));
+      await writeFile(join(cache, "railguard", "latest.json"), `${JSON.stringify({ checked_at: Date.now(), latest: "0.1.10" })}\n`);
+
+      const listed = await cli(["versions"], environment);
+      expect(listed.code, listed.stderr).toBe(0);
+      expect(listed.stdout).toContain("  0.1.10      1 KB  latest\n  0.1.2       1 KB\n");
+      expect(listed.stdout).not.toContain("content");
+
+      const preview = await cli(["versions", "--remove", "0.1.2"], environment);
+      expect(preview).toMatchObject({ code: 6, stdout: "Would remove 0.1.2 (1 KB). Run again with --yes to remove them.\n" });
+      expect(await stat(join(cache, "railguard", "0.1.2"))).toBeTruthy();
+      expect((await cli(["versions", "--remove", "0.1.3", "--yes"], environment)).code).toBe(2);
+      expect((await cli(["versions", "--yes"], environment)).code).toBe(2);
+
+      expect(await cli(["versions", "--remove", "0.1.2", "--yes"], environment)).toMatchObject({
+        code: 0,
+        stdout: "Removed 0.1.2 (1 KB).\n",
+      });
+      await expect(stat(join(cache, "railguard", "0.1.2"))).rejects.toThrow();
+      expect(await stat(join(cache, "railguard", "0.1.10"))).toBeTruthy();
+      expect(await stat(join(cache, "railguard", "content"))).toBeTruthy();
+    } finally {
+      await rm(cache, { recursive: true, force: true });
+    }
+  });
+
   it("updates a repository to another release and runs every command with its pinned engine", async () => {
     const repository = await goRepository("engine-update");
     const workspace = await mkdtemp(join(tmpdir(), "railguard-cli-update-"));
@@ -382,6 +420,10 @@ describe.sequential("production CLI contract", () => {
       await writeFile(launcher, pinned.replace(`version=${engineVersion}`, "version=9.9.9"));
       const delegated = await cli(["status", "--cwd", repository.root], environment);
       expect(delegated).toMatchObject({ code: 0, stdout: `engine 9.9.9 ran status --cwd ${repository.root}\n` });
+      const subdirectory = join(repository.root, "internal");
+      await mkdir(subdirectory);
+      const nested = await cli(["status", "--cwd", subdirectory], environment);
+      expect(nested).toMatchObject({ code: 0, stdout: `engine 9.9.9 ran status --cwd ${subdirectory}\n` });
       const unobtainable = await cli(["update", "--check", "--to", "9.9.10", "--cwd", repository.root], {
         ...environment,
         RAILGUARD_DOWNLOAD_URL: `file://${workspace}/missing`,

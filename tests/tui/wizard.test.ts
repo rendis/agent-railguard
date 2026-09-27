@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { runProductCommand } from "../../src/cli/command-runner.js";
 import type { ExecutableProbe } from "../../src/domain/harness/model.js";
 import { harnessTargetId } from "../../src/domain/shared/types.js";
+import type { EngineVersions } from "../../src/interaction/engine-versions.js";
 import { createInteractionRuntime } from "../../src/interaction/interaction-session.js";
 import { runWizard, type Choice, type WizardUi } from "../../src/tui/wizard.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
@@ -204,6 +205,37 @@ describe("interactive wizard", () => {
       expect(titles.filter((title) => title === "Repository")).toHaveLength(1);
       expect(titles.indexOf("Scan details")).toBeGreaterThan(titles.indexOf("Repository"));
       expect(script.prompts).toEqual(["What do you want to do?", "What do you want to do?"]);
+    } finally {
+      await Promise.all([runtime.dispose(), repository.cleanup()]);
+    }
+  });
+
+  it("removes the cached engine versions the user picks after confirming", async () => {
+    const repository = await createTempRepository({});
+    const runtime = await createInteractionRuntime({ executableProbe: probe });
+    const removed: string[][] = [];
+    const engines: EngineVersions = {
+      view: async () => ({
+        cacheRoot: "/cache/railguard",
+        engines: [{ version: "0.2.0", bytes: 2 * 1024 * 1024 }, { version: "0.1.0", bytes: 1024 * 1024 }],
+        running: "0.2.0",
+        pinned: null,
+        latest: "0.2.0",
+      }),
+      remove: async (versions) => { removed.push([...versions]); },
+    };
+    const script = scriptedUi([
+      { select: "versions" },
+      { pick: ["0.1.0"] },
+      { confirm: true },
+      { select: "quit" },
+    ]);
+    try {
+      await runWizard(runtime.session, repository.root, script.ui, "test", engines);
+
+      expect(removed).toEqual([["0.1.0"]]);
+      expect(script.prompts).toContain("Remove 0.1.0 (1.0 MB)?");
+      expect(script.shown.join("\n")).toContain("Removed 0.1.0 (1.0 MB).");
     } finally {
       await Promise.all([runtime.dispose(), repository.cleanup()]);
     }

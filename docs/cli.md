@@ -171,6 +171,20 @@ The chosen version runs `sync`: the change lands in the launcher and in the repo
 content. It exits with `4` if the release cannot be fetched. Each command warns on stderr when a
 newer release is available ([Installation](installation.md#updating)).
 
+## Cached engine versions
+
+```bash
+railguard versions                               # cached engines, size and marks
+railguard versions --remove 0.1.1 0.1.10         # report what would be removed; exits 6
+railguard versions --remove 0.1.1 0.1.10 --yes   # remove them
+```
+
+Each version a launcher downloads stays in `~/.cache/railguard/<version>`. The list marks the
+version this repository pins, the running one, and the latest release. Removing a version that a
+repository still pins is safe: its launcher downloads it again on the next command. A version
+that is not cached exits with `2`. The wizard offers the same choice under "Manage cached
+Railguard versions".
+
 ## Report a bug or propose an improvement
 
 ```bash

@@ -7,6 +7,12 @@ import type {
 } from "../interaction/model.js";
 import type { ComponentRef, HarnessTargetId } from "../domain/shared/types.js";
 import {
+  engineRows,
+  formatBytes,
+  totalBytes,
+  type EngineVersions,
+} from "../interaction/engine-versions.js";
+import {
   componentDetails,
   componentHint,
   componentLabel,
@@ -75,6 +81,7 @@ type MenuAction =
   | "details"
   | "remove-all"
   | "rescan"
+  | "versions"
   | "quit"
   | { readonly mcp: ComponentRef; readonly operation: "inspect" | "login" | "logout" };
 
@@ -87,6 +94,7 @@ export async function runWizard(
   root: string,
   ui: WizardUi,
   version: string,
+  engines?: EngineVersions,
 ): Promise<InteractionSnapshot> {
   ui.intro(`Railguard ${version}`);
   let snapshot = await withProgress(ui, session, "Scanning the repository", { type: "scan", root });
@@ -107,7 +115,7 @@ export async function runWizard(
       ui.note(scanSummary(snapshot), "Repository");
       summarized = snapshot;
     }
-    const action = await ui.select<MenuAction>("What do you want to do?", menu(snapshot), { quitKey: true });
+    const action = await ui.select<MenuAction>("What do you want to do?", menu(snapshot, engines !== undefined), { quitKey: true });
     if (action === null || action === "quit") break;
     if (action === "details") {
       ui.note(scanDetails(snapshot), "Scan details");
@@ -115,6 +123,10 @@ export async function runWizard(
     }
     if (action === "rescan") {
       snapshot = await withProgress(ui, session, "Scanning the repository", { type: "scan", root });
+      continue;
+    }
+    if (action === "versions") {
+      if (engines !== undefined) await manageVersions(ui, engines);
       continue;
     }
     if (typeof action === "object") {
@@ -133,7 +145,7 @@ export async function runWizard(
   return snapshot;
 }
 
-function menu(snapshot: InteractionSnapshot): Choice<MenuAction>[] {
+function menu(snapshot: InteractionSnapshot, versions: boolean): Choice<MenuAction>[] {
   const managed = snapshot.repository?.management !== "uninitialized";
   const choices: Choice<MenuAction>[] = [
     {
@@ -154,6 +166,7 @@ function menu(snapshot: InteractionSnapshot): Choice<MenuAction>[] {
   choices.push(
     { value: "details", label: "Show scan details" },
     { value: "rescan", label: "Scan again" },
+    ...(versions ? [{ value: "versions" as const, label: "Manage cached Railguard versions" }] : []),
     { value: "quit", label: "Quit", hint: "or press q" },
   );
   return choices;
@@ -404,4 +417,26 @@ function installedOauthMcps(snapshot: InteractionSnapshot): ComponentRef[] {
 
 function firstLine(value: string | null): string {
   return (value ?? "").split("\n")[0] ?? "";
+}
+
+/** Lets the user pick cached engine versions to delete; a launcher downloads them again if needed. */
+async function manageVersions(ui: WizardUi, engines: EngineVersions): Promise<void> {
+  const view = await engines.view();
+  if (view.engines.length === 0) {
+    ui.note(`No Railguard engines are cached in ${view.cacheRoot}.`, "Cached versions");
+    return;
+  }
+  // Sizes and marks go in the label: clack shows a hint only on the focused option.
+  const rows = engineRows(view);
+  const choices = view.engines.map((engine, index) => ({ value: engine.version, label: rows[index] ?? engine.version }));
+  const selected = await ui.multiselect("Select the cached versions to remove (Space marks, Enter confirms)", choices, []);
+  if (selected === null || selected.length === 0) return;
+  const size = formatBytes(totalBytes(view.engines, selected));
+  const confirmed = await ui.confirm(`Remove ${selected.join(", ")} (${size})?`);
+  if (confirmed !== true) return;
+  await engines.remove(selected);
+  const note = view.pinned !== null && selected.includes(view.pinned)
+    ? `\nThis repository pins ${view.pinned}; its launcher downloads it again on the next command.`
+    : "";
+  ui.note(`Removed ${selected.join(", ")} (${size}).${note}`, "Cached versions");
 }

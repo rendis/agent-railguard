@@ -55,6 +55,11 @@ export async function refreshLatest(source: LatestRelease, cacheFile: string, no
   return latest;
 }
 
+/** The latest release the daily check recorded, without touching the network. */
+export async function cachedLatest(file: string): Promise<string | null> {
+  return (await readLatestCache(file))?.latest ?? null;
+}
+
 async function readLatestCache(file: string): Promise<LatestCache | null> {
   try {
     const value = JSON.parse(await readFile(file, "utf8")) as Partial<LatestCache>;

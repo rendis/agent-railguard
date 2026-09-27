@@ -14,7 +14,7 @@ produce the same plan as `railguard init|plan`.
    or harness does not block the scan.
 2. **Menu.** Configure (or change components/harnesses if already managed), actions for installed
    OAuth MCPs (check, log in, and log out), remove everything managed, view the scan detail, scan
-   again, or exit.
+   again, remove cached Railguard versions this machine no longer needs, or exit.
 3. **Components.** List grouped by family (Packs, Skills, MCP, Agents, Quality, Git hooks, Agent
    hooks) or search by text. Nothing is preselected: recommendations are indicated, not imposed.
    Afterward the dependencies that come in as required and any blockers are shown; from there you
