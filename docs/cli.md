@@ -64,6 +64,14 @@ railguard init \
   --harness codex --yes
 ```
 
+`--set` also selects the component directly: an input on a profile that only a pack includes
+(`--add pack:go-service-foundation --set 'verification-profile:change-guard.max_changed_lines=["800"]'`)
+is kept in `.railguard/project.yaml` next to the pack. A component the catalog does not have blocks
+the plan with `resolution.selection.unknown`.
+
+When a plan is blocked, `--out` writes no file; the output lists each diagnostic with its message,
+evidence and next step, and says that no plan file was written (exit code `5`).
+
 Modify desired state or targets:
 
 ```bash

@@ -512,6 +512,44 @@ describe.sequential("production CLI contract", () => {
     }
   }, 60_000);
 
+  it("selects a component directly when an input is set on one that only a pack includes", async () => {
+    const repository = await goRepository("set-through-pack");
+    try {
+      const init = await cli([
+        "init", "--add", "pack:go-service-foundation", "--harness", "codex", "--yes",
+        "--set", "verification-profile:change-guard.max_changed_lines=[\"800\"]", "--cwd", repository.root,
+      ]);
+      expect(init.code, init.stdout + init.stderr).toBe(0);
+
+      const project = await readFile(join(repository.root, ".railguard/project.yaml"), "utf8");
+      expect(project).toContain("- ref: pack:go-service-foundation");
+      expect(project).toMatch(/- ref: verification-profile:change-guard\n\s+inputs:\n\s+max_changed_lines:\n\s+- "800"/u);
+
+      const unknown = await cli(["plan", "--set", "verification-profile:nope.max_changed_lines=[\"1\"]", "--cwd", repository.root]);
+      expect(unknown.code).toBe(5);
+      expect(unknown.stdout).toContain("resolution.selection.unknown");
+    } finally {
+      await repository.cleanup();
+    }
+  }, 60_000);
+
+  it("explains why no plan file was written instead of refusing the export", async () => {
+    const repository = await goRepository("blocked-plan-out");
+    const out = await mkdtemp(join(tmpdir(), "railguard-plan-out-"));
+    try {
+      const result = await cli(["plan", "--add", "skill:nope", "--out", join(out, "plan.json"), "--cwd", repository.root]);
+
+      expect(result.code).toBe(5);
+      expect(result.stdout).toContain("resolution.selection.unknown: A direct selection is absent from the catalog snapshot.");
+      expect(result.stdout).toContain("Next: Choose a component present in the current catalog.");
+      expect(result.stderr).toContain("No plan file was written");
+      expect(await stat(join(out, "plan.json")).catch(() => null)).toBeNull();
+    } finally {
+      await rm(out, { recursive: true, force: true });
+      await repository.cleanup();
+    }
+  });
+
   it("gates a pull request: a requested finding passes only with a configured approver's approval of the head", async () => {
     const repository = await goRepository("pull-request-gate");
     const bin = await mkdtemp(join(tmpdir(), "railguard-gh-"));
