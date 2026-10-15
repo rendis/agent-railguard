@@ -12,7 +12,7 @@ import type {
   ManagedGitConfigOwnership,
   PortableOwnershipState,
 } from "../ownership/model.js";
-import type { GitConfigPort } from "../planning/model.js";
+import { hooksPathHolds, type GitConfigPort } from "../planning/model.js";
 import type { RepositoryEntry, RepositorySnapshot } from "../repository/model.js";
 import {
   compareDiagnostics,
@@ -80,10 +80,15 @@ export class DefaultProjectObserver implements ProjectObserver {
         return unit(effect.effect_id, "git-config", "missing", expectedDigest, null);
       }
       const observedDigest = sha256(current.value);
+      const holds = hooksPathHolds(current, effect.expected_value);
+      if (holds && current.value !== effect.expected_value) {
+        diagnostics.push(absoluteHooksPathDiagnostic(effect, current.value));
+      }
+      if (current.linkedWorktree === true) diagnostics.push(sharedHooksPathDiagnostic(effect, current.value));
       return unit(
         effect.effect_id,
         "git-config",
-        current.value === effect.expected_value ? "clean" : "drifted",
+        holds ? "clean" : "drifted",
         expectedDigest,
         observedDigest,
       );
@@ -363,6 +368,50 @@ function observationDiagnostic(input: {
     evidence: Object.freeze([...input.evidence].sort(compareUtf8)),
     impact: input.impact,
     action: input.action,
+  });
+}
+
+/** Explains a setting without changing what `status` reports about the repository. */
+function advisory(input: {
+  readonly code: string;
+  readonly subjects: readonly ComponentRef[];
+  readonly evidence: readonly string[];
+  readonly message: string;
+  readonly impact: string;
+  readonly action: string;
+}): Diagnostic {
+  return Object.freeze({
+    code: input.code,
+    severity: "info",
+    phase: "reconciliation",
+    subjects: Object.freeze([...input.subjects]),
+    location: null,
+    message: input.message,
+    evidence: Object.freeze([...input.evidence].sort(compareUtf8)),
+    impact: input.impact,
+    action: input.action,
+  });
+}
+
+function absoluteHooksPathDiagnostic(effect: ManagedGitConfigOwnership, value: string): Diagnostic {
+  return advisory({
+    code: "observation.git-config.absolute",
+    subjects: effect.sources,
+    evidence: [value, effect.expected_value],
+    message: `${effect.key} is an absolute path into a worktree of this repository, not ${effect.expected_value}.`,
+    impact: "It names the same hooks, but every worktree shares the setting, so all of them run the hooks of that one checkout instead of their own.",
+    action: `Run railguard sync --yes to store ${effect.expected_value}, which each worktree resolves to its own hooks.`,
+  });
+}
+
+function sharedHooksPathDiagnostic(effect: ManagedGitConfigOwnership, value: string): Diagnostic {
+  return advisory({
+    code: "observation.git-config.shared",
+    subjects: effect.sources,
+    evidence: [value],
+    message: `This is a linked worktree: ${effect.key} is stored in the Git configuration that every worktree of the clone shares.`,
+    impact: `A relative value such as ${effect.expected_value} is resolved in each worktree, so each runs its own hooks; a worktree whose branch has no ${effect.expected_value} runs none.`,
+    action: "Nothing to do. Run init or sync from any worktree: they all see the same setting.",
   });
 }
 

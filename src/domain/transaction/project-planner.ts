@@ -15,7 +15,7 @@ import {
   setJsonMember,
   type JsonObject,
 } from "../managed-json/managed-json.js";
-import type { GitConfigPort, GitConfigValue } from "../planning/model.js";
+import { hooksPathHolds, type GitConfigPort, type GitConfigValue } from "../planning/model.js";
 import type { ProjectedUnit } from "../projection/model.js";
 import type { RepositoryEntry, RepositorySnapshot } from "../repository/model.js";
 import {
@@ -876,7 +876,7 @@ async function planLocalEffects(
       continue;
     }
     if (newEffect !== undefined) {
-      if (oldEffect === undefined && current.kind === "value" && current.value !== newEffect.expected_value) {
+      if (oldEffect === undefined && current.kind === "value" && !hooksPathHolds(current, newEffect.expected_value)) {
         diagnostics.push(
           planningDiagnostic(
             "planning.git-config.foreign",
@@ -891,8 +891,8 @@ async function planLocalEffects(
       if (
         oldEffect !== undefined &&
         current.kind === "value" &&
-        current.value !== oldEffect.expected_value &&
-        current.value !== newEffect.expected_value &&
+        !hooksPathHolds(current, oldEffect.expected_value) &&
+        !hooksPathHolds(current, newEffect.expected_value) &&
         request.mode !== "repair"
       ) {
         diagnostics.push(
@@ -914,7 +914,7 @@ async function planLocalEffects(
     } else if (
       oldEffect !== undefined &&
       current.kind === "value" &&
-      current.value !== oldEffect.expected_value
+      !hooksPathHolds(current, oldEffect.expected_value)
     ) {
       diagnostics.push(gitConfigDriftDiagnostic(current.value, oldEffect.expected_value));
     } else if (oldEffect !== undefined && current.kind === "value") {

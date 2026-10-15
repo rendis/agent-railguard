@@ -266,7 +266,11 @@ suppression on its own.
    first command in the clone activates them, including the end-of-turn hook that Claude
    Code and Cursor run with no configuration: if the repository declares the gates and
    the clone has no `core.hooksPath`, it configures it and reports it on stderr. A
-   developer's own `core.hooksPath` is not touched; `railguard status` reports it. Even
+   developer's own `core.hooksPath` is not touched; `railguard status` reports it. Every worktree
+   of a clone shares that setting, so Railguard stores the relative `.railguard/hooks`, which each
+   worktree resolves to its own hooks; an absolute path into one of the clone's worktrees counts
+   as the same setting (not drift), `status` says so, and `sync` stores the relative form
+   ([D-032](decisions.md#d-032--scans-and-units-stop-at-nested-repositories-the-hooks-path-is-read-per-worktree)). Even
    when activated, `git commit --no-verify` skips them. The pre-commit gate judges only what
    the commit holds (`--changed --staged`): unrelated unstaged or untracked work never blocks
    it, and the pre-push gate judges the whole branch. A gate runs the selected profiles,
