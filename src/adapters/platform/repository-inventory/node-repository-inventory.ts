@@ -218,6 +218,8 @@ export class NodeRepositoryInventory implements RepositoryInventory {
       }
 
       if (pathStat.isDirectory()) {
+        // Another repository (a linked worktree, a submodule, a nested clone) is not this one's.
+        if (await isNestedRepository(absolutePath)) continue;
         const resolvedDirectory = await realpath(absolutePath);
         if (!isInsideRoot(input.rootRealPath, resolvedDirectory)) {
           throw new Error(`Repository directory escapes root: ${path}`);
@@ -283,7 +285,8 @@ export class NodeRepositoryInventory implements RepositoryInventory {
 /**
  * Git-ignored directories outside hidden configuration directories hold build output and caches
  * (`tmp/`, `bin/`, `out/`); nothing is ever projected there. Hidden directories such as `.claude`
- * stay inventoried even when ignored because harness configuration lives in them.
+ * stay inventoried even when ignored because harness configuration lives in them; the other
+ * repositories an agent keeps there (`.claude/worktrees/*`) are skipped as nested repositories.
  */
 async function ignoredOutputDirectories(root: string): Promise<ReadonlySet<string>> {
   try {
@@ -300,6 +303,16 @@ async function ignoredOutputDirectories(root: string): Promise<ReadonlySet<strin
     );
   } catch {
     return new Set();
+  }
+}
+
+/** A directory with its own `.git` (a file for a linked worktree or submodule, a directory for a clone). */
+async function isNestedRepository(directory: string): Promise<boolean> {
+  try {
+    await lstat(resolve(directory, ".git"));
+    return true;
+  } catch {
+    return false;
   }
 }
 

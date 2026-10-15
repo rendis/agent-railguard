@@ -91,4 +91,29 @@ describe("NodeRepositoryInventory", () => {
     expect(paths.some((path) => path.startsWith("tmp"))).toBe(false);
     expect(paths).toContain(relativePosixPath(".claude/settings.local.json"));
   });
+
+  it("does not walk into linked worktrees, submodules or nested clones, even inside ignored hidden directories", async () => {
+    const repository = await createTempRepository({
+      ".gitignore": ".claude/\n",
+      "go.mod": "module example.com/service\n\ngo 1.24\n",
+      "main.go": "package main\n",
+      ".claude/settings.local.json": "{}\n",
+    });
+    cleanups.push(repository.cleanup);
+    const git = (...args: string[]) => promisify(execFile)("git", ["-C", repository.root, "-c", "user.email=a@b", "-c", "user.name=t", ...args]);
+    await git("init", "--quiet", "-b", "main");
+    await git("add", ".");
+    await git("commit", "--quiet", "-m", "base");
+    await git("worktree", "add", "--quiet", ".claude/worktrees/feature", "-b", "feature");
+    await mkdir(join(repository.root, "vendored-clone"), { recursive: true });
+    await promisify(execFile)("git", ["init", "--quiet", join(repository.root, "vendored-clone")]);
+    await writeFile(join(repository.root, "vendored-clone", "go.mod"), "module example.com/other\n");
+
+    const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
+    const paths = snapshot.entries.map((entry) => entry.path as string);
+
+    expect(paths).toContain(".claude/settings.local.json");
+    expect(paths).toContain("go.mod");
+    expect(paths.filter((path) => path.startsWith(".claude/worktrees/") || path.startsWith("vendored-clone"))).toEqual([]);
+  });
 });
