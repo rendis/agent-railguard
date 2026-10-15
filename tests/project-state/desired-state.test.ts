@@ -1,9 +1,10 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FilesystemCatalog } from "../../src/catalog/filesystem-catalog.js";
 import { DesiredStateModule } from "../../src/project-state/desired-state.js";
 import { languageId } from "../../src/domain/shared/types.js";
 
-const catalogFile = new URL("../../railguard.yaml", import.meta.url).pathname;
+const catalogFile = fileURLToPath(new URL("../../railguard.yaml", import.meta.url));
 
 describe("DesiredStateModule", () => {
   it("normalizes equivalent draft and YAML input to identical portable state", async () => {
