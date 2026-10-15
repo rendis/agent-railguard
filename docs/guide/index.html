@@ -295,9 +295,11 @@ Fix every failure below without weakening tests or checks, then finish again.
 git commit -m "chore: remove flaky test"</p></div>
 <pre class="out">  FAIL change-guard/integrity  1 change(s) weaken what the checks can see
       internal/orders/orders_test.go: <mark>test file deleted</mark>
-      Never add a `Railguard-Allow` trailer yourself: <mark>only a person may accept</mark>
+      Fix the cause instead of weakening the checks.
+      If the change is intended, ask a person to accept it instead: …
+      Never write a `Railguard-Allow` trailer yourself: <mark>only a person may accept</mark>
       what the branch holds so far.</pre>
-      <div class="foot" data-i18n="r3.foot">Lo detiene el pre-commit. Sólo una persona puede aceptarlo.</div>
+      <div class="foot" data-i18n="r3.foot">Lo detiene el pre-commit. El agente puede pedir que lo acepte una persona; sólo la persona lo acepta.</div>
     </div>
     <div class="tp" role="tabpanel" id="p4" aria-labelledby="t4" hidden>
       <div class="row"><div class="k" data-i18n="k.agent">El agente</div><p class="act">git commit <mark>--no-verify</mark> -m "chore: remove flaky test"</p></div>
@@ -347,7 +349,7 @@ Fix what fails instead.</pre>
     'k.agent': 'The agent', 'r2.act': '“Done, refunds implemented.”',
     'r1.foot': 'It arrives a second after the edit, as the agent’s context.',
     'r2.foot': 'The turn does not end. After three attempts the change is marked as not verified and the next session is told.',
-    'r3.foot': 'The pre-commit stops it. Only a person can accept it.',
+    'r3.foot': 'The pre-commit stops it. The agent may ask a person to accept it; only the person does.',
     'r4.foot': 'The command never runs.',
     's.title': 'Get started', 's.lede': 'From your repository. Nothing is written until you see the plan.',
     's1.t': 'See what is there', 's1.d': 'Stack, Git and installed agents. It changes nothing.',

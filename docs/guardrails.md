@@ -71,18 +71,24 @@ instead of fixing the cause; this profile makes that visible:
   full, whatever its size. A text file larger than 16 MiB fails the integrity check
   because it cannot be scanned.
 
-A person accepts what the branch has up to that point with a trailer on a commit:
-`Railguard-Allow: change-integrity: <reason>` or `Railguard-Allow: change-size: <reason>`,
-making that commit with `git commit --no-verify`. Everything before that commit is
-accepted and everything after it keeps being judged; this way a branch that already
-existed before adopting Railguard does not get blocked, but it is not exempt either. It
-stays in the history and in the PR, and the check's result shows it (`since <commit>
-(accepted: <reason>)`). Railguard cannot know who wrote the trailer: the instructions and
-the failure messages forbid the agent from adding it, and whoever reviews the PR must
-check that a person put each `Railguard-Allow`. With squash merge, the trailer carries
-over to the final commit message. Adding a new protected configuration does not count;
-modifying or deleting one that already existed on the base does, including the selection
-in `.railguard/project.yaml`.
+A finding is accepted by a person, in one of two ways
+([acceptance](#accepting-a-finding)):
+
+- **A trailer.** A person accepts what the branch has up to that point with a trailer on a
+  commit: `Railguard-Allow: change-integrity: <reason>` or `Railguard-Allow: change-size:
+  <reason>`, making that commit with `git commit --no-verify`. Everything before that commit
+  is accepted and everything after it keeps being judged; this way a branch that already
+  existed before adopting Railguard does not get blocked, but it is not exempt either. It
+  stays in the history and in the PR, and the check's result shows it (`since <commit>
+  (accepted: <reason>)`). Railguard cannot know who wrote the trailer: the instructions and
+  the failure messages forbid the agent from adding it, and whoever reviews the PR must
+  check that a person put each one. With squash merge, the trailer carries over to the final
+  commit message.
+- **Approving the pull request**, after an agent asked for it with a `Railguard-Request`
+  trailer ([below](#accepting-a-finding)).
+
+Adding a new protected configuration does not count; modifying or deleting one that already
+existed on the base does, including the selection in `.railguard/project.yaml`.
 
 A removed test is a declaration that the file had on the base and the change no longer
 has: `func Test…`, `Benchmark…`, `Fuzz…` and `Example…` in `_test.go` (also as a suite
@@ -98,6 +104,69 @@ detected; that is measured by each stack's coverage and mutation testing.
 `railguard report` lists each accepted trailer and the agent hook activity, to see which
 rules actually block and which are only accepted out of habit
 ([CLI](cli.md#activity-report)).
+
+Documentation (`**/*.md`, `docs/**`), tests, generated code, lockfiles and harness
+configuration do not count toward `max_changed_lines`
+([D-033](decisions.md#d-033--documentation-does-not-count-toward-the-size-limit)); override
+`size_excluded_paths` to count them.
+
+## Accepting a finding
+
+Only a person decides that a finding is acceptable, and the person should not need a terminal:
+
+1. **The agent asks.** When an intended change still trips `change-integrity`, `change-size` or
+   `secret-exposure` (for example it deletes unit tests that an end-to-end suite now covers), the
+   agent writes a *request*: an empty commit made before the change, with the trailer
+   `Railguard-Request: <check-kind>: <reason>`.
+
+   ```bash
+   git commit --allow-empty -m "chore: request acceptance of change-integrity" \
+     -m "Railguard-Request: change-integrity: the unit tests moved to the e2e suite"
+   ```
+
+   Agents may write requests and never `Railguard-Allow`. A request accepts nothing: it makes the
+   finding **pending**.
+2. **Locally it does not block.** A pending check shows `ASK` with the reason and the result is
+   `PENDING` with exit code 0, so the agent hooks, the pre-commit and the pre-push gate let the
+   agent commit, push and open a pull request. The request covers the findings of its kind
+   anywhere on the branch; a finding of another kind, or one with no request, still fails and tells
+   the agent how to ask.
+3. **CI fails until a person approves.** `railguard gate --pull-request <n> --base <sha>` runs the
+   change-integrity, change-size and secret-exposure checks on the pull request's diff and reads its
+   reviews through the GitHub API ([CLI](cli.md#gate-a-pull-request),
+   [CI setup](installation.md#railguard-and-ci)). A pending finding passes when one of the
+   `approvers` approved the pull request's head commit, and fails otherwise, naming who is awaited.
+   The gate re-runs when the review is submitted, so approving the pull request turns it green.
+   A finding with no request fails whatever the reviews say, and a person's `Railguard-Allow`
+   trailer keeps working.
+
+The approvers are set per profile in `.railguard/project.yaml`:
+
+```yaml
+selections:
+  - ref: verification-profile:change-guard
+    inputs:
+      approvers: ["rendis"]
+  - ref: verification-profile:secret-guard
+    inputs:
+      approvers: ["rendis"]
+```
+
+An approval counts only when all of this holds, and the report says which condition a review
+missed:
+
+| Rule | Why |
+| --- | --- |
+| Given on the pull request's **current head commit** | The person saw exactly this change. A later commit makes every earlier approval stale; approve again. |
+| By a configured approver (GitHub login, any case) | Anyone can review; only the owner's decision accepts. |
+| Not by the pull request's author | A change cannot accept itself. |
+| Not by a bot (`type: Bot` or a `[bot]` login) | An agent's own app can never accept for the person. |
+| It is the reviewer's latest review that is more than a comment | A later "changes requested" or a dismissal withdraws it. |
+| Read from the target branch's `project.yaml` | The pull request cannot add itself as an approver. |
+
+Approvals come only from GitHub's API: a commit message, a comment or any file of the checkout
+cannot stand for one. See [D-031](decisions.md#d-031--an-agent-requests-a-person-accepts-by-approving-the-pull-request)
+for the reasoning and what the gate does not defend against.
 
 ## Secrets
 
@@ -127,7 +196,9 @@ Railguard downloads once, verifies against pinned digests and runs locally:
   those files is also a protected-configuration change for `change-guard`.
 - **Explicit acceptance:** a person accepts what the branch has up to that point with
   `Railguard-Allow: secret-exposure: <reason>` on a commit made with `git commit
-  --no-verify`, as in `change-guard`. What comes after keeps being judged.
+  --no-verify`, as in `change-guard`; what comes after keeps being judged. An agent may
+  instead ask with `Railguard-Request: secret-exposure: <reason>` and the pull request's
+  approval accepts it ([above](#accepting-a-finding)).
 
 If Betterleaks cannot be downloaded or does not run, the check stays `unavailable`. Like
 `change-guard`, it judges a change and is not part of `verify.sh`.
@@ -138,7 +209,8 @@ If Betterleaks cannot be downloaded or does not run, the check stays `unavailabl
 the reason goes back to the agent:
 
 - **Commands:** skipping Git hooks (`--no-verify`, `git commit -n`), writing a
-  `Railguard-Allow` trailer or changing `core.hooksPath`.
+  `Railguard-Allow` trailer or changing `core.hooksPath`. The refusal of the trailer
+  points the agent to `Railguard-Request`, which it may write.
 - **File edits** with the agent's tools: all of `.railguard/`, `.git/`,
   `.codex/hooks.json`, `.cursor/hooks.json` and the `protected_paths` of `change-guard`
   if it is selected. Those paths are written to `.railguard/agent-hooks/guard` on
@@ -203,8 +275,9 @@ suppression on its own.
    passes.
 3. **In CI**, with `.railguard/verify.sh verify`. It is the only point no one can skip.
    CI does not download the binary or need credentials for it, and it judges the same
-   rules as Railguard locally
-   ([Railguard and CI](installation.md#railguard-and-ci)).
+   rules as Railguard locally. The one thing a script cannot do, judging a pull request's
+   change and reading who approved it, is the optional `railguard gate`, which runs the
+   pinned engine in its own job ([Railguard and CI](installation.md#railguard-and-ci)).
 
 The hooks call the repository's launcher (`.railguard/bin/railguard`), which uses the
 version the repository pins and downloads it if missing

@@ -278,6 +278,17 @@ for (const stage of ["check", "verify"] as const) {
   });
 }
 
+addFormat(
+  program
+    .command("gate")
+    .description("Judge a pull request as CI's merge gate, where a finding a person was asked to accept passes only with a configured approver's approval")
+    .requiredOption("--pull-request <number>", "number of the pull request, whose head commit must be checked out")
+    .option("--base <ref>", "branch or commit to compare with; default: merge-base with the default branch"),
+  ["text", "json"],
+).action(async (_options, command: Command) => {
+  await direct(() => runVerification("verify", command));
+});
+
 const hook = program
   .command("hook", { hidden: true })
   .description("Entry points called by managed agent hooks");
@@ -725,6 +736,7 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
   const root = rootFrom(options);
   const base = baseFrom(options);
   if (options.staged === true && options.changed !== true) throw new CommandInputError("--staged requires --changed");
+  const pullRequest = pullRequestFrom(options);
   const runtime = await createDefaultApplication({
     ...(sourcePath === undefined ? {} : { sourcePath }),
   });
@@ -733,9 +745,10 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
       {
         root,
         stage,
-        changed: options.changed === true,
+        changed: options.changed === true || pullRequest !== undefined,
         staged: options.staged === true,
         ...(base === undefined ? {} : { base }),
+        ...(pullRequest === undefined ? {} : { pullRequest }),
       },
       (event) => {
         if (format !== "text" || !process.stderr.isTTY) return;
@@ -746,7 +759,8 @@ async function runVerification(stage: "check" | "verify", command: Command): Pro
       format === "text" ? renderVerificationReport(report, plain) : encodeVerificationReport(report),
     );
     process.exitCode = verificationExitCodes[report.verdict];
-    if (report.mode === "changed" && report.verdict === "passed") await createLocalRecords().unverified.clear(root);
+    const verified = report.verdict === "passed" || report.verdict === "pending";
+    if (report.mode === "changed" && verified && pullRequest === undefined) await createLocalRecords().unverified.clear(root);
   } finally {
     await runtime.dispose();
   }
@@ -762,6 +776,13 @@ function outputFormat(
     throw new CommandInputError(`Unsupported output format: ${value}`);
   }
   return value as OutputFormat;
+}
+
+function pullRequestFrom(options: Readonly<Record<string, unknown>>): number | undefined {
+  if (options.pullRequest === undefined) return undefined;
+  const value = requiredString(options.pullRequest, "--pull-request");
+  if (!/^[1-9][0-9]{0,8}$/u.test(value)) throw new CommandInputError("--pull-request must be a pull request number");
+  return Number(value);
 }
 
 function baseFrom(options: Readonly<Record<string, unknown>>): string | undefined {
@@ -1076,6 +1097,21 @@ script CI runs; a script that does not match the selection is blocked until rail
 Exit codes: 0 passed; 2 invalid input; 4 a check could not run; 5 blocked; 8 a check failed.
 Output: --format text|json (railguard/verification-report/v1).`);
   }
+  command(root, "gate").addHelpText("after", `
+Examples:
+  railguard gate --pull-request 42 --base origin/main
+  railguard gate --pull-request 42 --base "$BASE_SHA" --format json
+
+Effect: judges the pull request's change with the checks whose findings a person may accept
+(change-integrity, change-size and secret-exposure) and reads its reviews from GitHub with
+GITHUB_TOKEN (the job needs pull-requests: read) or the gh login. A finding that a commit asked a
+person to accept with a Railguard-Request trailer passes only when a configured approver
+approved the pull request's head commit; the pull request's author, bots and approvals of an
+earlier commit never count. A finding with no request, or no approval, fails. The checkout
+must be the pull request's head with full history. Nothing is written to GitHub or to the repository.
+
+Exit codes: 0 passed; 2 invalid input; 4 a check could not run; 5 blocked; 8 a finding is not accepted.
+Output: --format text|json (railguard/verification-report/v1, with pull_request).`);
   catalogCommand.addHelpText("after", `
 Reads the current verified project-content source. Use --source <path> globally to
 inspect a local authoring checkout.

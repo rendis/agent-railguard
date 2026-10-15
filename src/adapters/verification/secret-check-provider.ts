@@ -140,7 +140,7 @@ export class SecretCheckProvider implements CheckProvider {
         details: [
           ...findings,
           "Remove each secret instead of hiding it: read it from the environment or from a file Git ignores, and rewrite every commit that holds one (git commit --amend or git rebase) before pushing. Treat a real credential as exposed and rotate it.",
-          "Never add a `Railguard-Allow` trailer yourself: only a person may accept a finding they judge harmless, with `Railguard-Allow: secret-exposure: <reason>` in a commit they make (`git commit --no-verify` for that commit). Recurring false positives belong in .betterleaks.toml or .betterleaksignore on the default branch; exceptions changed on this branch take effect only once they reach the base.",
+          "Recurring false positives belong in .betterleaks.toml or .betterleaksignore on the default branch; exceptions changed on this branch take effect only once they reach the base.",
         ],
       };
     } finally {

@@ -51,6 +51,13 @@ match the SHA-256 values the engine pins; it re-verifies this on every use. The 
 local: Railguard never triggers secret validation against the network, and the report
 hides its values.
 
+`railguard gate` (the optional CI job) reads a pull request and its reviews from the GitHub API
+with read-only calls, using the job's `GITHUB_TOKEN` or the `gh` login. It sends no repository
+content, writes nothing to GitHub and trusts only what the API returns: an approval counts only
+from a configured approver, on the head commit, and never from the author or a bot. The approver
+list is read from the target branch, so a pull request cannot change who may accept it
+([D-031](decisions.md#d-031--an-agent-requests-a-person-accepts-by-approving-the-pull-request)).
+
 The update notice makes, at most once a day and in a separate process, a read-only query
 to the GitHub API about the latest release. It sends no repository data. `CI` or
 `RAILGUARD_NO_UPDATE_CHECK=1` disable it.

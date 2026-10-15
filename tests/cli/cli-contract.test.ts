@@ -74,6 +74,10 @@ describe.sequential("production CLI contract", () => {
       expect((await cli(help)).stdout, help.join(" ")).toContain("Examples:");
     }
     expect((await cli(["verify", "--help"])).stdout).toContain("8 a check failed");
+    const gateHelp = (await cli(["gate", "--help"])).stdout;
+    expect(gateHelp).toContain("--pull-request <number>");
+    expect(gateHelp).toContain("Railguard-Request");
+    expect(gateHelp).toContain("pull-requests: read");
   });
 
   it("uses one global local source override before or after a CLI subcommand", async () => {
@@ -507,6 +511,70 @@ describe.sequential("production CLI contract", () => {
       await repository.cleanup();
     }
   }, 60_000);
+
+  it("gates a pull request: a requested finding passes only with a configured approver's approval of the head", async () => {
+    const repository = await goRepository("pull-request-gate");
+    const bin = await mkdtemp(join(tmpdir(), "railguard-gh-"));
+    try {
+      const git = (...args: string[]) => execute("git", ["-C", repository.root, "-c", "user.email=a@b", "-c", "user.name=t", ...args]);
+      await writeFile(join(repository.root, "a_test.go"), "package a\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) {}\n");
+      const init = await cli([
+        "init", "--add", "verification-profile:change-guard", "--harness", "codex", "--yes",
+        "--set", "verification-profile:change-guard.approvers=[\"owner\"]", "--cwd", repository.root,
+      ]);
+      expect(init.code, init.stdout + init.stderr).toBe(0);
+      await git("add", ".");
+      await git("commit", "-qm", "configure railguard", "--no-verify");
+      await git("branch", "-M", "main");
+      await git("checkout", "-qb", "feature");
+      await git("commit", "-q", "--allow-empty", "--no-verify", "-m", "chore: request acceptance", "-m", "Railguard-Request: change-integrity: another suite covers it");
+      await git("rm", "-q", "a_test.go");
+      await git("commit", "-qm", "test: drop the unit test", "--no-verify");
+      const head = (await git("rev-parse", "HEAD")).stdout.trim();
+
+      const reviews = join(bin, "reviews.json");
+      await writeFile(reviews, "[]\n");
+      await writeFile(join(bin, "gh"), [
+        "#!/bin/sh",
+        'case "$2" in',
+        `  */reviews*) cat ${JSON.stringify(reviews)} ;;`,
+        `  *) echo '{"head":{"sha":"${head}"},"user":{"login":"agent[bot]","type":"Bot"}}' ;;`,
+        "esac",
+        "",
+      ].join("\n"), { mode: 0o755 });
+      const environment = { PATH: `${bin}:${process.env.PATH ?? ""}`, GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_REPOSITORY: "owner/repo" };
+      const gate = (...extra: string[]) => cli(["gate", "--pull-request", "5", "--base", "main", "--cwd", repository.root, ...extra], environment);
+
+      const local = await cli(["verify", "--changed", "--base", "main", "--cwd", repository.root]);
+      expect(local.code, local.stdout).toBe(0);
+      expect(local.stdout).toContain("Result: PENDING");
+
+      const waiting = await gate();
+      expect(waiting.code, waiting.stdout).toBe(8);
+      expect(waiting.stdout).toContain("awaiting approval");
+      expect(waiting.stdout).toContain("@owner");
+
+      await writeFile(reviews, JSON.stringify([{ user: { login: "owner", type: "User" }, state: "APPROVED", commit_id: "0".repeat(40) }]));
+      const stale = await gate("--format", "json");
+      expect(stale.code).toBe(8);
+      expect(JSON.parse(stale.stdout).pull_request.notes[0]).toContain("approve again");
+
+      await writeFile(reviews, JSON.stringify([{ user: { login: "owner", type: "User" }, state: "APPROVED", commit_id: head }]));
+      const approved = await gate();
+      expect(approved.code, approved.stdout).toBe(0);
+      expect(approved.stdout).toContain("approved by owner");
+
+      await git("checkout", "-q", "main");
+      const wrongCheckout = await gate();
+      expect(wrongCheckout.code).toBe(5);
+      expect(wrongCheckout.stdout).toContain("verification.pull-request.head-mismatch");
+      expect((await cli(["gate", "--cwd", repository.root])).code).toBe(2);
+      expect((await cli(["gate", "--pull-request", "abc", "--cwd", repository.root])).code).toBe(2);
+    } finally {
+      await rm(bin, { recursive: true, force: true });
+      await repository.cleanup();
+    }
+  }, 90_000);
 
   it("rejects an update outside a configured repository or to a malformed version", async () => {
     const repository = await goRepository("update-input");

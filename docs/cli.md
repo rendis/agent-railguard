@@ -132,13 +132,47 @@ Without `--changed` the steps of `.railguard/verify.sh` run
 ([guardrails](guardrails.md#the-whole-repository-railguardverifysh)); if the script does not
 match the current selection, the result is `blocked` and `railguard sync --yes` regenerates it.
 
-Each check ends `passed`, `failed`, `skipped`, or `unavailable`. `unavailable` indicates a
-missing tool or configuration and never counts as passed. Exit codes: `0` passed, `8` some check
-failed, `4` some check could not run, `5` blocked (for example, a repository with no selection).
-The JSON uses the schema `railguard/verification-report/v1`.
+Each check ends `passed`, `failed`, `skipped`, `unavailable`, or `pending`. `unavailable` indicates
+a missing tool or configuration and never counts as passed. `pending` is a finding that a commit
+asked a person to accept with a `Railguard-Request` trailer
+([accepting a finding](guardrails.md#accepting-a-finding)): the report shows it as `ASK` with the
+reason, the verdict is `pending` and the exit code `0`, so no local gate blocks. Exit codes: `0`
+passed or pending, `8` some check failed, `4` some check could not run, `5` blocked (for example,
+a repository with no selection). The JSON uses the schema `railguard/verification-report/v1`; a
+pending result carries `requested`, the request's reason.
 
 With invalid input (unsupported format, empty `--base`, unknown harness in `hook stop`), `check`,
 `verify`, and `hook stop` exit with `2` and explain the error on stderr.
+
+### Gate a pull request
+
+```bash
+railguard gate --pull-request 42 --base origin/main
+railguard gate --pull-request 42 --base "$BASE_SHA" --format json
+```
+
+CI's merge gate for findings a person may accept. It runs the `change-integrity`, `change-size`
+and `secret-exposure` checks on the pull request's change (the merge-base with `--base`, or with
+the default branch) and reads the pull request from GitHub, with `GITHUB_TOKEN` (or `GH_TOKEN`) when
+set, which in Actions needs `pull-requests: read`, and with the `gh` login otherwise.
+`GITHUB_REPOSITORY` and `GITHUB_API_URL` are honored; without the first, the `origin` remote names
+the repository. Nothing is written to GitHub or to the repository.
+
+- A finding that a commit asked a person to accept (`Railguard-Request`) **passes** when an
+  approver of its profile (the `approvers` input) approved the pull request's head commit, and
+  **fails** with `awaiting approval` otherwise.
+- A finding with no request fails; a person's `Railguard-Allow` trailer still accepts it.
+- The checkout must be the pull request's head commit with its full history; any other commit
+  blocks the gate (`verification.pull-request.head-mismatch`), because an approval applies to a
+  commit. Reviews by the author or by a bot, approvals of an earlier commit and approvals by
+  logins that are not approvers never count, and the report says which.
+- A repository without `change-guard` or `secret-guard` blocks the gate
+  (`verification.pull-request.no-profile`) instead of passing it.
+
+Text output ends with `Pull request #N at <head>: approved by <login>` or the missing condition;
+the JSON report adds `pull_request` (`number`, `head`, `author`, `approved_by`, `approvers`,
+`notes`). Exit codes are those of `verify`: `0` passed, `8` a finding is not accepted, `4` a
+check could not run, `5` blocked (head mismatch, pull request unreadable), `2` invalid input.
 
 ### Activity report
 

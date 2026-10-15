@@ -26,6 +26,8 @@ export interface ChangeSetReader {
   read(root: string, baseRef?: string, options?: { readonly staged?: boolean }): Promise<ChangeSet>;
   /** A changed file as the change holds it, or null when it is not a readable file. */
   content(root: string, path: string, staged: boolean): Promise<Buffer | null>;
+  /** A file as a revision holds it, or null when the revision has no such file. */
+  show(root: string, revision: string, path: string): Promise<string | null>;
 }
 
 export type CheckParams = Readonly<Record<string, string | number | boolean>>;
@@ -48,13 +50,17 @@ export interface CheckRequest {
 /**
  * `failed` is a product finding about the code; `unavailable` means the check could not run
  * (missing tool or configuration) and is reported as a readiness problem, never as a pass.
+ * `pending` is a finding that a commit asked a person to accept: it does not block locally and
+ * fails in CI until the pull request carries that person's approval.
  */
-export type CheckStatus = "passed" | "failed" | "skipped" | "unavailable";
+export type CheckStatus = "passed" | "failed" | "skipped" | "unavailable" | "pending";
 
 export interface CheckOutcome {
   readonly status: CheckStatus;
   readonly summary: string;
   readonly details: readonly string[];
+  /** For `pending`: the reason the request gave for the person who is asked to accept. */
+  readonly requested?: string;
 }
 
 export interface FullCheckRequest {

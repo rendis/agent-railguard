@@ -519,6 +519,107 @@ such as tests and lint still run on the working tree: isolating the index in a s
 tree would double the cost of every commit, and the push gate judges the same code with
 nothing left out.
 
+### D-031 — An agent requests, a person accepts by approving the pull request
+
+A guard finding (`change-integrity`, `change-size`, `secret-exposure`) can be accepted only by a
+person, and until now only with a `Railguard-Allow` trailer in a commit made in a terminal with
+`--no-verify`. The owner wants agents to work with full control of the repository while the
+decision stays a person's, with one tap in GitHub. The flow:
+
+1. **Request.** An agent that cannot or should not fix a finding writes
+   `Railguard-Request: <check-kind>: <reason>` in a commit message. The trailer has the same shape as
+   the allowance, a kind and a reason, and a trailer without a reason counts for nothing. Agents may
+   write it; the action guard keeps refusing `Railguard-Allow`. The request goes in an empty commit
+   made *before* the change it covers (`git commit --allow-empty -m … -m 'Railguard-Request: …'`),
+   because the pre-commit gate judges a commit before its message exists. A request covers the whole
+   branch for its kind, not "what the branch held at that commit" as an allowance does: it states
+   intent and accepts nothing, so there is no history to cut at. The failure message of every
+   unrequested finding spells the command out, so an agent learns the form where it fails.
+2. **Pending.** A failing check with a request for its kind ends `pending` instead of `failed`. It
+   shows the reason the request gave, does not block the agent hooks, the pre-commit or the
+   pre-push gate (exit code 0, verdict `pending`), and the end-of-turn hook lets the agent finish
+   and tells it to open a pull request. A request for another kind does not cover a finding, and
+   findings introduced after an *allowance* are still judged from that commit on, as before.
+3. **Gate.** CI runs `railguard gate --pull-request <n> --base <sha>` on the pull request. It runs
+   only the checks whose findings can be accepted, reads the pull request's reviews from GitHub and
+   settles every pending finding: `passed` when a configured approver approved the head commit,
+   `failed` otherwise. A finding with no request fails whatever the reviews say, so the person
+   approves what the request names and any other finding stays red. A person's `Railguard-Allow`
+   trailer keeps working in the gate.
+4. **Approval.** The approvers are the `approvers` input (GitHub logins) of the profile that owns
+   the check, set in `.railguard/project.yaml` (`--set 'verification-profile:change-guard.approvers=["rendis"]'`).
+   An approval counts only when:
+   - it is the reviewer's latest review that is not a plain comment (an approval followed by
+     "changes requested" or dismissed does not count);
+   - its `commit_id` is the pull request's current head commit;
+   - the reviewer is one of the approvers, compared without case;
+   - the reviewer is neither the author of the pull request nor a bot (`type: Bot` or a `[bot]`
+     login), whatever the configuration says.
+
+   A new commit changes the head, so the earlier approval stops counting and the report says
+   which commit it was given on and asks to approve again: the person always sees the exact change.
+   The check re-runs on `pull_request_review` as well as on `pull_request`, so one approval turns
+   it green.
+
+**Why these choices.**
+
+- *Approvers are read from the base, not from the branch.* Like the Betterleaks exceptions, the
+  list comes from `.railguard/project.yaml` as the target branch holds it (the `--base` revision),
+  so a pull request cannot add itself or a second account as an approver. The pull request that
+  first adds the list gets no approvals counted; it needs an allowance, or a second pull request.
+- *A profile input instead of a new `acceptance:` section.* Every other setting of
+  `project.yaml` is an input of the component it configures, so the schema of the desired state,
+  the lock and the plans stay as they were. The cost is that `change-guard` and `secret-guard`
+  each list their approvers.
+- *The head must be checked out.* An approval applies to a commit, so the gate refuses
+  (`verification.pull-request.head-mismatch`) to judge any other checkout; GitHub's default
+  `refs/pull/N/merge` checkout is not the head. The workflow checks out
+  `github.event.pull_request.head.sha` with full history.
+- *Approvals come only from the API.* The gate reads them with the job's `GITHUB_TOKEN`
+  (`pull-requests: read`) or the `gh` login; nothing in the checkout, a commit message or a
+  comment can stand for one. The `pending` status exists in the engine, but a pending finding
+  never counts as accepted anywhere an exit code decides: the gate is the only place that turns it
+  into `passed`.
+
+**Running the engine in CI.** Until now CI ran only `.railguard/verify.sh`, which needs no engine
+and still doesn't: the whole-repository rules keep their single, engine-free definition. The gate
+is a separate job because change-guard and secret-guard judge a change and read reviews, which a
+shell script cannot. It gets the engine the way every hook does, from the repository's pinned
+launcher (`.railguard/bin/railguard`, D-026): the pinned release, verified against its
+`SHA256SUMS`, and the pinned Betterleaks verified against its digests, both cacheable in
+`~/.cache/railguard`. If the engine cannot be obtained the job fails; it never passes unjudged.
+The rule "consumer CI never depends on the binary" therefore applies to the whole-repository
+checks, not to this optional gate.
+
+**What it does not defend against.** Hooks are a barrier, not a sandbox (D-028), so an agent that
+bypasses them can still write an allowance trailer; the gate shows every accepted trailer in its
+report and the reviewer reads them, as before. A pull request can edit the workflow that runs the
+gate: protect the default branch with a required status check and put `.github/workflows` under
+code owners. An approval made with a person's own credentials that an agent can use is
+indistinguishable from the person's.
+
+### D-032 — Scans and units stop at nested repositories; the hooks path is read per worktree
+
+Agents keep their git worktrees inside the checkout (`.claude/worktrees/<name>`). The repository
+inventory walked into them, took their Go modules for project units of the repository and wrote
+them into `.railguard/verify.sh`, which then failed in CI where the worktrees do not exist. The
+inventory now skips every directory that holds its own `.git` (a linked worktree, a submodule or a
+nested clone) and every git-ignored directory except a top-level hidden configuration directory
+such as `.claude`, whose contents harness configuration still needs.
+
+`core.hooksPath` lives in the Git configuration that all worktrees of a clone share, so a relative
+value is the only one that works in all of them: each worktree runs the hooks of its own
+checkout. Railguard keeps writing `.railguard/hooks`. An absolute path that points at the
+`.railguard/hooks` of any worktree of the same repository is the same setting spelled
+differently, so it no longer counts as drift; `status` names it and `sync` rewrites it to the
+relative form. Any other value is still foreign and preserved.
+
+### D-033 — Documentation does not count toward the size limit
+
+`change-size` bounds what a reviewer must read as code. `**/*.md` and `docs/**` join the default
+`size_excluded_paths`: prose is reviewed differently and a documentation change was blocking
+deliveries that were small as code. A repository that wants them counted overrides the input.
+
 ## Closed observable flow
 
 ```text
@@ -558,8 +659,9 @@ agents, hooks and global railguard → .railguard/bin/railguard → pinned-versi
 - global configuration of components or modifying a harness's global trust;
 - framework detection;
 - native harness plugins;
-- remote enforcement: the binary does not run in CI and does not generate workflows; CI
-  runs `.railguard/verify.sh`;
+- remote enforcement beyond the acceptance gate: the binary does not generate workflows, and the
+  whole-repository checks in CI are `.railguard/verify.sh`, which needs no binary. Only the
+  optional `railguard gate` (D-031) runs the engine in CI;
 - end-of-turn hooks and MCPs of the verified harnesses on native Windows.
 
 Global configuration of components is not open: it stays out of the product by decision

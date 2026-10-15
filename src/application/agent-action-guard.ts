@@ -27,7 +27,7 @@ export interface ActionGuardResponse {
 const guardrailPaths = [".railguard/**", ".git/**", ".codex/hooks.json", ".cursor/hooks.json"];
 
 const trailerReason =
-  "Only a person may add a `Railguard-Allow` trailer: it accepts a guard finding on their authority. Fix the finding instead, or ask the user to accept it.";
+  "Only a person may add a `Railguard-Allow` trailer: it accepts a guard finding on their authority. Fix the finding instead. If the change is intended, ask for a person's acceptance with a `Railguard-Request: <check-kind>: <reason>` trailer in an empty commit made before the change, then open a pull request for them to approve.";
 
 /**
  * Refuses a command or file edit that would bypass the guardrails instead of satisfying them.

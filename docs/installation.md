@@ -90,8 +90,9 @@ available. `railguard versions` lists the cached engines and removes the ones no
 
 ## Railguard and CI
 
-The binary is a local tool: developers, their agents, and hooks use it. CI does not download it
-or need access to its releases. It runs `.railguard/verify.sh verify`, the versioned script
+The binary is a local tool: developers, their agents, and hooks use it. The whole-repository checks
+in CI do not download it or need access to its releases (the optional [acceptance
+gate](#the-acceptance-gate) is the one exception). They run `.railguard/verify.sh verify`, the versioned script
 Railguard generates from `.railguard/project.yaml`, so CI and local judge the same rules from a
 single definition ([the whole repository](guardrails.md#the-whole-repository-railguardverifysh)).
 For example, in GitHub Actions:
@@ -99,6 +100,61 @@ For example, in GitHub Actions:
 ```yaml
 - run: COVERAGE_PROFILE=coverage.out .railguard/verify.sh verify
 ```
+
+### The acceptance gate
+
+A script cannot judge a pull request's change or read who approved it. To let a person accept
+what an agent asked them to accept by approving the pull request
+([accepting a finding](guardrails.md#accepting-a-finding)), add one job that runs the
+repository's pinned launcher. It is the only place CI runs the engine, and a job of its own, so
+`verify.sh` stays engine-free:
+
+```yaml
+name: Railguard gate
+on:
+  pull_request:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7 # pin by SHA
+        with:
+          ref: ${{ github.event.pull_request.head.sha }} # an approval applies to the head, not to the merge ref
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/cache@v5 # pin by SHA; optional, keeps the pinned engine and Betterleaks
+        with:
+          path: ~/.cache/railguard
+          key: railguard-${{ hashFiles('.railguard/bin/railguard') }}
+      - run: |
+          .railguard/bin/railguard gate \
+            --pull-request ${{ github.event.pull_request.number }} \
+            --base ${{ github.event.pull_request.base.sha }} | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+- **Events.** `pull_request` judges every new head; `pull_request_review` (submitted, dismissed)
+  re-runs the gate when the person approves, so one approval turns the check green. A push after
+  the approval makes it stale and the gate fails again until they approve the new head.
+- **Engine.** The launcher uses the version `.railguard/bin/railguard` pins: from the cache, or the
+  release downloaded once with `curl` or `gh` and verified against its `SHA256SUMS`, and
+  `secret-guard` fetches the Betterleaks release it pins, verified against its digests. If either
+  cannot be obtained the job fails; it never passes unjudged. Go is not needed.
+- **Token.** `GITHUB_TOKEN` with `pull-requests: read` reads the reviews. Locally the `gh` login does:
+  `railguard gate --pull-request 42` on the pull request's branch.
+- **Approvers.** The `approvers` input of `change-guard` and `secret-guard` in
+  `.railguard/project.yaml` ([setting](guardrails.md#accepting-a-finding)). They are read from
+  the `--base` revision, so the pull request that adds them does not benefit from them.
+- **Protect it.** Make the job a required status check of the default branch and put
+  `.github/workflows` under code owners: a pull request runs its own copy of the workflow.
 
 ## Updating
 

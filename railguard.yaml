@@ -284,10 +284,14 @@ catalog:
 
     change-guard:
       version: 0.1.0
-      description: Block changes that silence checks, delete tests or grow past a reviewable size; only a person, never the agent, may accept one with a Railguard-Allow trailer.
-      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, deletes a test file, or removes a test declaration (Go Test/Benchmark/Fuzz/Example functions, it/test calls, Python test functions, JUnit test methods, Gherkin scenarios) that a changed test file held at the base; a test moved to another changed test file keeps its name and is not reported. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles and harness configuration. A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: <check-kind>: <reason>` trailer; later changes are still judged. It judges only changes; a full run skips it."
+      description: Block changes that silence checks, delete tests or grow past a reviewable size; only a person, never the agent, may accept one, with a Railguard-Allow trailer or by approving the pull request.
+      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, deletes a test file, or removes a test declaration (Go Test/Benchmark/Fuzz/Example functions, it/test calls, Python test functions, JUnit test methods, Gherkin scenarios) that a changed test file held at the base; a test moved to another changed test file keeps its name and is not reported. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles and harness configuration. A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: <check-kind>: <reason>` trailer; later changes are still judged. A coding agent may instead ask for that acceptance with a `Railguard-Request: <check-kind>: <reason>` trailer: the finding then stays pending, which does not block locally, and `railguard gate --pull-request` in CI passes it only when one of the approvers approved the pull request's head commit. It judges only changes; a full run skips it."
       executables: [git]
       inputs:
+        approvers:
+          type: string-list
+          default: []
+          item_pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"
         protected_paths:
           type: string-list
           default:
@@ -310,6 +314,8 @@ catalog:
           type: string-list
           default:
             - "go.sum"
+            - "**/*.md"
+            - "docs/**"
             - "*.lock"
             - "pnpm-lock.yaml"
             - "package-lock.json"
@@ -324,8 +330,6 @@ catalog:
             - ".claude/**"
             - ".codex/**"
             - ".cursor/**"
-            - "AGENTS.md"
-            - "CLAUDE.md"
           item_pattern: "^(?![/~])[^\\s]+$"
         max_changed_lines:
           type: string-list
@@ -341,9 +345,14 @@ catalog:
 
     secret-guard:
       version: 0.1.0
-      description: Block changes that expose secrets, found locally by a pinned Betterleaks; only a person, never the agent, may accept a finding with a Railguard-Allow trailer.
-      details: "Check scans the commits since the base and every uncommitted changed line with Betterleaks 1.8.1, downloaded once from its GitHub release and verified against pinned SHA-256 digests. The scan runs locally: live validation of secrets stays off and reports never show a secret value. Only findings of medium or high confidence count, which leaves out the generic low-confidence guesses such as test passwords. Exceptions come from .betterleaks.toml and .betterleaksignore as the base holds them, and inline allow comments are ignored, so a change cannot exempt itself. A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: secret-exposure: <reason>` trailer; later changes are still judged. When Betterleaks cannot be obtained the check is unavailable, never passed. It judges only changes; a full run skips it."
+      description: Block changes that expose secrets, found locally by a pinned Betterleaks; only a person, never the agent, may accept a finding, with a Railguard-Allow trailer or by approving the pull request.
+      details: "Check scans the commits since the base and every uncommitted changed line with Betterleaks 1.8.1, downloaded once from its GitHub release and verified against pinned SHA-256 digests. The scan runs locally: live validation of secrets stays off and reports never show a secret value. Only findings of medium or high confidence count, which leaves out the generic low-confidence guesses such as test passwords. Exceptions come from .betterleaks.toml and .betterleaksignore as the base holds them, and inline allow comments are ignored, so a change cannot exempt itself. A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: secret-exposure: <reason>` trailer; later changes are still judged. A coding agent may instead ask for that acceptance with a `Railguard-Request: secret-exposure: <reason>` trailer: the finding then stays pending and `railguard gate --pull-request` in CI passes it only when one of the approvers approved the pull request's head commit. When Betterleaks cannot be obtained the check is unavailable, never passed. It judges only changes; a full run skips it."
       executables: [git]
+      inputs:
+        approvers:
+          type: string-list
+          default: []
+          item_pattern: "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$"
       checks:
         - id: secrets
           kind: secret-exposure
@@ -388,7 +397,7 @@ catalog:
     action-guard:
       version: 0.1.0
       description: Refuse agent commands and file edits that would bypass the guardrails, before they run.
-      details: "Adds a pre-action hook to Claude Code, Codex and Cursor. Before the agent runs a shell command, it refuses skipping Git hooks (--no-verify), writing a Railguard-Allow trailer and changing core.hooksPath; before the agent edits, adds or deletes a file with its file tools, it refuses paths under .railguard/, .git/, the Codex and Cursor hook files and the protected paths of change-guard. The refusal comes back to the agent with its reason. It is a guardrail, not a sandbox: a harness may run tools that skip hooks, and commands that write files are judged afterwards by change-guard. Codex asks each developer to trust the hook once."
+      details: "Adds a pre-action hook to Claude Code, Codex and Cursor. Before the agent runs a shell command, it refuses skipping Git hooks (--no-verify), writing a Railguard-Allow trailer (the Railguard-Request trailer stays allowed) and changing core.hooksPath; before the agent edits, adds or deletes a file with its file tools, it refuses paths under .railguard/, .git/, the Codex and Cursor hook files and the protected paths of change-guard. The refusal comes back to the agent with its reason. It is a guardrail, not a sandbox: a harness may run tools that skip hooks, and commands that write files are judged afterwards by change-guard. Codex asks each developer to trust the hook once."
       event: pre-action
 
     edit-feedback:

@@ -228,7 +228,7 @@ describe("secret-exposure", () => {
     expect(outcome.details[0]).toBe(
       `config.go:3: github-pat in commit ${leaked.slice(0, 12)} (fingerprint ${leaked}:config.go:github-pat:3)`,
     );
-    expect(outcome.details.join("\n")).toContain("Never add a `Railguard-Allow` trailer yourself");
+    expect(outcome.details.join("\n")).toContain("Never write a `Railguard-Allow` trailer yourself");
     expect(outcome.details.join("\n")).not.toContain("REDACTED");
   });
 
@@ -242,7 +242,7 @@ describe("secret-exposure", () => {
 
     expect(outcome.status).toBe("failed");
     expect(outcome.details[0]).toBe("settings.env:2: github-pat, not committed (fingerprint settings.env:github-pat:2)");
-    expect(outcome.details).toHaveLength(3);
+    expect(outcome.details).toHaveLength(4);
   });
 
   it("scans the staged content of a staged change, leaving unstaged and untracked files out", async () => {
