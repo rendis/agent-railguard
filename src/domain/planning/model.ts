@@ -46,7 +46,22 @@ export type ArtifactIntent =
 
 export type GitConfigValue =
   | { readonly kind: "absent" }
-  | { readonly kind: "value"; readonly value: string };
+  | {
+      readonly kind: "value";
+      readonly value: string;
+      /**
+       * For an absolute path into a worktree of this repository: the same path relative to that
+       * worktree, which is how one shared setting names every worktree's own directory.
+       */
+      readonly worktreeRelative?: string;
+      /** The checkout is a linked worktree, so the setting is shared with every other worktree. */
+      readonly linkedWorktree?: true;
+    };
+
+/** Whether the setting names `expected`, either as is or as an absolute path into a worktree. */
+export function hooksPathHolds(current: GitConfigValue, expected: string): boolean {
+  return current.kind === "value" && (current.value === expected || current.worktreeRelative === expected);
+}
 
 export interface GitConfigPort {
   get(rootRealPath: string, key: "core.hooksPath"): Promise<GitConfigValue>;

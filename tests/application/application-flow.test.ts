@@ -488,6 +488,75 @@ describe("RailguardApplication", () => {
     }
   });
 
+  it("treats an absolute path into a worktree as the same hooks setting, explains it and stores the relative form on sync", async () => {
+    const repository = await createTempRepository({ "go.mod": "module example.com/absolute-hooks\n" });
+    await exec("git", ["init", "--quiet", repository.root]);
+    const runtime = await createDefaultApplication({ executableProbe: probe });
+    try {
+      const baseline = await runtime.application.scan(repository.root);
+      const install = await runtime.application.prepareInstall(
+        baseline,
+        [componentRef("git-gate:pre-commit-check"), goQuality],
+        [codex],
+      );
+      if (install.plan?.kind !== "ready") throw new Error("Expected the gate plan to be ready");
+      expect((await runtime.application.apply(install.plan)).kind).toBe("applied");
+      await exec("git", ["-C", repository.root, "config", "--local", "core.hooksPath", `${repository.root}/.railguard/hooks`]);
+
+      const status = await runtime.application.status(repository.root, [codex]);
+
+      expect(status.verification?.materialization).toBe("verified");
+      if (status.scan.kind !== "ready") throw new Error("Expected a ready scan");
+      expect(status.scan.reconciliation.units).toContainEqual(
+        expect.objectContaining({ ownershipId: "project.git-gates.activation", classification: "clean" }),
+      );
+      expect(status.scan.reconciliation.diagnostics.map((diagnostic) => diagnostic.code)).toContain("observation.git-config.absolute");
+
+      const sync = await runtime.application.prepareSync(status.scan);
+      if (sync.plan?.kind !== "ready") throw new Error(`Expected a sync plan: ${JSON.stringify(sync.plan?.diagnostics)}`);
+      expect(sync.plan.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("planning.git-config.drift");
+      expect((await runtime.application.apply(sync.plan)).kind).toBe("applied");
+      expect(
+        (await exec("git", ["-C", repository.root, "config", "--local", "--get", "core.hooksPath"])).stdout.trim(),
+      ).toBe(".railguard/hooks");
+    } finally {
+      await Promise.all([runtime.dispose(), repository.cleanup()]);
+    }
+  });
+
+  it("explains in a linked worktree that the hooks setting is shared and keeps the relative path", async () => {
+    const repository = await createTempRepository({ "go.mod": "module example.com/linked-hooks\n" });
+    const git = (...args: string[]) => exec("git", ["-C", repository.root, "-c", "user.email=a@b", "-c", "user.name=t", ...args]);
+    await git("init", "--quiet", "-b", "main");
+    const runtime = await createDefaultApplication({ executableProbe: probe });
+    try {
+      const baseline = await runtime.application.scan(repository.root);
+      const install = await runtime.application.prepareInstall(
+        baseline,
+        [componentRef("git-gate:pre-commit-check"), goQuality],
+        [codex],
+      );
+      if (install.plan?.kind !== "ready") throw new Error("Expected the gate plan to be ready");
+      expect((await runtime.application.apply(install.plan)).kind).toBe("applied");
+      await git("add", "-A");
+      await git("commit", "--quiet", "--no-verify", "-m", "configure");
+      await git("worktree", "add", "--quiet", "../linked-copy", "-b", "linked");
+      const linked = join(repository.root, "..", "linked-copy");
+
+      const status = await runtime.application.status(linked, [codex]);
+
+      if (status.scan.kind !== "ready") throw new Error("Expected a ready scan");
+      expect(status.scan.reconciliation.integrity).toBe("clean");
+      expect(status.scan.reconciliation.diagnostics.map((diagnostic) => diagnostic.code)).toContain("observation.git-config.shared");
+      expect(
+        (await exec("git", ["-C", linked, "config", "--local", "--get", "core.hooksPath"])).stdout.trim(),
+      ).toBe(".railguard/hooks");
+      await exec("git", ["-C", repository.root, "worktree", "remove", "--force", linked]);
+    } finally {
+      await Promise.all([runtime.dispose(), repository.cleanup()]);
+    }
+  });
+
   it("preserves foreign or drifted core.hooksPath values", async () => {
     const repository = await createTempRepository({ "go.mod": "module example.com/git-policy\n" });
     await exec("git", ["init", "--quiet", repository.root]);
