@@ -18,6 +18,12 @@ guardrails, in [guardrails.md](guardrails.md).
   change was left unverified. Git gates with `core.hooksPath`.
 - Railguard is local: CI runs `.railguard/verify.sh`, generated from `project.yaml`, and does not
   download the binary; the whole repository's rules have a single definition.
+- Acceptance by pull request approval ([D-031](decisions.md)): an agent asks for a person's
+  acceptance of a guard finding with a `Railguard-Request` trailer, the finding is `pending`
+  locally, and the optional CI job `railguard gate --pull-request` passes it only when a
+  configured approver (`approvers` input of `change-guard` and `secret-guard`) approves the pull
+  request's head commit. Not yet exercised on a real GitHub pull request; the engine's tests use a
+  fake `gh`.
 - Reports: `railguard report` (accepted findings and agent hook activity in the clone),
   `railguard issue bug|improvement`, and `railguard issue --check`.
 - Native Windows (`x64` and `arm64`) with Git for Windows: engine, launcher, Git hooks, and
@@ -27,10 +33,14 @@ guardrails, in [guardrails.md](guardrails.md).
 
 ## Next steps
 
-1. **Windows with real agents**: check in Claude Code, Codex, and Cursor which shell runs the
+1. **Try the gate on a real pull request**: wire the workflow of
+   [Railguard and CI](installation.md#the-acceptance-gate) in a repository whose pull requests come
+   from a GitHub App, approve one as an approver, and confirm the check turns green on
+   `pull_request_review`.
+2. **Windows with real agents**: check in Claude Code, Codex, and Cursor which shell runs the
    agent hooks (end-of-turn, guard, edit, session start) and how they launch an MCP with `npx`.
    The Windows smoke test already covers those hooks invoked directly and secret scanning, on
    x64 in CI and on Windows 11 ARM64 with Git for Windows 2.55.
-2. **Other stacks**: packages and check providers for TypeScript, Java, and Python.
-3. **Decide with `railguard report` data** whether the new-dependency gate, `go mod tidy` and
+3. **Other stacks**: packages and check providers for TypeScript, Java, and Python.
+4. **Decide with `railguard report` data** whether the new-dependency gate, `go mod tidy` and
    `go generate` with no diff, and `sensitive_paths` are needed.

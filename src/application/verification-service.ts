@@ -70,6 +70,8 @@ export interface PullRequestReport {
   readonly approvedBy: string | null;
   readonly approvers: readonly string[];
   readonly notes: readonly string[];
+  /** How many findings asked for a person's acceptance and were settled by the reviews. */
+  readonly requests: number;
 }
 
 export interface VerificationReport {
@@ -423,9 +425,11 @@ function resolvePending(
   const approvedBy = new Set<string>();
   const acceptors = new Set<string>();
   const notes = new Set<string>();
+  let requests = 0;
   const settled = results.map((result): CheckResult => {
     const { outcome } = result;
     if (outcome.status !== "pending") return result;
+    requests += 1;
     const logins = approvers.get(result.profile) ?? [];
     for (const login of logins) acceptors.add(login);
     const assessment = assessApproval(pullRequest, logins);
@@ -464,6 +468,7 @@ function resolvePending(
       approvedBy: [...approvedBy].sort(compareUtf8)[0] ?? null,
       approvers: Object.freeze([...acceptors].sort(compareUtf8)),
       notes: Object.freeze([...notes].sort(compareUtf8)),
+      requests,
     }),
   };
 }

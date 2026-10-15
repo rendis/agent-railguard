@@ -27,11 +27,12 @@ export function renderVerificationReport(report: VerificationReport, plain: bool
   }
   if (report.pullRequest !== undefined) {
     const { pullRequest } = report;
-    lines.push(
-      `Pull request #${pullRequest.number} at ${pullRequest.head.slice(0, 12)}: ${
-        pullRequest.approvedBy === null ? "no approval of this commit from a configured approver" : `approved by ${pullRequest.approvedBy}`
-      }`,
-    );
+    const state = pullRequest.requests === 0
+      ? "no finding asks for an approval"
+      : pullRequest.approvedBy === null
+        ? "no approval of this commit from a configured approver"
+        : `approved by ${pullRequest.approvedBy}`;
+    lines.push(`Pull request #${pullRequest.number} at ${pullRequest.head.slice(0, 12)}: ${state}`);
     for (const note of pullRequest.notes) lines.push(`      ${note}`);
   }
   const counts = (["failed", "unavailable", "pending", "passed", "skipped"] as const)
@@ -79,6 +80,7 @@ export function encodeVerificationReport(report: VerificationReport): string {
             approved_by: report.pullRequest.approvedBy,
             approvers: report.pullRequest.approvers,
             notes: report.pullRequest.notes,
+            requests: report.pullRequest.requests,
           },
         }),
     diagnostics: report.diagnostics.map((diagnostic) => ({

@@ -120,6 +120,7 @@ describe("verification output", () => {
         author: "agent[bot]",
         approvedBy: null,
         approvers: ["rendis"],
+        requests: 1,
         notes: ["The approval of rendis was given on bbbbbbbbbbbb, not on the current head aaaaaaaaaaaa: approve again to accept this change."],
       },
     });
@@ -135,8 +136,11 @@ describe("verification output", () => {
       approved_by: null,
       approvers: ["rendis"],
       notes: [expect.stringContaining("approve again")],
+      requests: 1,
     });
     expect(renderVerificationReport({ ...gate, pullRequest: { ...gate.pullRequest!, approvedBy: "rendis" } }, true))
       .toContain("approved by rendis");
+    expect(renderVerificationReport({ ...gate, pullRequest: { ...gate.pullRequest!, requests: 0, notes: [] } }, true))
+      .toContain("no finding asks for an approval");
   });
 });
