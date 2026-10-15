@@ -32,6 +32,7 @@ import {
   renderRun,
   type OutputFormat,
 } from "./cli/output.js";
+import { exitCodeForVerdict } from "./cli/exit-codes.js";
 import { activateDeclaredGitGates } from "./cli/git-gate-activation.js";
 import { engineVersions, runVersions } from "./cli/engine-versions.js";
 import { draftContext, draftFindings, renderDraftFindings } from "./cli/issue-draft-check.js";
@@ -664,7 +665,11 @@ async function executeProduct(
     const run = await runProductCommand(runtime, request);
     if (outputFile !== null) {
       if (run.result.plan === null) {
-        throw new CommandInputError("The command did not produce an exportable ready plan");
+        // Say why, as the result does, instead of a bare refusal: the diagnostics hold the cause.
+        writeRun(run, format);
+        process.stderr.write(`No plan file was written: the command ended ${run.result.verdict} without a ready plan.\n`);
+        if (process.exitCode === 0) process.exitCode = exitCodeForVerdict("BLOCKED");
+        return;
       }
       await writeFile(resolve(outputFile), encodePublicPlan(run.result.plan), {
         encoding: "utf8",

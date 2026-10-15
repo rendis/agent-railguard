@@ -232,12 +232,9 @@ class DefaultInteractionSession implements InteractionSession {
       selections.set(selection.ref, selection);
     }
     for (const assignment of action.setInputs) {
-      const selection = selections.get(assignment.ref);
-      if (selection === undefined) {
-        throw new TypeError(
-          `${assignment.ref} must be selected before setting input ${assignment.input}`,
-        );
-      }
+      // Setting an input selects the component directly, so its value is kept in the project state
+      // even when a pack only includes the component; the catalog validates the input.
+      const selection = selections.get(assignment.ref) ?? { ref: assignment.ref };
       selections.set(assignment.ref, {
         ref: assignment.ref,
         inputs: {
