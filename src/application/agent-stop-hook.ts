@@ -52,12 +52,15 @@ export async function runStopHook(
   const report = await verification.run({ root: request.root, stage: request.stage, changed: true });
   if (report.verdict !== "failed") {
     await rm(counter, { force: true });
-    if (report.verdict === "passed") await unverified.clear(request.root);
+    const verified = report.verdict === "passed" || report.verdict === "pending";
+    if (verified) await unverified.clear(request.root);
     return {
       stdout: "",
       stderr: report.verdict === "passed"
         ? ""
-        : `Railguard could not verify this change (${report.verdict}); run \`railguard ${request.stage} --changed\` for details.\n`,
+        : report.verdict === "pending"
+          ? "Railguard: some findings wait for a person to accept them (Railguard-Request). Open a pull request; CI passes them only when a configured approver approves it.\n"
+          : `Railguard could not verify this change (${report.verdict}); run \`railguard ${request.stage} --changed\` for details.\n`,
     };
   }
   const attempts = (await readAttempts(counter)) + 1;

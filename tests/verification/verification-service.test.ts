@@ -261,6 +261,7 @@ async function serviceFor(
         return changes;
       },
       content: async () => null,
+      show: async () => null,
     },
     providers: [provider],
     script: {

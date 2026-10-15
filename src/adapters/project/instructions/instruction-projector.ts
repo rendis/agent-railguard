@@ -195,7 +195,7 @@ function groupInstruction(
     case "automation":
       return "Treat hook failures as local feedback. Reproduce a failure with the same canonical command and fix its cause; local hooks do not replace CI.";
     case "quality":
-      return "Use the canonical project commands below; their exit status is the mechanical verdict. `.railguard/verify.sh` holds the complete checks that CI runs: never edit it; change `.railguard/project.yaml` and run `.railguard/bin/railguard sync --yes`. Run Railguard as `.railguard/bin/railguard`, which uses the version this repository pins; `railguard` in skills and descriptions means that launcher. When Railguard reports a newer release, tell the user and ask whether you should run `.railguard/bin/railguard update --yes` or they prefer to do it; never update without asking.";
+      return "Use the canonical project commands below; their exit status is the mechanical verdict. `.railguard/verify.sh` holds the complete checks that CI runs: never edit it; change `.railguard/project.yaml` and run `.railguard/bin/railguard sync --yes`. Run Railguard as `.railguard/bin/railguard`, which uses the version this repository pins; `railguard` in skills and descriptions means that launcher. When Railguard reports a newer release, tell the user and ask whether you should run `.railguard/bin/railguard update --yes` or they prefer to do it; never update without asking. Fix a guard finding at its cause. When an intended change still trips `change-integrity`, `change-size` or `secret-exposure` (for example tests deleted because another suite now covers them), you may ask a person to accept it with a `Railguard-Request: <check-kind>: <reason>` trailer in an empty commit made before the change, then open a pull request: the finding stays pending and CI passes it only when a configured approver approves the pull request. A request accepts nothing by itself. Never write a `Railguard-Allow` trailer: only a person may accept a finding that way.";
   }
 }
 
@@ -236,7 +236,7 @@ function mappingGuidance(
     }
     case "agent-hook":
       if (component.event === "pre-action") {
-        return "Before you run a command or edit a file, Railguard refuses what would bypass the guardrails: skipping Git hooks, adding a `Railguard-Allow` trailer, or editing Railguard, Git internals or protected quality configuration. Ask the user when such a change is really needed.";
+        return "Before you run a command or edit a file, Railguard refuses what would bypass the guardrails: skipping Git hooks, adding a `Railguard-Allow` trailer (a `Railguard-Request` trailer is yours to write), or editing Railguard, Git internals or protected quality configuration. Ask the user when such a change is really needed.";
       }
       if (component.event === "post-edit") {
         return "After you edit files, Railguard reports suppressions, weakened quality configuration or secrets in them; fix the cause in that edit instead of hiding it.";

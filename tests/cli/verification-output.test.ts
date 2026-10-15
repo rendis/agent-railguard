@@ -88,4 +88,55 @@ describe("verification output", () => {
       diagnostics: [{ code: "verification.project.uninitialized", action: "Run railguard init." }],
     });
   });
+
+  it("shows a finding that waits for a person without blocking, and the pull request's approval state", () => {
+    const pending = report({
+      verdict: "pending",
+      results: [{
+        ...result("integrity", ".", "pending", ["a_test.go: test file deleted"]),
+        outcome: { status: "pending", summary: "1 change(s) weaken what the checks can see; pending a person's acceptance", details: ["a_test.go: test file deleted"], requested: "covered by e2e" },
+      }],
+    });
+
+    const text = renderVerificationReport(pending, true);
+
+    expect(text).toContain("ASK  go-quality/integrity");
+    expect(text).toContain("Result: PENDING — 1 pending");
+    expect(text).toContain("CI passes them only when a configured approver approves");
+    expect(JSON.parse(encodeVerificationReport(pending))).toMatchObject({
+      verdict: "pending",
+      exit_code: 0,
+      results: [{ status: "pending", requested: "covered by e2e" }],
+    });
+  });
+
+  it("reports the pull request in text and JSON", () => {
+    const gate = report({
+      verdict: "failed",
+      results: [result("integrity", ".", "failed")],
+      pullRequest: {
+        number: 7,
+        head: "a".repeat(40),
+        author: "agent[bot]",
+        approvedBy: null,
+        approvers: ["rendis"],
+        notes: ["The approval of rendis was given on bbbbbbbbbbbb, not on the current head aaaaaaaaaaaa: approve again to accept this change."],
+      },
+    });
+
+    const text = renderVerificationReport(gate, true);
+
+    expect(text).toContain("Pull request #7 at aaaaaaaaaaaa: no approval of this commit from a configured approver");
+    expect(text).toContain("approve again");
+    expect(JSON.parse(encodeVerificationReport(gate)).pull_request).toEqual({
+      number: 7,
+      head: "a".repeat(40),
+      author: "agent[bot]",
+      approved_by: null,
+      approvers: ["rendis"],
+      notes: [expect.stringContaining("approve again")],
+    });
+    expect(renderVerificationReport({ ...gate, pullRequest: { ...gate.pullRequest!, approvedBy: "rendis" } }, true))
+      .toContain("approved by rendis");
+  });
 });

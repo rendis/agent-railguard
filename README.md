@@ -47,10 +47,12 @@ judged: the debt the repository already had blocks nobody.
 | On each edit | Suppressions, protected configuration, deleted or removed tests and secrets in the edited files, in about a second. |
 | When the turn ends | `railguard check --changed`; the agent does not finish with red checks (up to three attempts, then the next session is told). |
 | Commit and push | `check --changed` and `verify --changed` as Git gates through `core.hooksPath`. |
-| CI | `.railguard/verify.sh verify`, generated from the project. It does not install Railguard and nobody skips it. |
+| CI | `.railguard/verify.sh verify`, generated from the project. It does not install Railguard and nobody skips it. Optionally, `railguard gate` lets a person accept an agent's request by approving the pull request. |
 
-Only a person can accept a finding, with a `Railguard-Allow` trailer in a commit they make. Details
-in [Quality guardrails](docs/guardrails.md).
+Only a person can accept a finding: with a `Railguard-Allow` trailer in a commit they make, or by
+approving the pull request after the agent asked with a `Railguard-Request` trailer (the finding is
+then pending: it does not block the agent, and CI fails until a configured approver approves the
+pull request's head commit). Details in [Quality guardrails](docs/guardrails.md#accepting-a-finding).
 
 ## What the agent receives
 

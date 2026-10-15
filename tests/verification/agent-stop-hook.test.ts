@@ -122,6 +122,17 @@ describe("runStopHook", () => {
     }
   });
 
+  it("lets the agent finish with findings that wait for a person, and clears the unverified mark", async () => {
+    const store = memoryStore();
+    await store.record("/repo", { schema: "railguard/unverified/v1", stage: "check", attempts: 3, recordedAt: "2026-10-15T00:00:00.000Z", failures: ["x"] });
+
+    const response = await hook("claude-code", fakeVerification(["pending"]), { session_id: "pending" }, undefined, store);
+
+    expect(response.stdout).toBe("");
+    expect(response.stderr).toContain("wait for a person to accept them");
+    expect(store.change).toBeNull();
+  });
+
   it("does nothing when Cursor reports an aborted turn", async () => {
     const verification = fakeVerification(["failed"]);
 

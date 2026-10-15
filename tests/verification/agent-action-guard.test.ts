@@ -49,6 +49,8 @@ describe("action guard", () => {
     expect(shell("git -c core.hooksPath=/tmp commit -m x")).toContain("core.hooksPath");
     expect(shell("git config --get core.hooksPath")).toBeNull();
     expect(shell("git commit -m 'feat: add client'")).toBeNull();
+    expect(shell("git commit --allow-empty -m 'chore: ask' -m 'Railguard-Request: change-size: reviewed diff'")).toBeNull();
+    expect(shell("git commit -m 'fix' -m 'Railguard-Allow: change-size: big'")).toContain("Railguard-Request");
     const rule = (command: string) => guard("codex", root, { tool_name: "Bash", tool_input: { command } }).refused;
     expect([
       rule("git push --no-verify"), rule("echo 'Railguard-Allow: x: y'"), rule("git config core.hooksPath x"), rule("ls"),

@@ -108,9 +108,22 @@ export function changedLineCount(content: string, lines: ChangedLines): number {
  * person accepted one guard finding on purpose; a trailer without a reason accepts nothing.
  */
 export function parseAllowances(messages: string): ReadonlyMap<string, string> {
-  const allowances = new Map<string, string>();
-  for (const match of messages.matchAll(/^Railguard-Allow:\s*([a-z0-9-]+)\s*:\s*(\S.*)$/gmu)) {
-    allowances.set(match[1] as string, (match[2] as string).trim());
+  return parseTrailers("Railguard-Allow", messages);
+}
+
+/**
+ * `Railguard-Request: <check-kind>: <reason>` trailers from commit messages. Anyone, an agent
+ * included, may write one: it asks a person to accept a finding and accepts nothing by itself.
+ */
+export function parseRequests(messages: string): ReadonlyMap<string, string> {
+  return parseTrailers("Railguard-Request", messages);
+}
+
+/** Trailer lines `<label>: <check-kind>: <reason>`; the last one of a kind in a message wins. */
+function parseTrailers(label: string, messages: string): ReadonlyMap<string, string> {
+  const trailers = new Map<string, string>();
+  for (const match of messages.matchAll(new RegExp(`^${label}:\\s*([a-z0-9-]+)\\s*:\\s*(\\S.*)$`, "gmu"))) {
+    trailers.set(match[1] as string, (match[2] as string).trim());
   }
-  return allowances;
+  return trailers;
 }

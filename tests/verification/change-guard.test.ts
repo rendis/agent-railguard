@@ -210,7 +210,7 @@ describe("ChangeCheckProvider", () => {
     const over = await provider().run("change-size", await request(root, { max_changed_lines: ["4"] }));
 
     expect(within.status).toBe("passed");
-    expect(over).toMatchObject({ status: "failed", details: ["b.go: 5", expect.stringContaining("Split the change")] });
+    expect(over).toMatchObject({ status: "failed", details: ["b.go: 5", expect.stringContaining("Split the change"), expect.stringContaining("Railguard-Request")] });
   });
 
   it("counts every new text file however large and skips only binary files", async () => {
@@ -222,7 +222,7 @@ describe("ChangeCheckProvider", () => {
 
     const outcome = await provider().run("change-size", await request(root, { max_changed_lines: ["400"] }));
 
-    expect(outcome).toMatchObject({ status: "failed", details: ["large.go: 3072", "late-nul.go: 1002", expect.any(String)] });
+    expect(outcome).toMatchObject({ status: "failed", details: ["large.go: 3072", "late-nul.go: 1002", expect.any(String), expect.any(String)] });
   });
 
   it("fails integrity for a text file too large to scan", async () => {
@@ -232,7 +232,7 @@ describe("ChangeCheckProvider", () => {
 
     const outcome = await provider().run("change-integrity", await request(root));
 
-    expect(outcome).toMatchObject({ status: "failed", details: [expect.stringMatching(/^huge\.go: too large to scan/u), expect.any(String)] });
+    expect(outcome).toMatchObject({ status: "failed", details: [expect.stringMatching(/^huge\.go: too large to scan/u), expect.any(String), expect.any(String)] });
   });
 });
 

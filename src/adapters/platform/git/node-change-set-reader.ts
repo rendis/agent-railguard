@@ -76,6 +76,10 @@ export class NodeChangeSetReader implements ChangeSetReader {
     }
   }
 
+  public async show(root: string, revision: string, path: string): Promise<string | null> {
+    return await this.#git(root, ["show", `${revision}:${path}`]);
+  }
+
   async #base(root: string, explicit: string | undefined): Promise<{ commit: string; label: string }> {
     if (explicit !== undefined) {
       const commit = await this.#mergeBase(root, explicit);
