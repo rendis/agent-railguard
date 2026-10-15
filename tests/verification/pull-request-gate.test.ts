@@ -77,7 +77,7 @@ describe("acceptance by pull request approval", () => {
     expect(report.verdict).toBe("passed");
     expect(report.results.map((result) => result.outcome.status)).toEqual(["passed", "passed"]);
     expect(report.results[0]?.outcome.summary).toContain(`accepted by the approval of rendis on ${head.slice(0, 12)} (requested: covered by the e2e suite)`);
-    expect(report.pullRequest).toMatchObject({ number: 7, approvedBy: "rendis", approvers: ["rendis"], notes: [] });
+    expect(report.pullRequest).toMatchObject({ number: 7, approvedBy: "rendis", approvers: ["rendis"], notes: [], requests: 1 });
   });
 
   it("fails while nobody has approved and names who is awaited", async () => {
