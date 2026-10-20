@@ -42,6 +42,17 @@ const defaultExcludedDirectories = Object.freeze([
   "vendor",
 ]);
 
+const configurationDirectories = new Set([
+  ".agents",
+  ".claude",
+  ".codex",
+  ".cursor",
+  ".github",
+  ".opencode",
+  ".railguard",
+  ".vscode",
+]);
+
 const execute = promisify(execFile);
 
 interface InventoryBudget {
@@ -283,10 +294,9 @@ export class NodeRepositoryInventory implements RepositoryInventory {
 }
 
 /**
- * Git-ignored directories outside hidden configuration directories hold build output and caches
- * (`tmp/`, `bin/`, `out/`); nothing is ever projected there. Hidden directories such as `.claude`
- * stay inventoried even when ignored because harness configuration lives in them; the other
- * repositories an agent keeps there (`.claude/worktrees/*`) are skipped as nested repositories.
+ * Git-ignored output and caches, including hidden directories, are not project inputs.
+ * Agent and guard configuration stays inventoried even when ignored; nested repositories
+ * inside those directories are skipped separately.
  */
 async function ignoredOutputDirectories(root: string): Promise<ReadonlySet<string>> {
   try {
@@ -298,7 +308,7 @@ async function ignoredOutputDirectories(root: string): Promise<ReadonlySet<strin
     return new Set(
       stdout
         .split("\0")
-        .filter((path) => path.endsWith("/") && !path.startsWith(".") && !path.includes("/."))
+        .filter((path) => path.endsWith("/") && !path.split("/").some((part) => configurationDirectories.has(part)))
         .map((path) => path.slice(0, -1)),
     );
   } catch {

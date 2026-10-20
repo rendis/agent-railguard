@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
@@ -90,6 +90,28 @@ describe("NodeRepositoryInventory", () => {
 
     expect(paths.some((path) => path.startsWith("tmp"))).toBe(false);
     expect(paths).toContain(relativePosixPath(".claude/settings.local.json"));
+  });
+
+  it("skips ignored hidden output without deleting reports or excluding agent configuration", async () => {
+    const report = "x".repeat(256);
+    const repository = await createTempRepository({
+      ".gitignore": ".runs/\n.cache/\n.claude/\n",
+      ".runs/history/report.json": report,
+      ".cache/snapshot.txt": report,
+      ".claude/settings.local.json": "{}\n",
+      ".local/source.ts": "export {};\n",
+    });
+    cleanups.push(repository.cleanup);
+    await promisify(execFile)("git", ["init", "--quiet", repository.root]);
+
+    const snapshot = await new NodeRepositoryInventory({ maxTotalBytes: 128 }).snapshot(repository.root);
+    const paths = snapshot.entries.map((entry) => entry.path);
+
+    expect(paths.some((path) => path.startsWith(".runs/") || path.startsWith(".cache/"))).toBe(false);
+    expect(paths).toContain(relativePosixPath(".claude/settings.local.json"));
+    expect(paths).toContain(relativePosixPath(".local/source.ts"));
+    expect(await readFile(join(repository.root, ".runs/history/report.json"), "utf8")).toBe(report);
+    expect(await readFile(join(repository.root, ".cache/snapshot.txt"), "utf8")).toBe(report);
   });
 
   it("does not walk into linked worktrees, submodules or nested clones, even inside ignored hidden directories", async () => {
