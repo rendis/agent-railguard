@@ -98,6 +98,10 @@ describe("InstructionProjector", () => {
 
       const agents = sections.find((section) => section.id === "agents.mapping")?.body;
       expect(agents).toContain("## Delegation");
+      expect(agents).toContain("Follow the project's delegation policy to decide when to delegate.");
+      expect(agents).toContain("Use a specialist below when its scope matches the task");
+      expect(agents).toContain("otherwise, general-purpose subagents may handle bounded work.");
+      expect(agents).not.toContain("Delegate bounded work only when a specialist below matches the task.");
       expect(agents).toContain("`go-reviewer`: Delegate when you need to review a Go change");
       expect(agents).toContain("Load `review-go-quality` before starting the review.");
 

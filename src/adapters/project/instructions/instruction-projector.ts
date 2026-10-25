@@ -191,7 +191,7 @@ function groupInstruction(
     case "mcps":
       return "Prefer repository evidence. Use an external tool only when its criterion below is met.";
     case "agents":
-      return "Delegate bounded work only when a specialist below matches the task.";
+      return "Follow the project's delegation policy to decide when to delegate. Use a specialist below when its scope matches the task; otherwise, general-purpose subagents may handle bounded work.";
     case "automation":
       return "Treat hook failures as local feedback. Reproduce a failure with the same canonical command and fix its cause; local hooks do not replace CI.";
     case "quality":
