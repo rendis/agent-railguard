@@ -17,9 +17,9 @@ import { nativeComponents } from "../shared/native-components.js";
 import {
   componentId,
   nativeFileUnit,
+  nativeJsonMemberUnit,
   nativeProjectionIdentity,
   normalizedPrompt,
-  stablePrettyJson,
   yamlString,
 } from "../shared/native-units.js";
 
@@ -58,21 +58,15 @@ export class VsCodeAdapter implements HarnessAdapter {
         sources: [agent.ref],
       }),
     );
-    if (components.mcps.length > 0) {
+    for (const mcp of components.mcps) {
       units.push(
-        nativeFileUnit({
+        nativeJsonMemberUnit({
           target: this.id,
           role: "mcp",
           path: ".vscode/mcp.json",
-          text: stablePrettyJson({
-            servers: Object.fromEntries(
-              components.mcps.map((mcp) => [
-                componentId(mcp.ref),
-                renderMcpServer(mcp),
-              ]),
-            ),
-          }),
-          sources: components.mcps.map((mcp) => mcp.ref),
+          pointer: ["servers", componentId(mcp.ref)],
+          value: renderMcpServer(mcp),
+          sources: [mcp.ref],
         }),
       );
     }

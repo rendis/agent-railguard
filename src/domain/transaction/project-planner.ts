@@ -6,6 +6,7 @@ import {
   type ManagedSectionPlacement,
 } from "../managed-section/managed-section.js";
 import type { ManagedArtifactOwnership } from "../ownership/model.js";
+import { legacyMcpPointers } from "../managed-json/legacy-mcp-ownership.js";
 import {
   getJsonMember,
   jsonMemberDigest,
@@ -387,12 +388,16 @@ async function planArtifacts(
   for (const path of [...paths].sort(compareUtf8)) {
     const previous = previousArtifacts.filter((artifact) => artifact.path === path);
     const next = nextArtifacts.filter((artifact) => artifact.path === path);
-    const all = [...previous, ...next];
+    const legacyPointers = next.every((artifact) => artifact.kind === "json-member")
+      ? legacyMcpPointers(previous)
+      : null;
+    const all = legacyPointers === null ? [...previous, ...next] : next;
     const containerKinds = new Set(
       all.map((artifact) =>
         artifact.kind === "managed-section" || artifact.kind === "json-member" ? artifact.kind : "whole",
       ),
     );
+    if (legacyPointers !== null) containerKinds.add("json-member");
     if (containerKinds.size > 1) {
       diagnostics.push(
         planningDiagnostic(
@@ -406,7 +411,7 @@ async function planArtifacts(
       continue;
     }
     if (containerKinds.has("json-member")) {
-      await planJsonContainer(request.snapshot, path, previous, next, projectedArtifacts, operations, diagnostics);
+      await planJsonContainer(request.snapshot, path, previous, next, projectedArtifacts, operations, diagnostics, legacyPointers ?? []);
     } else if (containerKinds.has("whole")) {
       planWholeArtifact(request.snapshot, path, previous, next, projectedArtifacts, operations, diagnostics);
     } else {
@@ -722,6 +727,7 @@ async function planJsonContainer(
   projected: ReadonlyMap<string, Extract<ProjectedUnit, { readonly kind: "artifact" }>>,
   operations: TransactionOperation[],
   diagnostics: Diagnostic[],
+  legacyPointers: readonly (readonly string[])[],
 ): Promise<void> {
   const entry = snapshot.entries.find((candidate) => candidate.path === path);
   if (entry !== undefined && entry.kind !== "file") {
@@ -743,7 +749,7 @@ async function planJsonContainer(
     diagnostics.push(jsonContainerDiagnostic(path, parsed.evidence));
     return;
   }
-  let desired: JsonObject = parsed.value;
+  let desired: JsonObject = legacyPointers.reduce(removeJsonMember, parsed.value);
   const owned = new Set(previous.map((artifact) => artifact.ownership_id));
   const nextIds = new Set(next.map((artifact) => artifact.ownership_id));
   for (const artifact of previous) {
@@ -799,9 +805,10 @@ async function planJsonContainer(
   }
   const representative = next.find((artifact) => artifact.kind === "json-member") ??
     previous.find((artifact) => artifact.kind === "json-member");
-  if (representative?.kind !== "json-member") return;
+  const pointer = representative?.kind === "json-member" ? representative.pointer : legacyPointers[0];
+  if (pointer === undefined) return;
   const unitId = `container.${sha256(path).slice("sha256:".length, "sha256:".length + 16)}`;
-  const target = Object.freeze({ kind: "json-member" as const, path, pointer: representative.pointer });
+  const target = Object.freeze({ kind: "json-member" as const, path, pointer });
   if (Object.keys(desired).length === 0) {
     if (entry?.kind === "file") {
       operations.push(

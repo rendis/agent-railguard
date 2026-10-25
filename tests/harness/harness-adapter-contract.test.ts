@@ -42,7 +42,7 @@ const cases = [
     adapter: () => new ClaudeCodeAdapter(absentProbe),
     agentPath: ".claude/agents/go-reviewer.md",
     mcpPath: ".mcp.json",
-    mcpKind: "file",
+    mcpKind: "json-member",
     agentNeedle: "name: go-reviewer",
     mcpNeedle: '"mcpServers"',
     remoteNeedle: '"type": "http"',
@@ -52,7 +52,7 @@ const cases = [
     adapter: () => new CursorAdapter(absentProbe),
     agentPath: ".cursor/agents/go-reviewer.md",
     mcpPath: ".cursor/mcp.json",
-    mcpKind: "file",
+    mcpKind: "json-member",
     agentNeedle: "model: inherit",
     mcpNeedle: '"mcpServers"',
     remoteNeedle: '"atlassian-rovo"',
@@ -62,7 +62,7 @@ const cases = [
     adapter: () => new VsCodeAdapter(absentProbe),
     agentPath: ".github/agents/go-reviewer.agent.md",
     mcpPath: ".vscode/mcp.json",
-    mcpKind: "file",
+    mcpKind: "json-member",
     agentNeedle: "name: go-reviewer",
     mcpNeedle: '"servers"',
     remoteNeedle: '"type": "http"',
@@ -72,7 +72,7 @@ const cases = [
     adapter: () => new OpenCodeAdapter(absentProbe),
     agentPath: ".opencode/agents/go-reviewer.md",
     mcpPath: "opencode.json",
-    mcpKind: "file",
+    mcpKind: "json-member",
     agentNeedle: "mode: subagent",
     mcpNeedle: '"type": "local"',
     remoteNeedle: '"type": "remote"',
@@ -291,7 +291,10 @@ function intentText(intent: ReturnType<HarnessAdapter["project"]>["units"][numbe
   if (intent.kind === "managed-section") return intent.body;
   if (intent.kind === "file") return new TextDecoder().decode(intent.bytes.copy());
   if (intent.kind === "symlink") return intent.target;
-  if (intent.kind === "json-member") return JSON.stringify(intent.value);
+  if (intent.kind === "json-member") {
+    const container = intent.pointer.reduceRight<unknown>((value, key) => ({ [key]: value }), intent.value);
+    return JSON.stringify(container, null, 2);
+  }
   return `${intent.key}=${intent.value}`;
 }
 

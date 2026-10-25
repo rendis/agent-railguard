@@ -30,6 +30,11 @@ Atlassian does not remove Context7 and does not run a logout. The `mcps.mapping`
 is recomposed as a single inventory of every resolved MCP; there is no per-server
 block.
 
+Upgrading from Railguard 0.1.22 or earlier narrows the former whole-file JSON MCP
+ownership to the server IDs recorded in its lock. Other servers and OpenCode settings
+remain foreign. A same-name server without recorded ownership blocks the plan rather
+than being adopted or replaced.
+
 Possible states:
 
 - `authenticated`: the harness confirmed an active session;

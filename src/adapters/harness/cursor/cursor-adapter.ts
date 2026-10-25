@@ -22,6 +22,7 @@ import {
   agentStopScript,
   componentId,
   nativeFileUnit,
+  nativeJsonMemberUnit,
   nativeProjectionIdentity,
   normalizedPrompt,
   stablePrettyJson,
@@ -64,21 +65,15 @@ export class CursorAdapter implements HarnessAdapter {
         sources: [agent.ref],
       }),
     );
-    if (components.mcps.length > 0) {
+    for (const mcp of components.mcps) {
       units.push(
-        nativeFileUnit({
+        nativeJsonMemberUnit({
           target: this.id,
           role: "mcp",
           path: ".cursor/mcp.json",
-          text: stablePrettyJson({
-            mcpServers: Object.fromEntries(
-              components.mcps.map((mcp) => [
-                componentId(mcp.ref),
-                renderMcpServer(mcp),
-              ]),
-            ),
-          }),
-          sources: components.mcps.map((mcp) => mcp.ref),
+          pointer: ["mcpServers", componentId(mcp.ref)],
+          value: renderMcpServer(mcp),
+          sources: [mcp.ref],
         }),
       );
     }

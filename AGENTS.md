@@ -21,6 +21,7 @@ Before delivering, run `pnpm run check` (typecheck, tests with coverage threshol
 - Conventional Commits, without AI attribution.
 - Replace obsolete paths atomically and remove the displaced code. Add compatibility or migrations only for an observed external contract the task requires.
 - Prefer maintained standard capabilities; keep custom code narrow and owned by the component that needs it.
+- Harness MCP files are shared: own each server entry, and migrate older file ownership from its recorded sources while preserving foreign servers.
 
 ## Deterministic core
 
