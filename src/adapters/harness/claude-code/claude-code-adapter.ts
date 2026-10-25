@@ -24,7 +24,6 @@ import {
   nativeJsonMemberUnit,
   nativeProjectionIdentity,
   normalizedPrompt,
-  stablePrettyJson,
   yamlString,
 } from "../shared/native-units.js";
 
@@ -65,21 +64,15 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         sources: [agent.ref],
       }),
     );
-    if (components.mcps.length > 0) {
+    for (const mcp of components.mcps) {
       units.push(
-        nativeFileUnit({
+        nativeJsonMemberUnit({
           target: this.id,
           role: "mcp",
           path: ".mcp.json",
-          text: stablePrettyJson({
-            mcpServers: Object.fromEntries(
-              components.mcps.map((mcp) => [
-                componentId(mcp.ref),
-                renderMcpServer(mcp),
-              ]),
-            ),
-          }),
-          sources: components.mcps.map((mcp) => mcp.ref),
+          pointer: ["mcpServers", componentId(mcp.ref)],
+          value: renderMcpServer(mcp),
+          sources: [mcp.ref],
         }),
       );
     }

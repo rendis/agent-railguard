@@ -73,10 +73,10 @@ export function nativeSectionUnit(input: {
   });
 }
 
-/** A harness configuration entry owned inside a shared JSON file such as `.claude/settings.json`. */
+/** A harness configuration entry owned inside a shared JSON file. */
 export function nativeJsonMemberUnit(input: {
   readonly target: HarnessTargetId;
-  readonly role: "hook";
+  readonly role: "hook" | "mcp";
   readonly path: string;
   readonly pointer: readonly string[];
   readonly value: unknown;
