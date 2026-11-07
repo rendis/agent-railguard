@@ -16,7 +16,7 @@ import { GitHubPullRequests } from "../adapters/platform/github/github-pull-requ
 import { NodeGitConfig } from "../adapters/platform/git/node-git-config.js";
 import { NodeGitHookInventory } from "../adapters/platform/git/node-git-hook-inventory.js";
 import { NodeExecutableProbe } from "../adapters/platform/process/node-executable-probe.js";
-import { NodeProcessRunner } from "../adapters/platform/process/node-process-runner.js";
+import { NodeProcessRunner, withoutGitRepository } from "../adapters/platform/process/node-process-runner.js";
 import { NodeRepositoryInventory } from "../adapters/platform/repository-inventory/node-repository-inventory.js";
 import { NodeRepositoryGate } from "../adapters/platform/repository-gate/node-repository-gate.js";
 import { NodeProjectStateStore } from "../adapters/platform/state/project-state-store.js";
@@ -118,9 +118,12 @@ export async function createDefaultApplication(
     progress,
   });
   const processRunner = new NodeProcessRunner();
+  // A hook runs the engine with Git's repository variables set; the engine's own Git reads need
+  // them (a commit's index), but a unit's tools must find the repository from their directory.
+  const unitProcessRunner = new NodeProcessRunner(() => withoutGitRepository(process.env));
   const changeSets = new NodeChangeSetReader(processRunner);
   const checkProviders = [
-    ...registeredCheckProviders(processRunner),
+    ...registeredCheckProviders(unitProcessRunner),
     new ChangeCheckProvider(processRunner, changeSets),
     new SecretCheckProvider(
       processRunner,
@@ -186,7 +189,7 @@ export async function createDefaultApplication(
     scan: (root) => application.scan(root),
     changeSets,
     providers: checkProviders,
-    script: new NodeVerifyScript(processRunner),
+    script: new NodeVerifyScript(unitProcessRunner),
     pullRequests: new GitHubPullRequests(processRunner, options.environment ?? process.env),
   });
   return Object.freeze({

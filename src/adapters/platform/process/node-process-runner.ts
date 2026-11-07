@@ -3,8 +3,40 @@ import type { ProcessResult, ProcessRunner } from "../../../domain/verification/
 
 const maximumOutputBytes = 8 * 1024 * 1024;
 
+/**
+ * Variables through which Git points a process at one repository, as `git rev-parse
+ * --local-env-vars` lists them. Git sets some of them for its hooks.
+ */
+export const gitRepositoryVariables = Object.freeze([
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_GRAFT_FILE",
+  "GIT_INDEX_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_PREFIX",
+  "GIT_SHALLOW_FILE",
+  "GIT_COMMON_DIR",
+]);
+
+/** The environment without Git's repository variables, so Git finds the repository from the working directory. */
+export function withoutGitRepository(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const clean = { ...environment };
+  for (const name of gitRepositoryVariables) delete clean[name];
+  return clean;
+}
+
 /** Runs a command without a shell, capturing bounded output. */
 export class NodeProcessRunner implements ProcessRunner {
+  /** `environment` is read on every run; without it a command inherits this process's environment. */
+  public constructor(private readonly environment?: () => NodeJS.ProcessEnv) {}
+
   public async run(
     command: string,
     args: readonly string[],
@@ -17,6 +49,7 @@ export class NodeProcessRunner implements ProcessRunner {
       let timedOut = false;
       const child = spawn(command, [...args], {
         cwd: options.cwd,
+        ...(this.environment === undefined ? {} : { env: this.environment() }),
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
