@@ -503,8 +503,8 @@ test-annotated methods, and Gherkin scenarios), and the names are compared betwe
 base and the change. A test that moves to another changed test file keeps its name and
 does not count; renaming it does, because it cannot be told apart from deleting one and
 adding another, and a person accepts it with the same
-`Railguard-Allow: change-integrity` trailer. [D-034](#d-034--a-renamed-test-is-reported-and-each-project-sets-what-blocks)
-now tells a rename in place apart and reports it by default. The content of a test that is still
+`Railguard-Allow: change-integrity` trailer. [D-034](#d-034--renamed-and-obsolete-tests-are-reported-and-each-project-sets-what-blocks)
+now tells apart a rename in place and a test removed with its code, and reports both by default. The content of a test that is still
 declared is out of scope: judging it is semantics, and it is measured by the stack's
 coverage and mutation testing.
 
@@ -622,12 +622,12 @@ relative form. Any other value is still foreign and preserved.
 `size_excluded_paths`: prose is reviewed differently and a documentation change was blocking
 deliveries that were small as code. A repository that wants them counted overrides the input.
 
-### D-034 — A renamed test is reported, and each project sets what blocks
+### D-034 — Renamed and obsolete tests are reported, and each project sets what blocks
 
-Under D-029 a test renamed in place failed `change-integrity` like a deleted one. In a repository
-where an agent delivers most changes, that was the most common reason to ask a person for an
-approval, and almost always benign; approving out of habit weakened the check for the case it
-exists for. Two changes:
+Under D-029 a test renamed in place, or one deleted together with the code it tested, failed
+`change-integrity` like any deleted test. In a repository where an agent delivers most changes,
+that was the most common reason to ask a person for an approval, and almost always benign;
+approving out of habit weakened the check for the case it exists for. Three changes:
 
 - **A rename in place is told apart.** Within one changed test file, a name that left every
   changed file is paired with a new name that follows the same surviving declaration (or the start
@@ -635,10 +635,17 @@ exists for. Two changes:
   that ends with fewer tests always reports a removal, and a test that moves in from another file
   never takes the place of one that left. Comparing bodies would catch more swaps, but it needs a
   parser per language; the position is mechanical and shared by every stack.
+- **A test that went with its code is told apart.** A removed test, not paired as a rename, is
+  obsolete when its text at the base mentions a symbol (function, type, class) that the change
+  removed from a production file and that `git grep -w` no longer finds in any file the change
+  leaves. A deleted test file is obsolete when every test it lost is. A symbol still mentioned
+  anywhere, even in prose, keeps the test removed: the check errs toward asking a person.
+  Behavior moved elsewhere under another name is new or changed code, so the stack's
+  changed-line coverage and mutation testing still judge it.
 - **Each project decides what blocks.** The `finding_policy` input of `change-guard` sets the
-  relaxable kinds (`suppression`, `test-deleted`, `test-removed`, `test-renamed`) to `block` or
-  `report`. A reported finding is listed and the check passes. The default reports only
-  `test-renamed`. A protected configuration change and a file too large to scan always block:
+  relaxable kinds (`suppression`, `test-deleted`, `test-removed`, `test-renamed`,
+  `test-obsolete`) to `block` or `report`. A reported finding is listed and the check passes. The
+  default reports `test-renamed` and `test-obsolete`. A protected configuration change and a file too large to scan always block:
   relaxing them would hide the policy itself, or what nobody could read. The policy is stored in
   `.railguard/project.yaml`, a protected path, so an agent that loosens it is blocked until a
   person accepts the change.

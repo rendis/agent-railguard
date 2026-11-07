@@ -1,5 +1,7 @@
 import {
   changedLineCount,
+  declaredSymbols,
+  declaresSymbols,
   isTestFile,
   matchesAnyGlob,
   suppressionFindings,
@@ -67,12 +69,16 @@ export class ChangeCheckProvider implements CheckProvider {
       add("suppression", suppressionFindings(path, content.toString("utf8"), lines));
     }
     for (const path of changes.deleted) {
-      if (isTestFile(path)) add("test-deleted", [`${path}: test file deleted`]);
-      else if (matchesAnyGlob(path, protectedPaths)) add("protected-config", [`${path}: protected quality configuration deleted`]);
+      if (!isTestFile(path) && matchesAnyGlob(path, protectedPaths)) add("protected-config", [`${path}: protected quality configuration deleted`]);
     }
-    const tests = testChanges(await this.#changedTests(request.repositoryRoot, changes));
+    const tests = testChanges(
+      await this.#changedTests(request.repositoryRoot, changes),
+      await this.#goneSymbols(request.repositoryRoot, changes),
+    );
+    add("test-deleted", tests.deleted);
     add("test-removed", tests.removed);
     add("test-renamed", tests.renamed);
+    add("test-obsolete", tests.obsolete);
     const blocking = findings.filter(({ kind }) => policy.get(kind) !== "report").map(({ text }) => text);
     const reported = findings.filter(({ kind }) => policy.get(kind) === "report").map(({ kind, text }) => `${text} (reported: ${kind}=report)`);
     if (blocking.length === 0) {
@@ -118,9 +124,17 @@ export class ChangeCheckProvider implements CheckProvider {
     };
   }
 
-  /** Changed test files as the base held them and as the change holds them now. */
-  async #changedTests(root: string, changes: ChangeSet): Promise<{ path: string; before: string; after: string }[]> {
-    const tests: { path: string; before: string; after: string }[] = [];
+  /** Changed and deleted test files as the base held them and as the change holds them now. */
+  async #changedTests(
+    root: string,
+    changes: ChangeSet,
+  ): Promise<{ path: string; before: string; after: string; deleted?: boolean }[]> {
+    const tests: { path: string; before: string; after: string; deleted?: boolean }[] = [];
+    for (const path of changes.deleted) {
+      if (!isTestFile(path)) continue;
+      const before = changes.base === null ? "" : await this.#atBase(root, changes.base, path);
+      tests.push({ path, before: before.length > maxScannedBytes ? "" : before, after: "", deleted: true });
+    }
     if (changes.base === null) return tests;
     for (const path of changes.files.keys()) {
       if (!isTestFile(path)) continue;
@@ -129,6 +143,38 @@ export class ChangeCheckProvider implements CheckProvider {
       tests.push({ path, before: await this.#atBase(root, changes.base, path), after: content.toString("utf8") });
     }
     return tests;
+  }
+
+  /**
+   * Symbols that production files the change edits or deletes declared at the base and that no
+   * file the change leaves, tracked or untracked, mentions anymore: code removed from the repository.
+   */
+  async #goneSymbols(root: string, changes: ChangeSet): Promise<ReadonlySet<string>> {
+    const candidates = new Set<string>();
+    if (changes.base === null) return candidates;
+    const kept = new Set<string>();
+    for (const path of [...changes.files.keys(), ...changes.deleted]) {
+      if (!declaresSymbols(path)) continue;
+      const before = await this.#atBase(root, changes.base, path);
+      if (before.length > maxScannedBytes) continue;
+      for (const symbol of declaredSymbols(path, before)) candidates.add(symbol);
+      const content = changes.files.has(path) ? await this.changeSets.content(root, path, changes.staged) : null;
+      if (content !== null && !isBinary(content)) for (const symbol of declaredSymbols(path, content.toString("utf8"))) kept.add(symbol);
+    }
+    for (const symbol of kept) candidates.delete(symbol);
+    if (candidates.size === 0) return candidates;
+    const patterns = [...candidates].flatMap((symbol) => ["-e", symbol]);
+    const scope = changes.staged ? ["--cached"] : ["--untracked"];
+    const result = await this.process.run(
+      "git",
+      ["grep", "-I", "-w", "-F", "-o", "-h", "--no-color", ...scope, ...patterns],
+      { cwd: root, timeoutMs: 60_000 },
+    );
+    // 1 means no file mentions any of them; anything else unreadable keeps every symbol in use.
+    if (result.exitCode === 1) return candidates;
+    if (result.exitCode !== 0) return new Set();
+    for (const found of result.stdout.split("\n")) candidates.delete(found.trim());
+    return candidates;
   }
 
   /** A file as the base held it; empty when the change adds it. */
@@ -151,10 +197,10 @@ export class ChangeCheckProvider implements CheckProvider {
  * kinds instead of blocking on it; a protected configuration and a file too large to scan always
  * block, since relaxing them would hide the policy itself or what nobody could read.
  */
-const relaxableFindings = ["suppression", "test-deleted", "test-removed", "test-renamed"] as const;
+const relaxableFindings = ["suppression", "test-deleted", "test-removed", "test-renamed", "test-obsolete"] as const;
 type FindingKind = "protected-config" | "unscannable" | (typeof relaxableFindings)[number];
 
-const defaultFindingPolicy = ["test-renamed=report"];
+const defaultFindingPolicy = ["test-renamed=report", "test-obsolete=report"];
 
 /** `<kind>=<block|report>` entries; the last entry of a kind decides, and other kinds always block. */
 function findingPolicy(entries: readonly string[]): ReadonlyMap<string, "block" | "report"> {

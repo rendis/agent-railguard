@@ -98,13 +98,16 @@ test…` in Python tests; methods with `@Test`, `@ParameterizedTest`, `@Repeated
 `Scenario`, `Scenario Outline` and `Example` of `.feature` files. It is compared by name:
 moving a test to another test file in the same change does not count. A test whose name
 disappears while a new name takes its place in the same file (after the same surviving
-test, or at the start) is **renamed**, not removed; a file that ends with fewer tests
-always reports a removal. What changes inside a test that is still declared (removed
+test, or at the start) is **renamed**, not removed. A removed test is **obsolete** when it
+went with the code it tested: its text on the base mentions a function, type or class that
+the change removed from a production file (Go, JavaScript/TypeScript, Python, Java) and that
+no file left in the repository mentions anymore, tracked or untracked. A deleted test file is
+obsolete when every test it had is. Any other test a file loses is reported as removed. What changes inside a test that is still declared (removed
 assertions, empty body) is not detected; that is measured by each stack's coverage and
 mutation testing.
 
 `finding_policy` decides, per kind of finding, whether it blocks or is only reported
-([D-034](decisions.md#d-034--a-renamed-test-is-reported-and-each-project-sets-what-blocks)).
+([D-034](decisions.md#d-034--renamed-and-obsolete-tests-are-reported-and-each-project-sets-what-blocks)).
 A reported finding is listed in the check's result, which passes:
 
 | Kind | What it is | Default |
@@ -113,6 +116,7 @@ A reported finding is listed in the check's result, which passes:
 | `test-deleted` | a test file deleted | `block` |
 | `test-removed` | a test declaration removed from a file that still exists | `block` |
 | `test-renamed` | a test renamed in place | `report` |
+| `test-obsolete` | a test removed, or a test file deleted, with the code it tested | `report` |
 
 A changed or deleted protected configuration, and a file too large to scan, always block.
 The policy lives in `.railguard/project.yaml`, itself a protected path, so only a person

@@ -8,6 +8,7 @@ import { NodeProcessRunner } from "../../src/adapters/platform/process/node-proc
 import { ChangeCheckProvider } from "../../src/adapters/verification/change-check-provider.js";
 import {
   changedLineCount,
+  declaredSymbols,
   globToRegExp,
   parseAllowances,
   suppressionFindings,
@@ -75,12 +76,15 @@ describe("change guard rules", () => {
       { path: "b_test.go", before: "func TestC(t *testing.T) {}", after: "" },
       { path: "c_test.go", before: "", after: "func TestC(t *testing.T) {}" },
       { path: "d.test.ts", before: "it('twice', f)\nit('twice', f)", after: "it('twice', f)" },
-    ])).toEqual({ removed: ["a_test.go: test TestB removed", "d.test.ts: test twice removed"], renamed: [] });
+    ])).toEqual({ deleted: [], removed: ["a_test.go: test TestB removed", "d.test.ts: test twice removed"], renamed: [], obsolete: [] });
   });
 
   it("tells a test renamed in place from one removed while another is added elsewhere", () => {
     const go = (...names: string[]) => names.map((name) => `func ${name}(t *testing.T) {}`).join("\n");
-    const changes = (before: string[], after: string[]) => testChanges([{ path: "a_test.go", before: go(...before), after: go(...after) }]);
+    const changes = (before: string[], after: string[]) => {
+      const { removed, renamed } = testChanges([{ path: "a_test.go", before: go(...before), after: go(...after) }]);
+      return { removed, renamed };
+    };
 
     expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestTotal", "TestC"]))
       .toEqual({ removed: [], renamed: ["a_test.go: test TestB renamed to TestTotal"] });
@@ -97,7 +101,44 @@ describe("change guard rules", () => {
     expect(testChanges([
       { path: "a_test.go", before: go("TestA", "TestB"), after: go("TestA", "TestC") },
       { path: "b_test.go", before: go("TestC"), after: "" },
-    ])).toEqual({ removed: ["a_test.go: test TestB removed"], renamed: [] });
+    ])).toMatchObject({ removed: ["a_test.go: test TestB removed"], renamed: [] });
+  });
+
+  it("reads the functions, types and classes production code declares", () => {
+    expect(declaredSymbols("orders.go", "package orders\n\ntype Order struct{}\n\nfunc Total() int { return 0 }\nfunc (o Order) Refund() {}\n"))
+      .toEqual(["Total", "Refund", "Order"]);
+    expect(declaredSymbols("src/orders.ts", "export function total() {}\nexport class Ledger {}\nexport const rate = 1\nconst local = 2\n"))
+      .toEqual(["total", "Ledger", "rate"]);
+    expect(declaredSymbols("orders.py", "class Ledger:\n    def total(self):\n        pass\n")).toEqual(["Ledger", "total"]);
+    expect(declaredSymbols("Orders.java", "public class Orders {\n  public int total(int a) { return a; }\n}\n")).toEqual(["Orders", "total"]);
+    expect(declaredSymbols("orders_test.go", "func TestTotal(t *testing.T) {}")).toEqual([]);
+  });
+
+  it("tells a test that went with the code it tested from a removed one", () => {
+    const before = "func TestTotal(t *testing.T) { Total() }\nfunc TestRefund(t *testing.T) { Refund() }\nfunc TestTax(t *testing.T) { Tax() }\n";
+    const after = "func TestTax(t *testing.T) { Tax() }\n";
+
+    expect(testChanges([{ path: "a_test.go", before, after }], new Set(["Total", "Subtotal"]))).toEqual({
+      deleted: [],
+      removed: ["a_test.go: test TestRefund removed"],
+      renamed: [],
+      obsolete: ["a_test.go: test TestTotal removed with the code it tested"],
+    });
+    // The test's own name does not count as using the symbol.
+    expect(testChanges([{ path: "a_test.go", before: "func TestTotal(t *testing.T) {}\n", after: "" }], new Set(["Total"])))
+      .toMatchObject({ removed: ["a_test.go: test TestTotal removed"], obsolete: [] });
+    expect(testChanges([
+      { path: "a_test.go", before, after: "", deleted: true },
+      { path: "b_test.go", before: "func TestTax(t *testing.T) { Tax() }\n", after: "", deleted: true },
+      { path: "c_test.go", before: "package c\n", after: "", deleted: true },
+    ], new Set(["Total", "Refund", "Tax"]))).toEqual({
+      deleted: ["c_test.go: test file deleted"],
+      removed: [],
+      renamed: [],
+      obsolete: ["a_test.go: test file deleted with the code it tested", "b_test.go: test file deleted with the code it tested"],
+    });
+    expect(testChanges([{ path: "a_test.go", before, after: "", deleted: true }], new Set(["Total", "Tax"])))
+      .toMatchObject({ deleted: ["a_test.go: test file deleted"], obsolete: [] });
   });
 
   it("counts new files by lines and accepts only allowances with a reason", () => {
@@ -218,6 +259,34 @@ describe("ChangeCheckProvider", () => {
     const protectedChange = await provider().run("change-integrity", await request(root, { finding_policy: [...relaxed, "protected-config=report"] }));
     expect(protectedChange.status).toBe("failed");
     expect(protectedChange.details[0]).toBe(".golangci.yml: protected quality configuration changed");
+  });
+
+  it("reports a test removed with code the change deleted from the repository and blocks one whose code survives", async () => {
+    const { root, git } = await repository({
+      "orders.go": "package orders\n\nfunc Total() int { return 1 }\n\nfunc Refund() int { return 2 }\n",
+      "orders_test.go": "package orders\n\nfunc TestTotal(t *testing.T) { Total() }\nfunc TestRefund(t *testing.T) { Refund() }\n",
+      "legacy.go": "package orders\n\nfunc Legacy() {}\n",
+      "legacy_test.go": "package orders\n\nfunc TestLegacy(t *testing.T) { Legacy() }\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "orders.go"), "package orders\n\nfunc Refund() int { return 2 }\n");
+    await writeFile(join(root, "orders_test.go"), "package orders\n\nfunc TestRefund(t *testing.T) { Refund() }\n");
+    await rm(join(root, "legacy.go"));
+    await rm(join(root, "legacy_test.go"));
+
+    expect(await provider().run("change-integrity", await request(root))).toMatchObject({
+      status: "passed",
+      details: [
+        "legacy_test.go: test file deleted with the code it tested (reported: test-obsolete=report)",
+        "orders_test.go: test TestTotal removed with the code it tested (reported: test-obsolete=report)",
+      ],
+    });
+
+    // Another file still uses Total, so it was not removed from the repository.
+    await writeFile(join(root, "report.go"), "package orders\n\nvar total = Total\n");
+    const kept = await provider().run("change-integrity", await request(root));
+    expect(kept.status).toBe("failed");
+    expect(kept.details[0]).toBe("orders_test.go: test TestTotal removed");
   });
 
   it("accepts a removed test with a person's trailer and judges later removals", async () => {
