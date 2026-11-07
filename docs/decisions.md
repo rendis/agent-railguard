@@ -503,7 +503,8 @@ test-annotated methods, and Gherkin scenarios), and the names are compared betwe
 base and the change. A test that moves to another changed test file keeps its name and
 does not count; renaming it does, because it cannot be told apart from deleting one and
 adding another, and a person accepts it with the same
-`Railguard-Allow: change-integrity` trailer. The content of a test that is still
+`Railguard-Allow: change-integrity` trailer. [D-034](#d-034--a-renamed-test-is-reported-and-each-project-sets-what-blocks)
+now tells a rename in place apart and reports it by default. The content of a test that is still
 declared is out of scope: judging it is semantics, and it is measured by the stack's
 coverage and mutation testing.
 
@@ -620,6 +621,27 @@ relative form. Any other value is still foreign and preserved.
 `change-size` bounds what a reviewer must read as code. `**/*.md` and `docs/**` join the default
 `size_excluded_paths`: prose is reviewed differently and a documentation change was blocking
 deliveries that were small as code. A repository that wants them counted overrides the input.
+
+### D-034 — A renamed test is reported, and each project sets what blocks
+
+Under D-029 a test renamed in place failed `change-integrity` like a deleted one. In a repository
+where an agent delivers most changes, that was the most common reason to ask a person for an
+approval, and almost always benign; approving out of habit weakened the check for the case it
+exists for. Two changes:
+
+- **A rename in place is told apart.** Within one changed test file, a name that left every
+  changed file is paired with a new name that follows the same surviving declaration (or the start
+  of the file), in order. A paired name is renamed; an unpaired one is still removed, so a file
+  that ends with fewer tests always reports a removal, and a test that moves in from another file
+  never takes the place of one that left. Comparing bodies would catch more swaps, but it needs a
+  parser per language; the position is mechanical and shared by every stack.
+- **Each project decides what blocks.** The `finding_policy` input of `change-guard` sets the
+  relaxable kinds (`suppression`, `test-deleted`, `test-removed`, `test-renamed`) to `block` or
+  `report`. A reported finding is listed and the check passes. The default reports only
+  `test-renamed`. A protected configuration change and a file too large to scan always block:
+  relaxing them would hide the policy itself, or what nobody could read. The policy is stored in
+  `.railguard/project.yaml`, a protected path, so an agent that loosens it is blocked until a
+  person accepts the change.
 
 ## Closed observable flow
 

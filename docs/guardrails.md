@@ -96,10 +96,29 @@ method); `it(…)` and `test(…)` with a literal name in `*.test.*` and `*.spec
 test…` in Python tests; methods with `@Test`, `@ParameterizedTest`, `@RepeatedTest`,
 `@TestFactory` or `@TestTemplate` in `*Test.java`, `*Tests.java` and `*IT.java`, and the
 `Scenario`, `Scenario Outline` and `Example` of `.feature` files. It is compared by name:
-moving a test to another test file in the same change does not count, but renaming it
-does, because mechanically it cannot be told apart from deleting one and adding another.
-What changes inside a test that is still declared (removed assertions, empty body) is not
-detected; that is measured by each stack's coverage and mutation testing.
+moving a test to another test file in the same change does not count. A test whose name
+disappears while a new name takes its place in the same file (after the same surviving
+test, or at the start) is **renamed**, not removed; a file that ends with fewer tests
+always reports a removal. What changes inside a test that is still declared (removed
+assertions, empty body) is not detected; that is measured by each stack's coverage and
+mutation testing.
+
+`finding_policy` decides, per kind of finding, whether it blocks or is only reported
+([D-034](decisions.md#d-034--a-renamed-test-is-reported-and-each-project-sets-what-blocks)).
+A reported finding is listed in the check's result, which passes:
+
+| Kind | What it is | Default |
+| --- | --- | --- |
+| `suppression` | a suppression marker on a changed line | `block` |
+| `test-deleted` | a test file deleted | `block` |
+| `test-removed` | a test declaration removed from a file that still exists | `block` |
+| `test-renamed` | a test renamed in place | `report` |
+
+A changed or deleted protected configuration, and a file too large to scan, always block.
+The policy lives in `.railguard/project.yaml`, itself a protected path, so only a person
+can relax it: `--set 'verification-profile:change-guard.finding_policy=["test-renamed=block"]'`
+restores the strictest behavior, and `"test-removed=report"` suits a prototype where tests
+come and go.
 
 `railguard report` lists each accepted trailer and the agent hook activity, to see which
 rules actually block and which are only accepted out of habit

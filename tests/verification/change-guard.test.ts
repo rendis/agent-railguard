@@ -10,8 +10,8 @@ import {
   changedLineCount,
   globToRegExp,
   parseAllowances,
-  removedTestFindings,
   suppressionFindings,
+  testChanges,
   testNames,
 } from "../../src/domain/verification/change-guard.js";
 import type { CheckRequest } from "../../src/domain/verification/checks.js";
@@ -70,12 +70,34 @@ describe("change guard rules", () => {
   });
 
   it("reports tests the change removes but not tests it moves between changed files", () => {
-    expect(removedTestFindings([
+    expect(testChanges([
       { path: "a_test.go", before: "func TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}", after: "func TestA(t *testing.T) {}" },
       { path: "b_test.go", before: "func TestC(t *testing.T) {}", after: "" },
       { path: "c_test.go", before: "", after: "func TestC(t *testing.T) {}" },
       { path: "d.test.ts", before: "it('twice', f)\nit('twice', f)", after: "it('twice', f)" },
-    ])).toEqual(["a_test.go: test TestB removed", "d.test.ts: test twice removed"]);
+    ])).toEqual({ removed: ["a_test.go: test TestB removed", "d.test.ts: test twice removed"], renamed: [] });
+  });
+
+  it("tells a test renamed in place from one removed while another is added elsewhere", () => {
+    const go = (...names: string[]) => names.map((name) => `func ${name}(t *testing.T) {}`).join("\n");
+    const changes = (before: string[], after: string[]) => testChanges([{ path: "a_test.go", before: go(...before), after: go(...after) }]);
+
+    expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestTotal", "TestC"]))
+      .toEqual({ removed: [], renamed: ["a_test.go: test TestB renamed to TestTotal"] });
+    expect(changes(["TestA", "TestB"], ["TestNewA", "TestNewB"]))
+      .toEqual({ removed: [], renamed: ["a_test.go: test TestA renamed to TestNewA", "a_test.go: test TestB renamed to TestNewB"] });
+    // Reordering renames nothing; the surviving test it follows identifies the place.
+    expect(changes(["TestA", "TestB", "TestC"], ["TestC", "TestA", "TestX"]))
+      .toEqual({ removed: [], renamed: ["a_test.go: test TestB renamed to TestX"] });
+    expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestC", "TestX"]))
+      .toEqual({ removed: ["a_test.go: test TestB removed"], renamed: [] });
+    expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestX"]))
+      .toEqual({ removed: ["a_test.go: test TestC removed"], renamed: ["a_test.go: test TestB renamed to TestX"] });
+    // A test that moves in from another file does not take the place of one that left.
+    expect(testChanges([
+      { path: "a_test.go", before: go("TestA", "TestB"), after: go("TestA", "TestC") },
+      { path: "b_test.go", before: go("TestC"), after: "" },
+    ])).toEqual({ removed: ["a_test.go: test TestB removed"], renamed: [] });
   });
 
   it("counts new files by lines and accepts only allowances with a reason", () => {
@@ -154,6 +176,48 @@ describe("ChangeCheckProvider", () => {
     const outcome = await provider().run("change-integrity", await request(root));
 
     expect(outcome).toMatchObject({ status: "passed", summary: "No suppression, removed test or protected configuration change" });
+  });
+
+  it("reports a test renamed in place by default and blocks it when the policy says so", async () => {
+    const { root, git } = await repository({
+      "a.test.ts": "it('adds', f)\nit('rounds down', f)\nit('subtracts', f)\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a.test.ts"), "it('adds', f)\nit('rounds half up', f)\nit('subtracts', f)\n");
+
+    expect(await provider().run("change-integrity", await request(root))).toMatchObject({
+      status: "passed",
+      summary: "1 change(s) reported, none blocking",
+      details: ["a.test.ts: test rounds down renamed to rounds half up (reported: test-renamed=report)"],
+    });
+    const blocked = await provider().run("change-integrity", await request(root, { finding_policy: ["test-renamed=block"] }));
+    expect(blocked.status).toBe("failed");
+    expect(blocked.details[0]).toBe("a.test.ts: test rounds down renamed to rounds half up");
+  });
+
+  it("reports the relaxed kinds of finding and still blocks a protected configuration", async () => {
+    const { root, git } = await repository({
+      ".golangci.yml": "version: \"2\"\n",
+      "a.go": "package a\n",
+      "a_test.go": "package a\n\nfunc TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a.go"), "package a\n\nfunc A() {} //nolint:all\n");
+    await writeFile(join(root, "a_test.go"), "package a\n\nfunc TestA(t *testing.T) {}\n");
+    const relaxed = ["suppression=report", "test-removed=report"];
+
+    expect(await provider().run("change-integrity", await request(root, { finding_policy: relaxed }))).toMatchObject({
+      status: "passed",
+      details: [
+        "a.go:3: lint suppression: func A() {} //nolint:all (reported: suppression=report)",
+        "a_test.go: test TestB removed (reported: test-removed=report)",
+      ],
+    });
+
+    await writeFile(join(root, ".golangci.yml"), "version: \"2\"\nlinters: {default: none}\n");
+    const protectedChange = await provider().run("change-integrity", await request(root, { finding_policy: [...relaxed, "protected-config=report"] }));
+    expect(protectedChange.status).toBe("failed");
+    expect(protectedChange.details[0]).toBe(".golangci.yml: protected quality configuration changed");
   });
 
   it("accepts a removed test with a person's trailer and judges later removals", async () => {

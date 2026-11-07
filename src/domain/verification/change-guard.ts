@@ -60,27 +60,78 @@ export function testNames(path: string, content: string): readonly string[] {
   return [...content.matchAll(rule.declaration)].map((match) => match.slice(1).find((name) => name !== undefined) ?? "");
 }
 
+/** Tests changed test files lost (`path: test <name> removed`) or renamed in place (`path: test <old> renamed to <new>`). */
+export interface TestChanges {
+  readonly removed: readonly string[];
+  readonly renamed: readonly string[];
+}
+
 /**
- * Tests the base declared in changed test files that the change no longer declares, as
- * `path: test <name> removed`. A test moved to another changed file keeps its name and is not reported.
+ * How the change altered the tests the base declared in changed test files. A test moved to
+ * another changed file keeps its name and is neither. A test whose name disappears is renamed when
+ * a new name takes its place in the same file: after the same surviving declaration (or at the
+ * start), paired in order. Otherwise it is removed, so a file that ends with fewer tests always
+ * reports a removal.
  */
-export function removedTestFindings(
+export function testChanges(
   files: readonly { readonly path: string; readonly before: string; readonly after: string }[],
-): readonly string[] {
+): TestChanges {
+  const declared = files.map(({ path, before, after }) => ({ path, before: testNames(path, before), after: testNames(path, after) }));
   const net = new Map<string, number>();
-  const decreased: { readonly path: string; readonly name: string }[] = [];
-  for (const { path, before, after } of files) {
-    const counts = new Map<string, number>();
-    for (const name of testNames(path, before)) counts.set(name, (counts.get(name) ?? 0) + 1);
-    for (const name of testNames(path, after)) counts.set(name, (counts.get(name) ?? 0) - 1);
-    for (const [name, count] of counts) {
-      net.set(name, (net.get(name) ?? 0) + count);
-      if (count > 0) decreased.push({ path, name });
+  for (const { before, after } of declared) {
+    for (const name of before) net.set(name, (net.get(name) ?? 0) + 1);
+    for (const name of after) net.set(name, (net.get(name) ?? 0) - 1);
+  }
+  const removed = new Set<string>();
+  const renamed = new Set<string>();
+  for (const { path, before, after } of declared) {
+    // A name that left every changed file is gone; one no changed file had before is new.
+    const gone = slotted(before, after).filter(({ name }) => (net.get(name) ?? 0) > 0);
+    const added = slotted(after, before).filter(({ name }) => (net.get(name) ?? 0) < 0);
+    for (const entry of gone) {
+      const index = added.findIndex((candidate) => candidate.slot === entry.slot);
+      if (index === -1) {
+        removed.add(`${path}: test ${entry.name} removed`);
+        continue;
+      }
+      renamed.add(`${path}: test ${entry.name} renamed to ${added[index]!.name}`);
+      added.splice(index, 1);
     }
   }
-  return decreased
-    .filter(({ name }) => (net.get(name) ?? 0) > 0)
-    .map(({ path, name }) => `${path}: test ${name} removed`);
+  return { removed: [...removed], renamed: [...renamed] };
+}
+
+/**
+ * Declarations of `names` that `others` does not hold (the last occurrences of a repeated name),
+ * each with the surviving declaration it follows: `^` for the start, otherwise that name and its
+ * occurrence, which identify the same place on both sides.
+ */
+function slotted(names: readonly string[], others: readonly string[]): { readonly name: string; readonly slot: string }[] {
+  const surplus = new Map<string, number>();
+  for (const name of names) surplus.set(name, (surplus.get(name) ?? 0) + 1);
+  for (const name of others) surplus.set(name, (surplus.get(name) ?? 0) - 1);
+  const remaining = new Map(surplus);
+  const unmatched = names.map(() => false);
+  for (let index = names.length - 1; index >= 0; index -= 1) {
+    const name = names[index]!;
+    const left = remaining.get(name) ?? 0;
+    if (left <= 0) continue;
+    unmatched[index] = true;
+    remaining.set(name, left - 1);
+  }
+  const seen = new Map<string, number>();
+  let slot = "^";
+  const entries: { readonly name: string; readonly slot: string }[] = [];
+  names.forEach((name, index) => {
+    if (unmatched[index]) {
+      entries.push({ name, slot });
+      return;
+    }
+    const occurrence = seen.get(name) ?? 0;
+    seen.set(name, occurrence + 1);
+    slot = `${occurrence}\0${name}`;
+  });
+  return entries;
 }
 
 /** Suppression markers on the changed lines of one source file, as `path:line: label: text`. */
