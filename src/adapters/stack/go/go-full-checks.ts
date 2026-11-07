@@ -2,6 +2,13 @@ import type { FullCheck, FullCheckRequest } from "../../../domain/verification/c
 import { shellQuote } from "../../../domain/verification/verify-script.js";
 
 /**
+ * Settings forced on every Gremlins run. A non-zero `test-cpu` makes Gremlins v0.6 pass `-cpu N`
+ * to `go test` as one argument, so every test run fails to start and every covered mutant reads
+ * as KILLED.
+ */
+export const gremlinsOverrides = ["--test-cpu=0"] as const;
+
+/**
  * Shell that judges a whole Go module from its root, for the repository's verify script. Inputs
  * and thresholds are written into the script, so CI needs only Go and the module's pinned tools.
  */
@@ -65,10 +72,10 @@ export function goFullCheck(kind: string, request: FullCheckRequest): FullCheck 
         '  rm -f "$report"',
         "  set --",
         "  [ ! -f .gremlins.yaml ] || set -- --config .gremlins.yaml",
-        `  ${run("gremlins")} "$@" unleash -o "$report" "$package" || { echo "Gremlins failed for $package" >&2; exit 1; }`,
+        `  ${run("gremlins")} "$@" unleash ${words(gremlinsOverrides)} -o "$report" "$package" || { echo "Gremlins failed for $package" >&2; exit 1; }`,
         // A package without statements, such as one that only declares types, has no mutant.
         '  [ -s "$report" ] || continue',
-        `  lived=$(grep -Eo '"status"[[:space:]]*:[[:space:]]*"(LIVED|NOT_COVERED)"' "$report" | wc -l)`,
+        `  lived=$(grep -Eo '"status"[[:space:]]*:[[:space:]]*"(LIVED|NOT COVERED)"' "$report" | wc -l)`,
         "  survivors=$((survivors + lived))",
         "done",
         '[ "$survivors" -eq 0 ] || { echo "$survivors mutant(s) survived or were not covered" >&2; exit 1; }',

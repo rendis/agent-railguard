@@ -15,7 +15,7 @@ import {
   type ProcessRunner,
 } from "../../../domain/verification/checks.js";
 import { changedLineCoverage, lineRanges, parseCoverProfile } from "./go-coverage.js";
-import { goFullCheck } from "./go-full-checks.js";
+import { goFullCheck, gremlinsOverrides } from "./go-full-checks.js";
 
 const minute = 60_000;
 const golangciConfigs = [".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"];
@@ -267,7 +267,7 @@ class GoUnit {
         const report = join(scratch, `report-${index}.json`);
         const result = await this.#run(
           "go",
-          [...tool.prefix, "gremlins", ...config, "unleash", "--silent", "-o", report, packagePattern(dir)],
+          [...tool.prefix, "gremlins", ...config, "unleash", ...gremlinsOverrides, "--silent", "-o", report, packagePattern(dir)],
           60 * minute,
         );
         if (result.exitCode !== 0) return failed(`Gremlins failed for ${packagePattern(dir)}`, output(result));
@@ -282,8 +282,8 @@ class GoUnit {
           const path = mutationFile(file.file_name, dir, modulePath, this.#dir);
           for (const mutation of file.mutations ?? []) {
             if (!isLineChanged(this.#changed.get(path), mutation.line)) continue;
-            if (mutation.status === "KILLED" || mutation.status === "TIMED_OUT") killed += 1;
-            if (mutation.status === "LIVED" || mutation.status === "NOT_COVERED") {
+            if (mutation.status === "KILLED" || mutation.status === "TIMED OUT") killed += 1;
+            if (mutation.status === "LIVED" || mutation.status === "NOT COVERED") {
               survivors.push(`${posix.join(this.#request.unitRoot, path)}:${mutation.line}:${mutation.column} ${mutation.type} ${mutation.status}`);
             }
           }

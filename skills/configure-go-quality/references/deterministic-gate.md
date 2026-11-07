@@ -12,7 +12,7 @@ Classify every adopted requirement:
 
 ## Coverage and mutation are the tool's math, not yours
 
-`railguard verify --changed` already computes changed-line coverage against the 100%-core/80%-elsewhere bar and runs Gremlins on changed lines, failing on any `LIVED` or `NOT_COVERED` mutant (see [default-go-service-profile.md](default-go-service-profile.md)). Do not re-derive these numbers by hand or accept a rounded display percentage as a substitute for the tool's verdict. What configuration still owns:
+`railguard verify --changed` already computes changed-line coverage against the 100%-core/80%-elsewhere bar and runs Gremlins on changed lines, failing on any `LIVED` or `NOT COVERED` mutant (see [default-go-service-profile.md](default-go-service-profile.md)). Do not re-derive these numbers by hand or accept a rounded display percentage as a substitute for the tool's verdict. What configuration still owns:
 
 - the exact scope each threshold applies to (which packages are "core", which are "changed");
 - treating the whole-product percentage as a mechanical regression floor only: it does not classify uncovered behavior or prove that a changed or critical scope is semantically complete, and mutation score never substitutes for an independent oracle;
