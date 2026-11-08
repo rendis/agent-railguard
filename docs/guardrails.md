@@ -100,11 +100,19 @@ moving a test to another test file in the same change does not count. A test who
 disappears while a new name takes its place in the same file (after the same surviving
 test, or at the start, with as many tests arriving there as leaving) is **renamed**, not
 removed. A removed test is **obsolete** when it
-went with the code it tested: its text on the base mentions a function, type or class that
-the change removed from a production file (Go, JavaScript/TypeScript, Python, Java) and that
+went with the code it tested: its text on the base mentions a function, type, class,
+constant or variable (Go `const` and `var`, grouped blocks included; JavaScript `export const`)
+that the change removed from a production file (Go, JavaScript/TypeScript, Python, Java) and that
 no file left in the repository mentions anymore, tracked or untracked. Code that only took a new
-name, with the same text under it, was not removed, so its test still counts as removed; the
-name in the test's own declaration is not a use. A deleted test file is
+name, with the same text under it, was not removed, so its test still counts as removed; for a
+constant or variable one line with the same value is enough. The name in the test's own
+declaration is not a use. A test is also obsolete when its code (strings and comments aside)
+calls a **helper** of the same file that the change removed and whose own text mentions removed
+code: a function, constant or variable declared outside every test and no deeper than the
+tests, which the file no longer declares or mentions. One level only, a helper declared twice
+counts only if both went with the code, and a local of a test is part of that test, not a helper.
+The finding names the helper. A test's text runs to its closing bracket (to the end of its block
+in Python), so a helper after it is not its text. A deleted test file is
 obsolete when every test it had is. Any other test a file loses is reported as removed. What changes inside a test that is still declared (removed
 assertions, empty body) is not detected; that is measured by each stack's coverage and
 mutation testing.

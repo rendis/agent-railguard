@@ -58,33 +58,130 @@ export function testNames(path: string, content: string): readonly string[] {
   return testDeclarationsIn(path, content).map(({ name }) => name);
 }
 
-/** Each test a test file declares, with its text: from its declaration to the next one. */
-function testDeclarationsIn(path: string, content: string): readonly { readonly name: string; readonly body: string }[] {
-  const rule = testDeclarations.find((candidate) => candidate.file.test(path));
-  if (rule === undefined) return [];
-  const matches = [...content.matchAll(rule.declaration)];
-  return matches.map((match, index) => ({
-    name: match.slice(1).find((name) => name !== undefined) ?? "",
-    body: content.slice(match.index, matches[index + 1]?.index ?? content.length),
-  }));
+interface Declaration {
+  readonly name: string;
+  readonly start: number;
+  readonly end: number;
+  readonly body: string;
 }
 
-/** How production code declares functions, methods, types and classes; the first capture group is the name. */
-const symbolDeclarations: readonly { readonly file: RegExp; readonly declarations: readonly RegExp[] }[] = [
-  { file: /\.go$/u, declarations: [/^func[ \t]+(?:\([^)]*\)[ \t]*)?(\w+)/gmu, /^type[ \t]+(\w+)/gmu] },
+/**
+ * Each test a test file declares, with its text: from its declaration to where it ends (its
+ * closing bracket, or the end of its indented block in Python), never past the next test. A test
+ * whose end cannot be read, and a Gherkin scenario, runs to the next test.
+ */
+function testDeclarationsIn(path: string, content: string): readonly Declaration[] {
+  const rule = testDeclarations.find((candidate) => candidate.file.test(path));
+  if (rule === undefined) return [];
+  const syntax = syntaxOf(path);
+  const code = syntax === undefined ? content : blankLiterals(content, syntax);
+  const matches = [...content.matchAll(rule.declaration)];
+  return matches.map((match, index) => {
+    const next = matches[index + 1]?.index ?? content.length;
+    // Every declaration pattern but Python's and Gherkin's ends inside the test's opening bracket.
+    const extent = syntax === "c" ? statementEnd(code, match.index + match[0].length, 1, next)
+      : syntax === "python" ? indentedEnd(code, match.index, next) : undefined;
+    const end = Math.min(next, extent ?? next);
+    return { name: match.slice(1).find((name) => name !== undefined) ?? "", start: match.index, end, body: content.slice(match.index, end) };
+  });
+}
+
+type Syntax = "c" | "python";
+
+/** How a file writes comments, strings and blocks: C-like brackets, or Python indentation. */
+function syntaxOf(path: string): Syntax | undefined {
+  if (/\.(?:go|[cm]?[jt]sx?|java)$/u.test(path)) return "c";
+  if (/\.py$/u.test(path)) return "python";
+  return undefined;
+}
+
+/**
+ * The file with the contents of its comments and string literals replaced by spaces, offsets and
+ * line breaks kept, so brackets and names inside them read as nothing. A quote that does not
+ * close on its line (a word such as "don't" in JSX text) ends at that line.
+ */
+function blankLiterals(content: string, syntax: Syntax): string {
+  const blank = (text: string) => text.replace(/[^\n]/gu, " ");
+  const literal = syntax === "c"
+    ? /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|`(?:\\[\s\S]|[^\\`])*(?:`|$)|"(?:\\.|[^"\\\n])*(?:"|(?=\n)|$)|'(?:\\.|[^'\\\n])*(?:'|(?=\n)|$)/gu
+    : /#[^\n]*|"""[\s\S]*?(?:"""|$)|'''[\s\S]*?(?:'''|$)|"(?:\\.|[^"\\\n])*(?:"|(?=\n)|$)|'(?:\\.|[^'\\\n])*(?:'|(?=\n)|$)/gu;
+  return content.replace(literal, (text) => {
+    const quote = /^(?:"""|'''|["'`])/u.exec(text)?.[0];
+    if (quote === undefined) return blank(text);
+    const closed = text.length >= quote.length * 2 && text.endsWith(quote);
+    return quote + blank(text.slice(quote.length, closed ? -quote.length : undefined)) + (closed ? quote : "");
+  });
+}
+
+/**
+ * Where a C-like statement that starts at `from`, `depth` brackets deep, ends in blanked code: at
+ * a `;` or a line break outside brackets that does not continue the statement, or at a bracket that
+ * closes an enclosing block. Undefined when its brackets do not balance before `limit`.
+ */
+function statementEnd(code: string, from: number, depth: number, limit = code.length): number | undefined {
+  let open = depth;
+  let last = "";
+  for (let index = from; index < limit; index += 1) {
+    const character = code[index]!;
+    if ("([{".includes(character)) open += 1;
+    else if (")]}".includes(character) && (open -= 1) < 0) return index;
+    else if (open === 0 && character === ";") return index + 1;
+    else if (open === 0 && character === "\n" && last !== "" && !/[=>,([{+\-*/?:&|.!]/u.test(last)
+      && !/^\s*[.?:{&|=]/u.test(code.slice(index + 1))) return index;
+    if (!/\s/u.test(character)) last = character;
+  }
+  return open === 0 ? limit : undefined;
+}
+
+/**
+ * Where a Python block that starts on the line holding `from` ends: the next line indented no
+ * deeper, or `limit`.
+ */
+function indentedEnd(code: string, from: number, limit = code.length): number {
+  const indent = indentationAt(code, from);
+  let end = code.indexOf("\n", from);
+  if (end < 0 || end >= limit) return limit;
+  let cursor = end + 1;
+  while (cursor < limit) {
+    const next = code.indexOf("\n", cursor);
+    const lineEnd = next < 0 || next > limit ? limit : next;
+    const line = code.slice(cursor, lineEnd);
+    if (line.trim() !== "") {
+      if (/^[ \t]*/u.exec(line)![0].length <= indent) break;
+      end = lineEnd;
+    }
+    cursor = lineEnd + 1;
+  }
+  return end;
+}
+
+function indentationAt(content: string, offset: number): number {
+  const lineStart = content.lastIndexOf("\n", offset - 1) + 1;
+  return /^[ \t]*/u.exec(content.slice(lineStart))![0].length;
+}
+
+interface DeclarationRule {
+  readonly pattern: RegExp;
+  /** A constant or variable: one line of it, with its value, is enough to tell it under a new name. */
+  readonly value?: boolean;
+}
+
+/** How production code declares functions, methods, types, classes and constants; the first capture group is the name. */
+const symbolDeclarations: readonly { readonly file: RegExp; readonly declarations: readonly DeclarationRule[] }[] = [
+  { file: /\.go$/u, declarations: [{ pattern: /^func[ \t]+(?:\([^)]*\)[ \t]*)?(\w+)/gmu }, { pattern: /^type[ \t]+(\w+)/gmu }] },
   {
     file: /\.[cm]?[jt]sx?$/u,
     declarations: [
-      /(?<![\w$.])(?:function\*?|class|interface|type|enum)[ \t]+([A-Za-z_$][\w$]*)/gmu,
-      /^[ \t]*export[ \t]+(?:const|let|var)[ \t]+([A-Za-z_$][\w$]*)/gmu,
+      { pattern: /(?<![\w$.])(?:function\*?|class|interface|type|enum)[ \t]+([A-Za-z_$][\w$]*)/gmu },
+      { pattern: /^[ \t]*export[ \t]+(?:const|let|var)[ \t]+([A-Za-z_$][\w$]*)/gmu, value: true },
     ],
   },
-  { file: /\.py$/u, declarations: [/^[ \t]*(?:async[ \t]+)?(?:def|class)[ \t]+(\w+)/gmu] },
+  { file: /\.py$/u, declarations: [{ pattern: /^[ \t]*(?:async[ \t]+)?(?:def|class)[ \t]+(\w+)/gmu }] },
   {
     file: /\.java$/u,
     declarations: [
-      /\b(?:class|interface|enum|record)[ \t]+(\w+)/gmu,
-      /^[ \t]*(?:(?:public|protected|private|static|final|abstract|synchronized)[ \t]+)+[\w<>[\],.? \t]+?[ \t](\w+)[ \t]*\(/gmu,
+      { pattern: /\b(?:class|interface|enum|record)[ \t]+(\w+)/gmu },
+      { pattern: /^[ \t]*(?:(?:public|protected|private|static|final|abstract|synchronized)[ \t]+)+[\w<>[\],.? \t]+?[ \t](\w+)[ \t]*\(/gmu },
     ],
   },
 ];
@@ -99,21 +196,77 @@ export function declaredSymbols(path: string, content: string): readonly string[
   return [...new Set(symbolDeclarationsIn(path, content).map(({ name }) => name))];
 }
 
-/** Each symbol a production source file declares, with its text: from its declaration to the next one. */
-function symbolDeclarationsIn(path: string, content: string): readonly { readonly name: string; readonly body: string }[] {
+interface SymbolDeclaration extends Declaration {
+  readonly value: boolean;
+}
+
+/** Each symbol a production source file declares, with its text: from its declaration to where it ends. */
+function symbolDeclarationsIn(path: string, content: string): readonly SymbolDeclaration[] {
   if (isTestFile(path)) return [];
   const rule = symbolDeclarations.find((candidate) => candidate.file.test(path));
   if (rule === undefined) return [];
-  const matches = rule.declarations
-    .flatMap((pattern) => [...content.matchAll(pattern)].map((match) => ({ name: match[1]!, start: match.index })))
-    .sort((left, right) => left.start - right.start);
-  return matches.map(({ name, start }, index) => ({ name, body: content.slice(start, matches[index + 1]?.start ?? content.length) }));
+  return declarationsIn(path, content, rule.declarations);
+}
+
+/**
+ * Declarations that `rules` match in a file, and Go's top-level constants, variables and grouped
+ * types, each with its text: from its start to where it ends, never past the next declaration.
+ */
+function declarationsIn(path: string, content: string, rules: readonly DeclarationRule[]): readonly SymbolDeclaration[] {
+  const syntax = syntaxOf(path);
+  const code = syntax === undefined ? content : blankLiterals(content, syntax);
+  const starts = [
+    ...rules.flatMap(({ pattern, value }) =>
+      [...content.matchAll(pattern)].map((match) => ({ name: match[1]!, start: match.index, value: value === true }))),
+    ...(path.endsWith(".go") ? goValueDeclarations(code) : []),
+  ].sort((left, right) => left.start - right.start);
+  let following = 0;
+  return starts.map(({ name, start, value }) => {
+    // Names of one declaration share its start; the next declaration is the next start.
+    while (following < starts.length && starts[following]!.start <= start) following += 1;
+    const next = starts[following]?.start ?? content.length;
+    const extent = syntax === "c" ? statementEnd(code, start, 0, next) : syntax === "python" ? indentedEnd(code, start, next) : undefined;
+    const end = Math.min(next, extent ?? next);
+    return { name, start, end, body: content.slice(start, end), value };
+  });
+}
+
+/**
+ * Go's top-level `const` and `var` declarations, and the members of `const (…)`, `var (…)` and
+ * `type (…)` blocks, in blanked code. A member starts at its line, so its text is that line (or
+ * its brackets); `_` declares nothing.
+ */
+function goValueDeclarations(code: string): readonly { readonly name: string; readonly start: number; readonly value: boolean }[] {
+  const found: { name: string; start: number; value: boolean }[] = [];
+  const names = (list: string) => list.split(",").map((name) => name.trim()).filter((name) => name !== "_");
+  for (const match of code.matchAll(/^(?:const|var)[ \t]+([A-Za-z_]\w*(?:[ \t]*,[ \t]*[A-Za-z_]\w*)*)/gmu)) {
+    for (const name of names(match[1]!)) found.push({ name, start: match.index, value: true });
+  }
+  for (const block of code.matchAll(/^(const|var|type)[ \t]*\(/gmu)) {
+    const open = block.index + block[0].length;
+    const close = statementEnd(code, open, 1) ?? code.length;
+    let depth = 0;
+    let lineStart = code.indexOf("\n", open) + 1;
+    while (lineStart > 0 && lineStart < close) {
+      const lineEnd = code.indexOf("\n", lineStart);
+      const line = code.slice(lineStart, lineEnd < 0 || lineEnd > close ? close : lineEnd);
+      const member = depth === 0 ? /^[ \t]+([A-Za-z_]\w*(?:[ \t]*,[ \t]*[A-Za-z_]\w*)*)/u.exec(line) : null;
+      if (member !== null) {
+        const list = block[1] === "type" ? member[1]!.split(",")[0]! : member[1]!;
+        for (const name of names(list)) found.push({ name, start: lineStart, value: block[1] !== "type" });
+      }
+      depth += (line.match(/[([{]/gu)?.length ?? 0) - (line.match(/[)\]}]/gu)?.length ?? 0);
+      if (lineEnd < 0) break;
+      lineStart = lineEnd + 1;
+    }
+  }
+  return found;
 }
 
 /**
  * Symbols the base declared in `files` that the change no longer declares there, less those that
- * only took a new name: a symbol the change adds with the same text, of more than one line, under
- * another name. Whether a removed symbol is gone from the whole repository is the caller's to check.
+ * only took a new name: a symbol the change adds with the same text under another name, of more
+ * than one line unless it is a constant or variable with a value. Whether a removed symbol is gone from the whole repository is the caller's to check.
  */
 export function removedSymbols(
   files: readonly { readonly path: string; readonly before: string; readonly after: string }[],
@@ -122,7 +275,9 @@ export function removedSymbols(
   const after = files.flatMap(({ path, after: content }) => symbolDeclarationsIn(path, content));
   const beforeNames = new Set(before.map(({ name }) => name));
   const afterNames = new Set(after.map(({ name }) => name));
-  const addedTexts = new Set(after.filter(({ name }) => !beforeNames.has(name)).map(symbolText).filter((text) => text.includes("\n")));
+  // One line of a function says too little; one line of a constant holds its value.
+  const addedTexts = new Set(after.filter(({ name }) => !beforeNames.has(name))
+    .filter((symbol) => symbol.value ? symbolText(symbol).length > 0 : symbolText(symbol).includes("\n")).map(symbolText));
   const removed = before.filter((symbol) => !afterNames.has(symbol.name));
   // A name is renamed only when every declaration it had reappears under another name.
   const renamed = new Set(removed.map(({ name }) => name).filter((name) =>
@@ -145,6 +300,54 @@ function mentions(text: string, symbol: string): boolean {
   return new RegExp(`(?<![\\w$])${symbol.replace(/[$]/gu, "\\$&")}(?![\\w$])`, "u").test(text);
 }
 
+/** How test files declare helpers: functions, constants and variables a test may call or read. */
+const helperDeclarations: readonly { readonly file: RegExp; readonly declarations: readonly DeclarationRule[] }[] = [
+  { file: /_test\.go$/u, declarations: [{ pattern: /^func[ \t]+(?:\([^)]*\)[ \t]*)?(\w+)/gmu }, { pattern: /^type[ \t]+(\w+)/gmu }] },
+  {
+    file: /\.(?:test|spec)\.[cm]?[jt]sx?$/u,
+    declarations: [
+      { pattern: /^[ \t]*(?:export[ \t]+)?(?:async[ \t]+)?function\*?[ \t]+([A-Za-z_$][\w$]*)/gmu },
+      { pattern: /^[ \t]*(?:export[ \t]+)?(?:const|let|var)[ \t]+([A-Za-z_$][\w$]*)/gmu },
+    ],
+  },
+  {
+    file: /(?:(?:^|\/)test_[^/]*|_test)\.py$/u,
+    declarations: [{ pattern: /^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)/gmu }, { pattern: /^([A-Za-z_]\w*)[ \t]*(?::[^=\n]*)?=(?!=)/gmu }],
+  },
+  {
+    file: /(?:Test|Tests|IT)\.java$/u,
+    declarations: [{ pattern: /^[ \t]*(?:(?:public|protected|private|static|final|synchronized)[ \t]+)+[\w<>[\],.? \t]+?[ \t](\w+)[ \t]*[(=;]/gmu }],
+  },
+];
+
+/**
+ * Helpers of a test file that went with the code they used: declared at the base outside every
+ * test and no deeper than the shallowest test, gone from the file after the change (neither
+ * declared nor mentioned), and whose own text mentions a symbol in `goneSymbols`. A local of a
+ * test is part of that test, never a helper.
+ */
+function goneHelpers(
+  path: string,
+  before: string,
+  after: string,
+  tests: readonly Declaration[],
+  goneSymbols: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const rule = helperDeclarations.find((candidate) => candidate.file.test(path));
+  if (rule === undefined || tests.length === 0 || goneSymbols.size === 0) return new Set();
+  const testNamesBefore = new Set(tests.map(({ name }) => name));
+  const depth = Math.min(...tests.map(({ start }) => indentationAt(before, start)));
+  const helpers = declarationsIn(path, before, rule.declarations).filter((helper) =>
+    !testNamesBefore.has(helper.name)
+    && !tests.some(({ start, end }) => helper.start >= start && helper.start < end)
+    && indentationAt(before, helper.start) <= depth
+    && !mentions(after, helper.name));
+  const usesGoneCode = (helper: Declaration) => [...goneSymbols].some((symbol) => mentions(withoutName(helper.body, helper.name), symbol));
+  // A name declared more than once went with the code only if each of its declarations did.
+  return new Set(helpers.filter(usesGoneCode).map(({ name }) => name)
+    .filter((name) => helpers.filter((helper) => helper.name === name).every(usesGoneCode)));
+}
+
 /**
  * How the change altered the tests of changed and deleted test files, one finding each:
  * `deleted` and `removed` tests lost, `renamed` ones that took a new name in place, and
@@ -162,7 +365,7 @@ export interface TestChanges {
  * changed file keeps its name and is no finding. A test whose name disappears is renamed when a new
  * test in the same file has its exact text, of more than one line, under another name. Otherwise it is obsolete when its
  * text at the base mentions a symbol in `goneSymbols` (production code the change removed from the
- * whole repository). Otherwise it is renamed when a new name takes its place: after the same
+ * whole repository), or calls a helper of its file that went with that code (`goneHelpers`). Otherwise it is renamed when a new name takes its place: after the same
  * surviving declaration (or at the start), with as many tests arriving there as leaving, paired in
  * order, and using an identifier that set the old test apart from the rest of the file (unless
  * none did). Any other is removed. A deleted test file is obsolete when each of its tests that left is,
@@ -174,7 +377,7 @@ export function testChanges(
 ): TestChanges {
   const declared = files.map((file) => {
     const afterTests = testDeclarationsIn(file.path, file.after);
-    return { ...file, tests: testDeclarationsIn(file.path, file.before), afterTests, after: afterTests.map(({ name }) => name) };
+    return { ...file, content: file.after, tests: testDeclarationsIn(file.path, file.before), afterTests, after: afterTests.map(({ name }) => name) };
   });
   const net = new Map<string, number>();
   for (const { tests, after } of declared) {
@@ -182,10 +385,18 @@ export function testChanges(
     for (const name of after) net.set(name, (net.get(name) ?? 0) - 1);
   }
   const findings = { deleted: new Set<string>(), removed: new Set<string>(), renamed: new Set<string>(), obsolete: new Set<string>() };
-  // The name in a test's declaration is no use of the code it shares the name with.
-  const isObsolete = (test: { readonly name: string; readonly body: string }) =>
-    [...goneSymbols].some((symbol) => mentions(test.body.replace(test.name, ""), symbol));
-  for (const { path, tests, afterTests, after, deleted } of declared) {
+  for (const { path, before: base, content, tests, afterTests, after, deleted } of declared) {
+    const helpers = goneHelpers(path, base, content, tests, goneSymbols);
+    const syntax = syntaxOf(path);
+    // How a test went with its code: "" when it names that code, the helper's name when it calls
+    // a helper that went with it; undefined when it did not. Its own name is no use of anything.
+    const obsoleteThrough = (test: Declaration): string | undefined => {
+      const text = test.body.replace(test.name, "");
+      if ([...goneSymbols].some((symbol) => mentions(text, symbol))) return "";
+      const code = syntax === undefined ? text : blankLiterals(text, syntax);
+      return [...helpers].find((helper) => mentions(code, helper));
+    };
+    const isObsolete = (test: Declaration) => obsoleteThrough(test) !== undefined;
     const before = tests.map(({ name }) => name);
     // A name that left every changed file is gone; one no changed file had before is new.
     let gone = slotted(before, after).filter(({ name }) => (net.get(name) ?? 0) > 0);
@@ -210,7 +421,8 @@ export function testChanges(
     }
     // A test that went with its code leaves no place for a new name to take.
     for (const entry of gone.filter(({ index }) => isObsolete(tests[index]!))) {
-      findings.obsolete.add(`${path}: test ${entry.name} removed with the code it tested`);
+      const helper = obsoleteThrough(tests[entry.index]!);
+      findings.obsolete.add(`${path}: test ${entry.name} removed with the code it tested${helper ? ` (through helper ${helper})` : ""}`);
       gone = gone.filter((candidate) => candidate !== entry);
     }
     const shared = sharedIdentifiers([...tests, ...afterTests]);

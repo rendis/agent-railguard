@@ -644,7 +644,16 @@ approving out of habit weakened the check for the case it exists for. Three chan
   obsolete when its text at the base mentions a symbol (function, type, class) that the change
   removed from a production file and that `git grep -w` no longer finds in any file the change
   leaves, and that no declaration the change adds repeats under another name: renaming code is
-  not removing it. A deleted test file is obsolete when every test it lost is. A symbol still mentioned
+  not removing it. A deleted test file is obsolete when every test it lost is. A constant or
+  variable is code as well (Go `const`, `var` and their grouped blocks, JavaScript `export
+  const`), and one line with the same value under a new name is a rename. A test that reaches
+  removed code through a helper of its own file is obsolete too, when the change removed the
+  helper and the helper's text names that code: removing a shipped feature flag removes its key,
+  the helper that set it and the test of its off state together. A helper is a declaration
+  outside every test, no deeper than the tests, gone from the file; one level is followed, and
+  the finding names the helper, since only a person can tell a helper about the removed code from
+  a broad one that happened to name it. A test's text ends at its closing bracket, or its
+  indented block in Python, so a declaration that follows it is not part of it. A symbol still mentioned
   anywhere, even in prose, keeps the test removed: the check errs toward asking a person.
   Behavior moved elsewhere under another name is new or changed code, so the stack's
   changed-line coverage and mutation testing still judge it.

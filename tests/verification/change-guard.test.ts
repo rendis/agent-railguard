@@ -11,6 +11,7 @@ import {
   declaredSymbols,
   globToRegExp,
   parseAllowances,
+  removedSymbols,
   suppressionFindings,
   testChanges,
   testNames,
@@ -159,6 +160,143 @@ describe("change guard rules", () => {
     });
     expect(testChanges([{ path: "a_test.go", before, after: "", deleted: true }], new Set(["Total", "Tax"])))
       .toMatchObject({ deleted: ["a_test.go: test file deleted"], obsolete: [] });
+  });
+
+  it("reads Go constants, variables and the members of grouped declarations", () => {
+    const go = [
+      "package features",
+      "",
+      "const FeedOutside = \"feed-outside\"",
+      "var ErrClosed, ErrGone = errors.New(\"closed\"), errors.New(\"gone\")",
+      "var _ = check()",
+      "",
+      "const (",
+      "\t// Low is the floor.",
+      "\tLow = iota",
+      "\tHigh",
+      ")",
+      "",
+      "var (",
+      "\tdefaults = Options{",
+      "\t\tLimit: 1,",
+      "\t}",
+      ")",
+      "",
+      "type (",
+      "\tOrder struct {",
+      "\t\tTotal int",
+      "\t}",
+      "\tID string",
+      ")",
+      "",
+      "func Run() {",
+      "\tconst local = 1",
+      "}",
+    ].join("\n");
+    expect(declaredSymbols("features/flags.go", go))
+      .toEqual(["FeedOutside", "ErrClosed", "ErrGone", "Low", "High", "defaults", "Order", "ID", "Run"]);
+  });
+
+  it("takes a constant that keeps its value under a new name for a rename, not a removal", () => {
+    const go = (name: string) => `package features\n\nconst ${name} = "feed-outside"\n`;
+    expect([...removedSymbols([{ path: "flags.go", before: go("FeedOutside"), after: go("FeedInside") }])]).toEqual([]);
+    expect([...removedSymbols([{ path: "flags.go", before: go("FeedOutside"), after: "package features\n" }])]).toEqual(["FeedOutside"]);
+    expect([...removedSymbols([{ path: "flags.ts", before: "export const FEED_OUTSIDE = \"feed-outside\";\n", after: "export const FEED_INSIDE = \"feed-outside\";\n" }])])
+      .toEqual([]);
+    // A function of one line still says too little to tell a rename.
+    expect([...removedSymbols([{ path: "math.go", before: "package m\n\nfunc Max() int { return 1 }\n", after: "package m\n\nfunc Top() int { return 1 }\n" }])])
+      .toEqual(["Max"]);
+  });
+
+  it("tells a test that went with its code through a helper the change removed from its file", () => {
+    const before = [
+      "describe(\"feed\", () => {",
+      "  const flag = (on: boolean) => queryClient.setQueryData(key, { flags: { [FEED_OUTSIDE]: on } });",
+      "  const user = makeUser();",
+      "  it(\"renders the list\", () => {",
+      "    render(<Feed user={user} />);",
+      "  });",
+      "  it(\"shows nothing while the flag is off\", () => {",
+      "    flag(false);",
+      "    const result = FEED_OUTSIDE;",
+      "    expect(screen.queryByRole(\"list\")).toBeNull();",
+      "  });",
+      "  it(\"keeps the user\", () => {",
+      "    expect(result).toBe(user);",
+      "  });",
+      "});",
+      "",
+    ].join("\n");
+    const after = "describe(\"feed\", () => {\n  const user = makeUser();\n  it(\"renders the list\", () => {\n    render(<Feed user={user} />);\n  });\n});\n";
+    const gone = new Set(["FEED_OUTSIDE"]);
+
+    // A local of an obsolete test is no helper: the test that names `result` still blocks.
+    expect(testChanges([{ path: "feed.test.tsx", before, after }], gone)).toEqual({
+      deleted: [],
+      removed: ["feed.test.tsx: test keeps the user removed"],
+      renamed: [],
+      obsolete: ["feed.test.tsx: test shows nothing while the flag is off removed with the code it tested"],
+    });
+    const throughHelper = before.replace("    const result = FEED_OUTSIDE;\n", "");
+    expect(testChanges([{ path: "feed.test.tsx", before: throughHelper, after }], gone)).toMatchObject({
+      obsolete: ["feed.test.tsx: test shows nothing while the flag is off removed with the code it tested (through helper flag)"],
+    });
+    // A helper the change keeps, one whose text names no removed code, or a mention in a string or a
+    // comment keeps the test removed.
+    const kept = after.replace("  const user", "  const flag = (on: boolean) => queryClient.setQueryData(key, { flags: { [FEED_OUTSIDE]: on } });\n  const user");
+    expect(testChanges([{ path: "feed.test.tsx", before: throughHelper, after: kept }], gone))
+      .toMatchObject({ obsolete: [], removed: expect.arrayContaining(["feed.test.tsx: test shows nothing while the flag is off removed"]) });
+    expect(testChanges([{ path: "feed.test.tsx", before: throughHelper, after }], new Set(["Other"])))
+      .toMatchObject({ obsolete: [], removed: expect.arrayContaining(["feed.test.tsx: test shows nothing while the flag is off removed"]) });
+    const quoted = throughHelper.replace("    flag(false);", "    // the flag is off by default\n    expect(\"flag\").toBeTruthy();");
+    expect(testChanges([{ path: "feed.test.tsx", before: quoted, after }], gone)).toMatchObject({ obsolete: [] });
+  });
+
+  it("follows a helper one level only", () => {
+    const before = "FLAGS = {FEED_OUTSIDE: True}\n\n\ndef enable(client):\n    client.flags = FLAGS\n\n\ndef test_on(client):\n    enable(client)\n";
+    expect(testChanges([{ path: "tests/test_flags.py", before, after: "" }], new Set(["FEED_OUTSIDE"])))
+      .toMatchObject({ removed: ["tests/test_flags.py: test test_on removed"], obsolete: [] });
+  });
+
+  it("ends a test at its closing bracket, so a helper after it is not its text", () => {
+    const before = "describe(\"feed\", () => {\n  it(\"renders the list\", () => {\n    render(x);\n  });\n  const flag = (on: boolean) => set({ [FEED_OUTSIDE]: on });\n  it(\"adds\", () => {\n    expect(sum(1, 2)).toBe(3);\n  });\n});\n";
+    const after = "describe(\"feed\", () => {\n  it(\"adds\", () => {\n    expect(sum(1, 2)).toBe(3);\n  });\n});\n";
+    expect(testChanges([{ path: "feed.test.tsx", before, after }], new Set(["FEED_OUTSIDE"])))
+      .toMatchObject({ removed: ["feed.test.tsx: test renders the list removed"], obsolete: [] });
+  });
+
+  it.each([
+    {
+      stack: "Go",
+      path: "flags_test.go",
+      before: "package features\n\nfunc TestOn(t *testing.T) {\n\tenable(t)\n}\n\nfunc enable(t *testing.T) {\n\tt.Setenv(\"FLAG\", FeedOutside)\n}\n\nfunc TestKept(t *testing.T) {}\n",
+      after: "package features\n\nfunc TestKept(t *testing.T) {}\n",
+      test: "TestOn",
+    },
+    {
+      stack: "Python",
+      path: "tests/test_flags.py",
+      before: "FLAGS = {FEED_OUTSIDE: True}\n\n\ndef test_on(client):\n    client.flags = FLAGS\n\n\ndef test_kept():\n    pass\n",
+      after: "def test_kept():\n    pass\n",
+      test: "test_on",
+    },
+    {
+      stack: "Java",
+      path: "FlagsTest.java",
+      before: "class FlagsTest {\n  private static final String FLAG = Flags.FEED_OUTSIDE;\n\n  @Test\n  void on() {\n    assertTrue(enabled(FLAG));\n  }\n\n  @Test\n  void kept() {}\n}\n",
+      after: "class FlagsTest {\n  @Test\n  void kept() {}\n}\n",
+      test: "on",
+    },
+  ])("follows a $stack helper one level to the code it used", ({ path, before, after, test }) => {
+    const gone = new Set(["FeedOutside", "FEED_OUTSIDE"]);
+    const helper = /through helper (\w+)/u;
+    const { obsolete, removed } = testChanges([{ path, before, after }], gone);
+    expect(removed).toEqual([]);
+    expect(obsolete).toEqual([expect.stringMatching(new RegExp(`^${path}: test ${test} removed with the code it tested \\(through helper \\w+\\)$`, "u"))]);
+    expect(helper.test(obsolete[0]!)).toBe(true);
+    // A deleted test file goes with its code when every test it lost did, through helpers too.
+    expect(testChanges([{ path, before: before.replace(/\n[^\n]*[Kk]ept[\s\S]*$/u, "\n"), after: "", deleted: true }], gone))
+      .toMatchObject({ deleted: [], obsolete: [`${path}: test file deleted with the code it tested`] });
   });
 
   it("counts new files by lines and accepts only allowances with a reason", () => {
@@ -370,6 +508,59 @@ describe("ChangeCheckProvider", () => {
     await writeFile(join(root, "orders.go"), "package orders\n\n// Sum adds the items.\nfunc Sum(items []int) int {\n\treturn 0\n}\n\n// Count counts the items.\nfunc Count(items []int) int {\n\treturn len(items)\n}\n");
     expect(await provider().run("change-integrity", await request(root)))
       .toMatchObject({ status: "passed", details: ["orders_test.go: test TestTotal removed with the code it tested (reported: test-obsolete=report)"] });
+  });
+
+  it("reports a test removed with a shipped flag and the helper that set it", async () => {
+    const flagTest = (extra: string) => [
+      "import { FEED_OUTSIDE } from './outside';",
+      "",
+      "describe('feed', () => {",
+      "  const flag = (on: boolean) => queryClient.setQueryData(key, { flags: { [FEED_OUTSIDE]: on } });",
+      "",
+      "  it('renders the list', () => {",
+      "    render(<Feed />);",
+      "  });",
+      extra,
+      "});",
+      "",
+    ].join("\n");
+    const offState = "\n  it('shows nothing while the flag is off', () => {\n    flag(false);\n    expect(screen.queryByRole('list')).toBeNull();\n  });";
+    const { root, git } = await repository({
+      "src/outside.ts": "export const FEED_OUTSIDE = \"feed-outside\";\nexport const FEED_INSIDE = \"feed-inside\";\n",
+      "src/feed.test.tsx": flagTest(offState),
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "src/feed.test.tsx"), "describe('feed', () => {\n  it('renders the list', () => {\n    render(<Feed />);\n  });\n});\n");
+
+    // The flag still ships: the test is removed.
+    const blocked = await provider().run("change-integrity", await request(root));
+    expect(blocked.status).toBe("failed");
+    expect(blocked.details[0]).toBe("src/feed.test.tsx: test shows nothing while the flag is off removed");
+
+    await writeFile(join(root, "src/outside.ts"), "export const FEED_INSIDE = \"feed-inside\";\n");
+    expect(await provider().run("change-integrity", await request(root))).toMatchObject({
+      status: "passed",
+      details: ["src/feed.test.tsx: test shows nothing while the flag is off removed with the code it tested (through helper flag) (reported: test-obsolete=report)"],
+    });
+
+    // A flag that only took a new name, with its value, is not removed code.
+    await writeFile(join(root, "src/outside.ts"), "export const FEED_ELSEWHERE = \"feed-outside\";\nexport const FEED_INSIDE = \"feed-inside\";\n");
+    expect((await provider().run("change-integrity", await request(root))).status).toBe("failed");
+  });
+
+  it("reports a Go test removed with a flag constant from a grouped declaration", async () => {
+    const { root, git } = await repository({
+      "features/flags.go": "package features\n\nconst (\n\tFeedOutside = \"feed-outside\"\n\tFeedInside  = \"feed-inside\"\n)\n",
+      "features/flags_test.go": "package features\n\nfunc TestFeedOutside(t *testing.T) {\n\tif FeedOutside == \"\" {\n\t\tt.Fatal(\"empty\")\n\t}\n}\n\nfunc TestFeedInside(t *testing.T) {\n\tif FeedInside == \"\" {\n\t\tt.Fatal(\"empty\")\n\t}\n}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "features/flags.go"), "package features\n\nconst (\n\tFeedInside = \"feed-inside\"\n)\n");
+    await writeFile(join(root, "features/flags_test.go"), "package features\n\nfunc TestFeedInside(t *testing.T) {\n\tif FeedInside == \"\" {\n\t\tt.Fatal(\"empty\")\n\t}\n}\n");
+
+    expect(await provider().run("change-integrity", await request(root))).toMatchObject({
+      status: "passed",
+      details: ["features/flags_test.go: test TestFeedOutside removed with the code it tested (reported: test-obsolete=report)"],
+    });
   });
 
   it("does not take a test's own name for a use of the code it shares the name with", () => {
