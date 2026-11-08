@@ -619,7 +619,14 @@ describe.sequential("production CLI contract", () => {
     try {
       const unconfigured = await cli(["update", "--yes", "--to", "1.0.0", "--cwd", repository.root]);
       expect(unconfigured.code).toBe(2);
-      expect(unconfigured.stderr).toContain("run install.sh again");
+      // Its own next step replaces the generic advice to correct the input, which is not wrong.
+      expect(unconfigured.stderr).toBe(
+        `This directory is not configured by Railguard: ${repository.root} has no .railguard/project.yaml.\n` +
+        "Run railguard update from the root of a repository that uses Railguard. To update the railguard command itself, run: " +
+        "curl -fsSL https://raw.githubusercontent.com/rendis/agent-railguard/main/install.sh | bash\n",
+      );
+      const malformed = await cli(["update", "--yes", "--to", "latest", "--cwd", repository.root]);
+      expect(malformed.stderr).toContain("correct the input");
       expect((await cli(["update", "--yes", "--to", "latest", "--cwd", repository.root])).code).toBe(2);
       expect((await cli(["update", "--cwd", repository.root])).code).toBe(2);
     } finally {

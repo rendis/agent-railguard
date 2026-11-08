@@ -377,8 +377,12 @@ function catalogSummary(component: CatalogComponent): CatalogComponentSummary {
   });
 }
 
+/**
+ * Input the command cannot act on. `nextStep` says what to do instead when it is not a matter of
+ * correcting the arguments, and replaces the generic advice to read --help.
+ */
 export class CommandInputError extends TypeError {
-  public constructor(message: string) {
+  public constructor(message: string, public readonly nextStep?: string) {
     super(message);
     this.name = "CommandInputError";
   }

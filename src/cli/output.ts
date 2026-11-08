@@ -30,11 +30,14 @@ export function renderProgress(event: PublicInteractionEvent): string | null {
   return `${taskMark(event.task.state)} ${event.task.label}${suffix} — ${event.task.detail ?? event.task.state}\n`;
 }
 
+export const correctInputStep = "Run railguard --help or the command-specific --help and correct the input.";
+
 export function invalidInputRun(
   command: CommandName,
   message: string,
+  nextStep: string = correctInputStep,
 ): CommandRun {
-  return errorRun(command, "INVALID_INPUT", "cli.input-invalid", message, "Run railguard --help or the command-specific --help and correct the input.");
+  return errorRun(command, "INVALID_INPUT", "cli.input-invalid", message, nextStep);
 }
 
 export function internalErrorRun(

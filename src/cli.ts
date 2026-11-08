@@ -27,6 +27,7 @@ import {
 } from "./cli/engine-updates.js";
 import {
   internalErrorRun,
+  correctInputStep,
   invalidInputRun,
   renderProgress,
   renderRun,
@@ -620,7 +621,7 @@ async function invoke(
   } catch (error) {
     const known = isInputError(error);
     const run = known
-      ? invalidInputRun(commandName, errorMessage(error))
+      ? invalidInputRun(commandName, errorMessage(error), nextStep(error))
       : internalErrorRun(commandName, errorMessage(error));
     writeRun(run, format);
   }
@@ -635,9 +636,7 @@ async function direct(action: () => Promise<void>): Promise<void> {
     await action();
   } catch (error) {
     if (!isInputError(error)) throw error;
-    process.stderr.write(
-      `${errorMessage(error)}\nRun railguard --help or the command-specific --help and correct the input.\n`,
-    );
+    process.stderr.write(`${errorMessage(error)}\n${nextStep(error)}\n`);
     process.exitCode = 2;
   }
 }
@@ -931,6 +930,10 @@ function isInputError(error: unknown): boolean {
     return ["ENOENT", "EEXIST", "EISDIR", "ENOTDIR"].includes(String(error.code));
   }
   return false;
+}
+
+function nextStep(error: unknown): string {
+  return error instanceof CommandInputError && error.nextStep !== undefined ? error.nextStep : correctInputStep;
 }
 
 function errorMessage(error: unknown): string {
