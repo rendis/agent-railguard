@@ -463,7 +463,34 @@ export function testChanges(
     for (const name of after) net.set(name, (net.get(name) ?? 0) - 1);
   }
   const findings = { deleted: new Set<string>(), removed: new Set<string>(), renamed: new Set<string>(), obsolete: new Set<string>() };
-  for (const { path, before: base, content, tests, afterTests, after, deleted } of declared) {
+  // A name that left every changed file is gone; one no changed file had before is new.
+  const changed = declared.map((file) => ({
+    gone: slotted(file.tests.map(({ name }) => name), file.after).filter(({ name }) => (net.get(name) ?? 0) > 0),
+    added: slotted(file.after, file.tests.map(({ name }) => name)).filter(({ name }) => (net.get(name) ?? 0) < 0),
+  }));
+  // The same text under a new name, in its own file or another changed one, is a rename or a move;
+  // a test moved to another file may name that file's subject instead of its old file's. A one-line test says too little.
+  declared.forEach((file, at) => {
+    if (file.deleted === true) return;
+    for (const entry of [...changed[at]!.gone]) {
+      const text = unnamed(file.tests[entry.index]!);
+      if (!text.includes("\n")) continue;
+      const order = [at, ...declared.keys()].filter((other, index) => index === 0 || other !== at);
+      for (const other of order) {
+        const target = declared[other]!;
+        const match = changed[other]!.added.find((candidate) =>
+          sameTest(text, file.path, unnamed(target.afterTests[candidate.index]!), target.path));
+        if (match === undefined) continue;
+        findings.renamed.add(other === at
+          ? `${file.path}: test ${entry.name} renamed to ${match.name}`
+          : `${file.path}: test ${entry.name} moved to ${target.path} as ${match.name}`);
+        changed[at]!.gone = changed[at]!.gone.filter((candidate) => candidate !== entry);
+        changed[other]!.added = changed[other]!.added.filter((candidate) => candidate !== match);
+        break;
+      }
+    }
+  });
+  for (const [at, { path, before: base, content, tests, afterTests, deleted }] of declared.entries()) {
     const { gone: helpers, broad } = goneHelpers(path, base, content, tests, goneSymbols);
     const syntax = syntaxOf(path);
     // How a test went with its code: "" when it names that code, the helper's name when it calls
@@ -481,10 +508,7 @@ export function testChanges(
       const helper = [...broad.keys()].find((name) => mentions(code, name));
       return helper === undefined ? "" : ` (helper ${helper} also did more than the removed code, in "${broad.get(helper)}": edit it and keep the tests that use it)`;
     };
-    const before = tests.map(({ name }) => name);
-    // A name that left every changed file is gone; one no changed file had before is new.
-    let gone = slotted(before, after).filter(({ name }) => (net.get(name) ?? 0) > 0);
-    let added = slotted(after, before).filter(({ name }) => (net.get(name) ?? 0) < 0);
+    let { gone, added } = changed[at]!;
     if (deleted === true) {
       const obsolete = gone.length > 0 && gone.every(({ index }) => isObsolete(tests[index]!));
       const through = [...new Set(gone.map(({ index }) => obsoleteThrough(tests[index]!)).filter((helper) => helper))].sort();
@@ -499,13 +523,6 @@ export function testChanges(
       gone = gone.filter((entry) => entry !== from);
       added = added.filter((entry) => entry !== to);
     };
-    // The same text under a new name is a rename wherever it lands; a one-line test says too little.
-    for (const entry of [...gone]) {
-      const text = unnamed(tests[entry.index]!);
-      if (!text.includes("\n")) continue;
-      const match = added.find((candidate) => unnamed(afterTests[candidate.index]!) === text);
-      if (match !== undefined) rename(entry, match);
-    }
     // A test that went with its code leaves no place for a new name to take.
     for (const entry of gone.filter(({ index }) => isObsolete(tests[index]!))) {
       const helper = obsoleteThrough(tests[entry.index]!);
@@ -556,6 +573,24 @@ function testsTheSame(
   const own = [...identifiers(from)].filter((identifier) => !shared.has(identifier));
   const target = identifiers(to);
   return own.length === 0 || own.some((identifier) => target.has(identifier));
+}
+
+/**
+ * Whether two test texts are the same test: equal up to whitespace, or once each file's subject (its
+ * name before `_test`, `Test` or the first dot, such as `Shell` for `Shell.test.tsx`) reads as one word.
+ */
+function sameTest(from: string, fromPath: string, to: string, toPath: string): boolean {
+  const words = (text: string) => text.replace(/\s+/gu, " ");
+  const subjectless = (text: string, path: string) => {
+    const subject = fileSubject(path);
+    return subject.length < 3 ? text : text.replace(new RegExp(subject.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "giu"), "\0");
+  };
+  return words(from) === words(to) || subjectless(words(from), fromPath) === subjectless(words(to), toPath);
+}
+
+function fileSubject(path: string): string {
+  const base = path.slice(path.lastIndexOf("/") + 1);
+  return base.replace(/^test_/u, "").replace(/(_test|Tests?|IT)?\..*$/u, "");
 }
 
 /** A test's text without its name or surrounding blank lines, to tell a pure rename. */
