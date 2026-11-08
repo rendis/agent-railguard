@@ -114,7 +114,9 @@ export interface UpdateRequest {
 export async function runUpdate(request: UpdateRequest, source: LatestRelease = latestReleaseSource()): Promise<number> {
   if (!existsSync(join(request.root, ".railguard", "project.yaml"))) {
     throw new CommandInputError(
-      "This repository is not configured by Railguard. To update the railguard command itself, run install.sh again.",
+      `This directory is not configured by Railguard: ${request.root} has no .railguard/project.yaml.`,
+      "Run railguard update from the root of a repository that uses Railguard. To update the railguard command itself, run: " +
+        `curl -fsSL https://raw.githubusercontent.com/${releaseRepository}/main/install.sh | bash`,
     );
   }
   const launcher = join(request.root, launcherPath);
