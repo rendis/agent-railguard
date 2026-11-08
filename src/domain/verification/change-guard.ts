@@ -96,10 +96,49 @@ export function declaresSymbols(path: string): boolean {
 
 /** Names a production source file declares; empty for a test file or a language without rules. */
 export function declaredSymbols(path: string, content: string): readonly string[] {
+  return [...new Set(symbolDeclarationsIn(path, content).map(({ name }) => name))];
+}
+
+/** Each symbol a production source file declares, with its text: from its declaration to the next one. */
+function symbolDeclarationsIn(path: string, content: string): readonly { readonly name: string; readonly body: string }[] {
   if (isTestFile(path)) return [];
   const rule = symbolDeclarations.find((candidate) => candidate.file.test(path));
   if (rule === undefined) return [];
-  return [...new Set(rule.declarations.flatMap((pattern) => [...content.matchAll(pattern)].map((match) => match[1]!)))];
+  const matches = rule.declarations
+    .flatMap((pattern) => [...content.matchAll(pattern)].map((match) => ({ name: match[1]!, start: match.index })))
+    .sort((left, right) => left.start - right.start);
+  return matches.map(({ name, start }, index) => ({ name, body: content.slice(start, matches[index + 1]?.start ?? content.length) }));
+}
+
+/**
+ * Symbols the base declared in `files` that the change no longer declares there, less those that
+ * only took a new name: a symbol the change adds with the same text, of more than one line, under
+ * another name. Whether a removed symbol is gone from the whole repository is the caller's to check.
+ */
+export function removedSymbols(
+  files: readonly { readonly path: string; readonly before: string; readonly after: string }[],
+): ReadonlySet<string> {
+  const before = files.flatMap(({ path, before: content }) => symbolDeclarationsIn(path, content));
+  const after = files.flatMap(({ path, after: content }) => symbolDeclarationsIn(path, content));
+  const beforeNames = new Set(before.map(({ name }) => name));
+  const afterNames = new Set(after.map(({ name }) => name));
+  const addedTexts = new Set(after.filter(({ name }) => !beforeNames.has(name)).map(symbolText).filter((text) => text.includes("\n")));
+  const removed = before.filter((symbol) => !afterNames.has(symbol.name));
+  // A name is renamed only when every declaration it had reappears under another name.
+  const renamed = new Set(removed.map(({ name }) => name).filter((name) =>
+    removed.filter((symbol) => symbol.name === name).every((symbol) => addedTexts.has(symbolText(symbol)))));
+  return new Set(removed.map(({ name }) => name).filter((name) => !renamed.has(name)));
+}
+
+/** A declaration's text without its name, nor the comments and blank lines that lead into the next one. */
+function symbolText(symbol: { readonly name: string; readonly body: string }): string {
+  const lines = withoutName(symbol.body, symbol.name).split("\n");
+  while (lines.length > 0 && /^\s*(?:$|\/\/|#|\/\*|\*)/u.test(lines.at(-1)!)) lines.pop();
+  return lines.join("\n").trim();
+}
+
+function withoutName(text: string, name: string): string {
+  return text.replace(new RegExp(`(?<![\\w$])${name.replace(/[$]/gu, "\\$&")}(?![\\w$])`, "gu"), "");
 }
 
 function mentions(text: string, symbol: string): boolean {
@@ -143,14 +182,16 @@ export function testChanges(
     for (const name of after) net.set(name, (net.get(name) ?? 0) - 1);
   }
   const findings = { deleted: new Set<string>(), removed: new Set<string>(), renamed: new Set<string>(), obsolete: new Set<string>() };
-  const isObsolete = (body: string) => [...goneSymbols].some((symbol) => mentions(body, symbol));
+  // The name in a test's declaration is no use of the code it shares the name with.
+  const isObsolete = (test: { readonly name: string; readonly body: string }) =>
+    [...goneSymbols].some((symbol) => mentions(test.body.replace(test.name, ""), symbol));
   for (const { path, tests, afterTests, after, deleted } of declared) {
     const before = tests.map(({ name }) => name);
     // A name that left every changed file is gone; one no changed file had before is new.
     let gone = slotted(before, after).filter(({ name }) => (net.get(name) ?? 0) > 0);
     let added = slotted(after, before).filter(({ name }) => (net.get(name) ?? 0) < 0);
     if (deleted === true) {
-      const obsolete = gone.length > 0 && gone.every(({ index }) => isObsolete(tests[index]!.body));
+      const obsolete = gone.length > 0 && gone.every(({ index }) => isObsolete(tests[index]!));
       (obsolete ? findings.obsolete : findings.deleted)
         .add(obsolete ? `${path}: test file deleted with the code it tested` : `${path}: test file deleted`);
       continue;
@@ -168,7 +209,7 @@ export function testChanges(
       if (match !== undefined) rename(entry, match);
     }
     // A test that went with its code leaves no place for a new name to take.
-    for (const entry of gone.filter(({ index }) => isObsolete(tests[index]!.body))) {
+    for (const entry of gone.filter(({ index }) => isObsolete(tests[index]!))) {
       findings.obsolete.add(`${path}: test ${entry.name} removed with the code it tested`);
       gone = gone.filter((candidate) => candidate !== entry);
     }

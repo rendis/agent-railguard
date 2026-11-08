@@ -1,9 +1,9 @@
 import {
   changedLineCount,
-  declaredSymbols,
   declaresSymbols,
   isTestFile,
   matchesAnyGlob,
+  removedSymbols,
   suppressionFindings,
   testChanges,
 } from "../../domain/verification/change-guard.js";
@@ -151,18 +151,17 @@ export class ChangeCheckProvider implements CheckProvider {
    * file the change leaves, tracked or untracked, mentions anymore: code removed from the repository.
    */
   async #goneSymbols(root: string, changes: ChangeSet): Promise<ReadonlySet<string>> {
-    const candidates = new Set<string>();
-    if (changes.base === null) return candidates;
-    const kept = new Set<string>();
+    if (changes.base === null) return new Set();
+    const files: { path: string; before: string; after: string }[] = [];
     for (const path of [...changes.files.keys(), ...changes.deleted]) {
       if (!declaresSymbols(path)) continue;
       const before = await this.#atBase(root, changes.base, path);
-      if (before.length > maxScannedBytes) continue;
-      for (const symbol of declaredSymbols(path, before)) candidates.add(symbol);
       const content = changes.files.has(path) ? await this.changeSets.content(root, path, changes.staged) : null;
-      if (content !== null && !isBinary(content)) for (const symbol of declaredSymbols(path, content.toString("utf8"))) kept.add(symbol);
+      const after = content === null || isBinary(content) ? "" : content.toString("utf8");
+      if (before.length > maxScannedBytes || after.length > maxScannedBytes) continue;
+      files.push({ path, before, after });
     }
-    for (const symbol of kept) candidates.delete(symbol);
+    const candidates = new Set(removedSymbols(files));
     if (candidates.size === 0) return candidates;
     const patterns = [...candidates].flatMap((symbol) => ["-e", symbol]);
     const scope = changes.staged ? ["--cached"] : ["--untracked"];
