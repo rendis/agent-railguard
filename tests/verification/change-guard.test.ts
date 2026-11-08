@@ -126,7 +126,7 @@ describe("change guard rules", () => {
 
   it("reads the functions, types and classes production code declares", () => {
     expect(declaredSymbols("orders.go", "package orders\n\ntype Order struct{}\n\nfunc Total() int { return 0 }\nfunc (o Order) Refund() {}\n"))
-      .toEqual(["Total", "Refund", "Order"]);
+      .toEqual(["Order", "Total", "Refund"]);
     expect(declaredSymbols("src/orders.ts", "export function total() {}\nexport class Ledger {}\nexport const rate = 1\nconst local = 2\n"))
       .toEqual(["total", "Ledger", "rate"]);
     expect(declaredSymbols("orders.py", "class Ledger:\n    def total(self):\n        pass\n")).toEqual(["Ledger", "total"]);
@@ -310,6 +310,74 @@ describe("ChangeCheckProvider", () => {
     const kept = await provider().run("change-integrity", await request(root));
     expect(kept.status).toBe("failed");
     expect(kept.details[0]).toBe("orders_test.go: test TestTotal removed");
+  });
+
+  it.each([
+    {
+      stack: "TypeScript",
+      code: ["src/math.ts", "export function add(a: number, b: number) {\n  return a + b;\n}\n\nexport function sub(a: number, b: number) {\n  return a - b;\n}\n"],
+      kept: "export function sub(a: number, b: number) {\n  return a - b;\n}\n",
+      test: ["src/math.test.ts", "import { add, sub } from './math';\n\nit('adds', () => {\n  expect(add(1, 2)).toBe(3);\n});\n\nit('subtracts', () => {\n  expect(sub(2, 1)).toBe(1);\n});\n"],
+      left: "import { sub } from './math';\n\nit('subtracts', () => {\n  expect(sub(2, 1)).toBe(1);\n});\n",
+      removed: "src/math.test.ts: test adds removed with the code it tested",
+    },
+    {
+      stack: "Python",
+      code: ["shop/orders.py", "def order_total(items):\n    return sum(items)\n\n\ndef order_count(items):\n    return len(items)\n"],
+      kept: "def order_count(items):\n    return len(items)\n",
+      test: ["tests/test_orders.py", "from shop.orders import order_count, order_total\n\n\ndef test_order_total():\n    assert order_total([1, 2]) == 3\n\n\ndef test_order_count():\n    assert order_count([1, 2]) == 2\n"],
+      left: "from shop.orders import order_count\n\n\ndef test_order_count():\n    assert order_count([1, 2]) == 2\n",
+      removed: "tests/test_orders.py: test test_order_total removed with the code it tested",
+    },
+    {
+      stack: "Java",
+      code: ["src/main/java/shop/Orders.java", "package shop;\n\npublic class Orders {\n  public static int orderTotal(int a, int b) {\n    return a + b;\n  }\n\n  public static int orderCount(int a) {\n    return a;\n  }\n}\n"],
+      kept: "package shop;\n\npublic class Orders {\n  public static int orderCount(int a) {\n    return a;\n  }\n}\n",
+      test: ["src/test/java/shop/OrdersTest.java", "package shop;\n\nclass OrdersTest {\n  @Test\n  void totalsAnOrder() {\n    assertEquals(3, Orders.orderTotal(1, 2));\n  }\n\n  @Test\n  void countsAnOrder() {\n    assertEquals(1, Orders.orderCount(1));\n  }\n}\n"],
+      left: "package shop;\n\nclass OrdersTest {\n  @Test\n  void countsAnOrder() {\n    assertEquals(1, Orders.orderCount(1));\n  }\n}\n",
+      removed: "src/test/java/shop/OrdersTest.java: test totalsAnOrder removed with the code it tested",
+    },
+  ])("reports a $stack test removed with the code it tested and blocks it while the code stays", async ({ code, kept, test, left, removed }) => {
+    const { root, git } = await repository({ [code[0]!]: code[1]!, [test[0]!]: test[1]! });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, test[0]!), left);
+
+    const blocked = await provider().run("change-integrity", await request(root));
+    expect(blocked.status).toBe("failed");
+    expect(blocked.details[0]).toBe(removed.replace(" with the code it tested", ""));
+
+    await writeFile(join(root, code[0]!), kept);
+    expect(await provider().run("change-integrity", await request(root))).toMatchObject({
+      status: "passed",
+      details: [`${removed} (reported: test-obsolete=report)`],
+    });
+  });
+
+  it("blocks a test removed when its code only took a new name", async () => {
+    const { root, git } = await repository({
+      "orders.go": "package orders\n\n// Total adds the items.\nfunc Total(items []int) int {\n\tsum := 0\n\tfor _, item := range items {\n\t\tsum += item\n\t}\n\treturn sum\n}\n\n// Count counts the items.\nfunc Count(items []int) int {\n\treturn len(items)\n}\n",
+      "orders_test.go": "package orders\n\nfunc TestTotal(t *testing.T) {\n\tif Total([]int{1, 2}) != 3 {\n\t\tt.Fatal(\"total\")\n\t}\n}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "orders.go"), "package orders\n\n// Sum adds the items.\nfunc Sum(items []int) int {\n\tsum := 0\n\tfor _, item := range items {\n\t\tsum += item\n\t}\n\treturn sum\n}\n\n// Count counts the items.\nfunc Count(items []int) int {\n\treturn len(items)\n}\n");
+    await writeFile(join(root, "orders_test.go"), "package orders\n");
+
+    const renamed = await provider().run("change-integrity", await request(root));
+    expect(renamed.status).toBe("failed");
+    expect(renamed.details[0]).toBe("orders_test.go: test TestTotal removed");
+
+    // Code that changed as well as its name is gone from the repository, and so is its test.
+    await writeFile(join(root, "orders.go"), "package orders\n\n// Sum adds the items.\nfunc Sum(items []int) int {\n\treturn 0\n}\n\n// Count counts the items.\nfunc Count(items []int) int {\n\treturn len(items)\n}\n");
+    expect(await provider().run("change-integrity", await request(root)))
+      .toMatchObject({ status: "passed", details: ["orders_test.go: test TestTotal removed with the code it tested (reported: test-obsolete=report)"] });
+  });
+
+  it("does not take a test's own name for a use of the code it shares the name with", () => {
+    const java = (body: string) => `class OrdersTest {\n  @Test\n  void orderTotal() {\n    ${body}\n  }\n}\n`;
+    expect(testChanges([{ path: "OrdersTest.java", before: java("assertTrue(true);"), after: "class OrdersTest {}\n" }], new Set(["orderTotal"])))
+      .toMatchObject({ removed: ["OrdersTest.java: test orderTotal removed"], obsolete: [] });
+    expect(testChanges([{ path: "OrdersTest.java", before: java("assertEquals(3, Orders.orderTotal(1, 2));"), after: "class OrdersTest {}\n" }], new Set(["orderTotal"])))
+      .toMatchObject({ removed: [], obsolete: ["OrdersTest.java: test orderTotal removed with the code it tested"] });
   });
 
   it("accepts a removed test with a person's trailer and judges later removals", async () => {

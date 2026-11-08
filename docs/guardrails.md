@@ -102,7 +102,9 @@ test, or at the start, with as many tests arriving there as leaving) is **rename
 removed. A removed test is **obsolete** when it
 went with the code it tested: its text on the base mentions a function, type or class that
 the change removed from a production file (Go, JavaScript/TypeScript, Python, Java) and that
-no file left in the repository mentions anymore, tracked or untracked. A deleted test file is
+no file left in the repository mentions anymore, tracked or untracked. Code that only took a new
+name, with the same text under it, was not removed, so its test still counts as removed; the
+name in the test's own declaration is not a use. A deleted test file is
 obsolete when every test it had is. Any other test a file loses is reported as removed. What changes inside a test that is still declared (removed
 assertions, empty body) is not detected; that is measured by each stack's coverage and
 mutation testing.

@@ -643,7 +643,8 @@ approving out of habit weakened the check for the case it exists for. Three chan
 - **A test that went with its code is told apart.** A removed test, not paired as a rename, is
   obsolete when its text at the base mentions a symbol (function, type, class) that the change
   removed from a production file and that `git grep -w` no longer finds in any file the change
-  leaves. A deleted test file is obsolete when every test it lost is. A symbol still mentioned
+  leaves, and that no declaration the change adds repeats under another name: renaming code is
+  not removing it. A deleted test file is obsolete when every test it lost is. A symbol still mentioned
   anywhere, even in prose, keeps the test removed: the check errs toward asking a person.
   Behavior moved elsewhere under another name is new or changed code, so the stack's
   changed-line coverage and mutation testing still judge it.
