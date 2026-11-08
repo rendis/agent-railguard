@@ -109,9 +109,13 @@ constant or variable one line with the same value is enough. The name in the tes
 declaration is not a use. A test is also obsolete when its code (strings and comments aside)
 calls a **helper** of the same file that the change removed and whose own text mentions removed
 code: a function, constant or variable declared outside every test and no deeper than the
-tests, which the file no longer declares or mentions. One level only, a helper declared twice
-counts only if both went with the code, and a local of a test is part of that test, not a helper.
-The finding names the helper. A test's text runs to its closing bracket (to the end of its block
+tests, which the file no longer declares or mentions. The helper must be about that code: every
+statement it runs (or its one expression) uses the removed code, boilerplate such as `t.Helper()`
+aside. A helper that also does something else, such as a `renderFeed()` that sets the removed flag
+and renders the page, should have been edited rather than removed, so its tests stay removed and
+the finding names the statement to keep. One level only, a helper declared twice counts only if
+both went with the code, and a local of a test is part of that test, not a helper. The finding
+names the helper. A test's text runs to its closing bracket (to the end of its block
 in Python), so a helper after it is not its text. A deleted test file is
 obsolete when every test it had is. Any other test a file loses is reported as removed. What changes inside a test that is still declared (removed
 assertions, empty body) is not detected; that is measured by each stack's coverage and

@@ -252,6 +252,41 @@ describe("change guard rules", () => {
     expect(testChanges([{ path: "feed.test.tsx", before: quoted, after }], gone)).toMatchObject({ obsolete: [] });
   });
 
+  it("keeps a test removed when the helper it used did more than the removed code", () => {
+    const file = (helper: string) => [
+      "describe(\"feed\", () => {",
+      helper,
+      "  it(\"renders the list\", () => {",
+      "    renderFeed();",
+      "    expect(screen.getByRole(\"list\")).toBeVisible();",
+      "  });",
+      "  it(\"renders the user\", () => {",
+      "    renderFeed();",
+      "    expect(screen.getByText(\"Ada\")).toBeVisible();",
+      "  });",
+      "});",
+      "",
+    ].join("\n");
+    const gone = new Set(["FEED_OUTSIDE"]);
+    const broad = "  const renderFeed = () => {\n    setFlags({ [FEED_OUTSIDE]: true });\n    render(<Feed user={ada} />);\n  };";
+    const note = " (helper renderFeed also did more than the removed code, in \"render(<Feed user={ada} />);\": edit it and keep the tests that use it)";
+    expect(testChanges([{ path: "feed.test.tsx", before: file(broad), after: "describe(\"feed\", () => {});\n" }], gone)).toEqual({
+      deleted: [],
+      removed: [`feed.test.tsx: test renders the list removed${note}`, `feed.test.tsx: test renders the user removed${note}`],
+      renamed: [],
+      obsolete: [],
+    });
+    expect(testChanges([{ path: "feed.test.tsx", before: file(broad), after: "", deleted: true }], gone))
+      .toMatchObject({ deleted: [`feed.test.tsx: test file deleted${note}`], obsolete: [] });
+    // A helper whose every statement uses the removed code went with it, block or expression.
+    const narrow = "  function renderFeed() {\n    setFlags({ [FEED_OUTSIDE]: true });\n    return;\n  }";
+    expect(testChanges([{ path: "feed.test.tsx", before: file(narrow), after: "", deleted: true }], gone))
+      .toMatchObject({ obsolete: ["feed.test.tsx: test file deleted with the code it tested (through helper renderFeed)"] });
+    const python = "def render_feed(client):\n    client.flags = {FEED_OUTSIDE: True}\n    client.render()\n\n\ndef test_list(client):\n    render_feed(client)\n";
+    expect(testChanges([{ path: "tests/test_feed.py", before: python, after: "" }], gone))
+      .toMatchObject({ obsolete: [], removed: [expect.stringContaining("test test_list removed (helper render_feed also did more")] });
+  });
+
   it("follows a helper one level only", () => {
     const before = "FLAGS = {FEED_OUTSIDE: True}\n\n\ndef enable(client):\n    client.flags = FLAGS\n\n\ndef test_on(client):\n    enable(client)\n";
     expect(testChanges([{ path: "tests/test_flags.py", before, after: "" }], new Set(["FEED_OUTSIDE"])))
@@ -269,9 +304,10 @@ describe("change guard rules", () => {
     {
       stack: "Go",
       path: "flags_test.go",
-      before: "package features\n\nfunc TestOn(t *testing.T) {\n\tenable(t)\n}\n\nfunc enable(t *testing.T) {\n\tt.Setenv(\"FLAG\", FeedOutside)\n}\n\nfunc TestKept(t *testing.T) {}\n",
+      before: "package features\n\nfunc TestOn(t *testing.T) {\n\tenable(t)\n}\n\nfunc enable(t *testing.T) {\n\tt.Helper()\n\tt.Setenv(\"FLAG\", FeedOutside)\n}\n\nfunc TestKept(t *testing.T) {}\n",
       after: "package features\n\nfunc TestKept(t *testing.T) {}\n",
       test: "TestOn",
+      helperName: "enable",
     },
     {
       stack: "Python",
@@ -279,6 +315,7 @@ describe("change guard rules", () => {
       before: "FLAGS = {FEED_OUTSIDE: True}\n\n\ndef test_on(client):\n    client.flags = FLAGS\n\n\ndef test_kept():\n    pass\n",
       after: "def test_kept():\n    pass\n",
       test: "test_on",
+      helperName: "FLAGS",
     },
     {
       stack: "Java",
@@ -286,8 +323,9 @@ describe("change guard rules", () => {
       before: "class FlagsTest {\n  private static final String FLAG = Flags.FEED_OUTSIDE;\n\n  @Test\n  void on() {\n    assertTrue(enabled(FLAG));\n  }\n\n  @Test\n  void kept() {}\n}\n",
       after: "class FlagsTest {\n  @Test\n  void kept() {}\n}\n",
       test: "on",
+      helperName: "FLAG",
     },
-  ])("follows a $stack helper one level to the code it used", ({ path, before, after, test }) => {
+  ])("follows a $stack helper one level to the code it used", ({ path, before, after, test, helperName }) => {
     const gone = new Set(["FeedOutside", "FEED_OUTSIDE"]);
     const helper = /through helper (\w+)/u;
     const { obsolete, removed } = testChanges([{ path, before, after }], gone);
@@ -296,7 +334,7 @@ describe("change guard rules", () => {
     expect(helper.test(obsolete[0]!)).toBe(true);
     // A deleted test file goes with its code when every test it lost did, through helpers too.
     expect(testChanges([{ path, before: before.replace(/\n[^\n]*[Kk]ept[\s\S]*$/u, "\n"), after: "", deleted: true }], gone))
-      .toMatchObject({ deleted: [], obsolete: [`${path}: test file deleted with the code it tested`] });
+      .toMatchObject({ deleted: [], obsolete: [`${path}: test file deleted with the code it tested (through helper ${helperName})`] });
   });
 
   it("counts new files by lines and accepts only allowances with a reason", () => {

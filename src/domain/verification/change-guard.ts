@@ -321,10 +321,12 @@ const helperDeclarations: readonly { readonly file: RegExp; readonly declaration
 ];
 
 /**
- * Helpers of a test file that went with the code they used: declared at the base outside every
- * test and no deeper than the shallowest test, gone from the file after the change (neither
- * declared nor mentioned), and whose own text mentions a symbol in `goneSymbols`. A local of a
- * test is part of that test, never a helper.
+ * Helpers of a test file that the change removed and whose text mentions removed code: declared at
+ * the base outside every test and no deeper than the shallowest test, and gone from the file after
+ * the change (neither declared nor mentioned). A local of a test is part of that test, never a
+ * helper. A helper went with the code (`gone`) only when each of its statements uses that code;
+ * one that also did something else (`broad`, with that statement) should have been edited, not
+ * removed, so the tests that used it still count as removed.
  */
 function goneHelpers(
   path: string,
@@ -332,9 +334,11 @@ function goneHelpers(
   after: string,
   tests: readonly Declaration[],
   goneSymbols: ReadonlySet<string>,
-): ReadonlySet<string> {
+): { readonly gone: ReadonlySet<string>; readonly broad: ReadonlyMap<string, string> } {
+  const none = { gone: new Set<string>(), broad: new Map<string, string>() };
   const rule = helperDeclarations.find((candidate) => candidate.file.test(path));
-  if (rule === undefined || tests.length === 0 || goneSymbols.size === 0) return new Set();
+  const syntax = syntaxOf(path);
+  if (rule === undefined || syntax === undefined || tests.length === 0 || goneSymbols.size === 0) return none;
   const testNamesBefore = new Set(tests.map(({ name }) => name));
   const depth = Math.min(...tests.map(({ start }) => indentationAt(before, start)));
   const helpers = declarationsIn(path, before, rule.declarations).filter((helper) =>
@@ -342,10 +346,84 @@ function goneHelpers(
     && !tests.some(({ start, end }) => helper.start >= start && helper.start < end)
     && indentationAt(before, helper.start) <= depth
     && !mentions(after, helper.name));
-  const usesGoneCode = (helper: Declaration) => [...goneSymbols].some((symbol) => mentions(withoutName(helper.body, helper.name), symbol));
-  // A name declared more than once went with the code only if each of its declarations did.
-  return new Set(helpers.filter(usesGoneCode).map(({ name }) => name)
-    .filter((name) => helpers.filter((helper) => helper.name === name).every(usesGoneCode)));
+  const usesGone = (text: string) => [...goneSymbols].some((symbol) => mentions(text, symbol));
+  const linked = helpers.filter((helper) => usesGone(withoutName(helper.body, helper.name)));
+  const gone = new Set<string>();
+  const broad = new Map<string, string>();
+  for (const name of new Set(linked.map((helper) => helper.name))) {
+    // A name declared more than once went with the code only if each of its declarations did.
+    const declarations = helpers.filter((helper) => helper.name === name);
+    const residue = declarations.map((helper) => {
+      const parts = helperStatements(helper, syntax);
+      return parts === undefined ? helper.body.trim().split("\n")[0]! : parts.find((part) => !usesGone(part));
+    }).find((part) => part !== undefined);
+    if (residue === undefined && declarations.every((helper) => usesGone(withoutName(helper.body, helper.name)))) gone.add(name);
+    else broad.set(name, (residue ?? declarations[0]!.body.trim().split("\n")[0]!).trim().split("\n")[0]!.slice(0, 120));
+  }
+  return { gone, broad };
+}
+
+/**
+ * The statements a helper runs, as text at the base: the top-level statements of a function's
+ * body, or the whole declaration of a constant, a variable or a function that returns one
+ * expression. Statements that do nothing on their own (`t.Helper()`, a bare `return`, `pass`, a
+ * docstring) are left out. Undefined when the body's brackets cannot be read.
+ */
+function helperStatements(helper: Declaration, syntax: Syntax): readonly string[] | undefined {
+  const code = blankLiterals(helper.body, syntax);
+  const ranges: (readonly [number, number])[] = [];
+  if (syntax === "python") {
+    const header = /^[ \t]*(?:async[ \t]+)?def\b[^\n]*?:[ \t]*/u.exec(code);
+    if (header === null) ranges.push([0, code.length]);
+    else if (code.slice(header[0].length).split("\n")[0]!.trim() !== "") ranges.push([header[0].length, code.indexOf("\n") < 0 ? code.length : code.indexOf("\n")]);
+    else {
+      const lines = code.slice(0, code.length).split("\n");
+      let offset = lines[0]!.length + 1;
+      const bodyIndent = lines.slice(1).find((line) => line.trim() !== "")?.match(/^[ \t]*/u)?.[0].length ?? 0;
+      for (const line of lines.slice(1)) {
+        const indent = line.match(/^[ \t]*/u)![0].length;
+        if (line.trim() !== "" && indent === bodyIndent) ranges.push([offset, offset + line.length]);
+        else if (line.trim() !== "" && ranges.length > 0) ranges[ranges.length - 1] = [ranges.at(-1)![0], offset + line.length];
+        offset += line.length + 1;
+      }
+    }
+  } else {
+    const trimmed = code.trimEnd().replace(/;$/u, "").trimEnd();
+    const close = trimmed.length - 1;
+    const open = trimmed.endsWith("}") ? matchingOpen(trimmed, close) : undefined;
+    // A block after a parameter list, an arrow, a return type or `throws`; a `{` after `=`, `(`,
+    // `,` or `:` opens a literal, which is one expression.
+    const before = open === undefined ? "" : trimmed.slice(0, open).trimEnd().at(-1) ?? "";
+    if (open === undefined || !/[)\]>*\w]/u.test(before)) ranges.push([0, trimmed.length]);
+    else {
+      let cursor = open + 1;
+      while (cursor < close) {
+        while (cursor < close && /\s/u.test(code[cursor]!)) cursor += 1;
+        if (cursor >= close) break;
+        const end = statementEnd(code, cursor, 0, close);
+        if (end === undefined) return undefined;
+        ranges.push([cursor, Math.max(end, cursor + 1)]);
+        cursor = Math.max(end, cursor + 1);
+      }
+    }
+  }
+  return ranges
+    .filter(([start, end]) => {
+      const text = code.slice(start, end).trim().replace(/;$/u, "").trim();
+      return /[A-Za-z_$]/u.test(text) && !/^(?:return|pass|\w+\.Helper\(\s*\))$/u.test(text);
+    })
+    .map(([start, end]) => helper.body.slice(start, end));
+}
+
+/** The `{` that the `}` at `close` closes, in blanked code. */
+function matchingOpen(code: string, close: number): number | undefined {
+  let depth = 0;
+  for (let index = close; index >= 0; index -= 1) {
+    const character = code[index]!;
+    if (")]}".includes(character)) depth += 1;
+    else if ("([{".includes(character) && (depth -= 1) === 0) return character === "{" ? index : undefined;
+  }
+  return undefined;
 }
 
 /**
@@ -386,7 +464,7 @@ export function testChanges(
   }
   const findings = { deleted: new Set<string>(), removed: new Set<string>(), renamed: new Set<string>(), obsolete: new Set<string>() };
   for (const { path, before: base, content, tests, afterTests, after, deleted } of declared) {
-    const helpers = goneHelpers(path, base, content, tests, goneSymbols);
+    const { gone: helpers, broad } = goneHelpers(path, base, content, tests, goneSymbols);
     const syntax = syntaxOf(path);
     // How a test went with its code: "" when it names that code, the helper's name when it calls
     // a helper that went with it; undefined when it did not. Its own name is no use of anything.
@@ -397,14 +475,23 @@ export function testChanges(
       return [...helpers].find((helper) => mentions(code, helper));
     };
     const isObsolete = (test: Declaration) => obsoleteThrough(test) !== undefined;
+    // A removed test that used a helper doing more than the removed code: say what to keep.
+    const removedNote = (test: Declaration) => {
+      const code = syntax === undefined ? test.body : blankLiterals(test.body.replace(test.name, ""), syntax);
+      const helper = [...broad.keys()].find((name) => mentions(code, name));
+      return helper === undefined ? "" : ` (helper ${helper} also did more than the removed code, in "${broad.get(helper)}": edit it and keep the tests that use it)`;
+    };
     const before = tests.map(({ name }) => name);
     // A name that left every changed file is gone; one no changed file had before is new.
     let gone = slotted(before, after).filter(({ name }) => (net.get(name) ?? 0) > 0);
     let added = slotted(after, before).filter(({ name }) => (net.get(name) ?? 0) < 0);
     if (deleted === true) {
       const obsolete = gone.length > 0 && gone.every(({ index }) => isObsolete(tests[index]!));
+      const through = [...new Set(gone.map(({ index }) => obsoleteThrough(tests[index]!)).filter((helper) => helper))].sort();
+      const via = through.length === 0 ? "" : ` (through helper ${through.join(", ")})`;
+      const note = gone.map(({ index }) => removedNote(tests[index]!)).find((text) => text !== "") ?? "";
       (obsolete ? findings.obsolete : findings.deleted)
-        .add(obsolete ? `${path}: test file deleted with the code it tested` : `${path}: test file deleted`);
+        .add(obsolete ? `${path}: test file deleted with the code it tested${via}` : `${path}: test file deleted${note}`);
       continue;
     }
     const rename = (from: { readonly name: string }, to: { readonly name: string }) => {
@@ -434,7 +521,7 @@ export function testChanges(
         if (leaving.length === arriving.length && to !== undefined && testsTheSame(tests[entry.index]!, afterTests[to.index]!, shared)) {
           rename(entry, to);
         } else {
-          findings.removed.add(`${path}: test ${entry.name} removed`);
+          findings.removed.add(`${path}: test ${entry.name} removed${removedNote(tests[entry.index]!)}`);
         }
       });
     }
