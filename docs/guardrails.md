@@ -121,9 +121,10 @@ A reported finding is listed in the check's result, which passes:
 
 A changed or deleted protected configuration, and a file too large to scan, always block.
 The policy lives in `.railguard/project.yaml`, itself a protected path, so only a person
-can relax it: `--set 'verification-profile:change-guard.finding_policy=["test-renamed=block"]'`
-restores the strictest behavior, and `"test-removed=report"` suits a prototype where tests
-come and go.
+can relax it. Each entry changes the default of its kind only:
+`--set 'verification-profile:change-guard.finding_policy=["test-renamed=block","test-obsolete=block"]'`
+blocks every test change, and `["test-removed=report"]` suits a prototype where tests come
+and go while renamed and obsolete tests stay reported.
 
 `railguard report` lists each accepted trailer and the agent hook activity, to see which
 rules actually block and which are only accepted out of habit
