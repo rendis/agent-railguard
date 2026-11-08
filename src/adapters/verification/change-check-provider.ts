@@ -1,9 +1,11 @@
 import {
   changedLineCount,
+  declaredSymbols,
+  declaresSymbols,
   isTestFile,
   matchesAnyGlob,
-  removedTestFindings,
   suppressionFindings,
+  testChanges,
 } from "../../domain/verification/change-guard.js";
 import type {
   ChangeSet,
@@ -47,34 +49,50 @@ export class ChangeCheckProvider implements CheckProvider {
 
   async #integrity(request: CheckRequest, changes: ChangeSet): Promise<CheckOutcome> {
     const protectedPaths = request.inputs.protected_paths ?? [];
-    const findings: string[] = [];
+    // An entry overrides the default of its kind only: relaxing one kind keeps the other defaults.
+    const policy = findingPolicy([...defaultFindingPolicy, ...(request.inputs.finding_policy ?? [])]);
+    const findings: { readonly kind: FindingKind; readonly text: string }[] = [];
+    const add = (kind: FindingKind, texts: readonly string[]) => findings.push(...texts.map((text) => ({ kind, text })));
     for (const [path, lines] of changes.files) {
       if (matchesAnyGlob(path, protectedPaths)) {
         // Adding a configuration weakens nothing; changing one the base already had can.
         if (await this.#existsAtBase(request.repositoryRoot, changes.base, path)) {
-          findings.push(`${path}: protected quality configuration changed`);
+          add("protected-config", [`${path}: protected quality configuration changed`]);
         }
         continue;
       }
       const content = await this.changeSets.content(request.repositoryRoot, path, changes.staged);
       if (content === null || isBinary(content)) continue;
       if (content.length > maxScannedBytes) {
-        findings.push(`${path}: too large to scan for suppressions (over ${maxScannedBytes / 1024 / 1024} MiB)`);
+        add("unscannable", [`${path}: too large to scan for suppressions (over ${maxScannedBytes / 1024 / 1024} MiB)`]);
         continue;
       }
-      findings.push(...suppressionFindings(path, content.toString("utf8"), lines));
+      add("suppression", suppressionFindings(path, content.toString("utf8"), lines));
     }
     for (const path of changes.deleted) {
-      if (isTestFile(path)) findings.push(`${path}: test file deleted`);
-      else if (matchesAnyGlob(path, protectedPaths)) findings.push(`${path}: protected quality configuration deleted`);
+      if (!isTestFile(path) && matchesAnyGlob(path, protectedPaths)) add("protected-config", [`${path}: protected quality configuration deleted`]);
     }
-    findings.push(...removedTestFindings(await this.#changedTests(request.repositoryRoot, changes)));
-    if (findings.length === 0) return passed("No suppression, removed test or protected configuration change");
+    const tests = testChanges(
+      await this.#changedTests(request.repositoryRoot, changes),
+      await this.#goneSymbols(request.repositoryRoot, changes),
+    );
+    add("test-deleted", tests.deleted);
+    add("test-removed", tests.removed);
+    add("test-renamed", tests.renamed);
+    add("test-obsolete", tests.obsolete);
+    const blocking = findings.filter(({ kind }) => policy.get(kind) !== "report").map(({ text }) => text);
+    const reported = findings.filter(({ kind }) => policy.get(kind) === "report").map(({ kind, text }) => `${text} (reported: ${kind}=report)`);
+    if (blocking.length === 0) {
+      return reported.length === 0
+        ? passed("No suppression, removed test or protected configuration change")
+        : { status: "passed", summary: `${reported.length} change(s) reported, none blocking`, details: reported };
+    }
     return {
       status: "failed",
-      summary: `${findings.length} change(s) weaken what the checks can see`,
+      summary: `${blocking.length} change(s) weaken what the checks can see`,
       details: [
-        ...findings,
+        ...blocking,
+        ...reported,
         "Fix the cause instead of weakening the checks.",
       ],
     };
@@ -107,9 +125,17 @@ export class ChangeCheckProvider implements CheckProvider {
     };
   }
 
-  /** Changed test files as the base held them and as the change holds them now. */
-  async #changedTests(root: string, changes: ChangeSet): Promise<{ path: string; before: string; after: string }[]> {
-    const tests: { path: string; before: string; after: string }[] = [];
+  /** Changed and deleted test files as the base held them and as the change holds them now. */
+  async #changedTests(
+    root: string,
+    changes: ChangeSet,
+  ): Promise<{ path: string; before: string; after: string; deleted?: boolean }[]> {
+    const tests: { path: string; before: string; after: string; deleted?: boolean }[] = [];
+    for (const path of changes.deleted) {
+      if (!isTestFile(path)) continue;
+      const before = changes.base === null ? "" : await this.#atBase(root, changes.base, path);
+      tests.push({ path, before: before.length > maxScannedBytes ? "" : before, after: "", deleted: true });
+    }
     if (changes.base === null) return tests;
     for (const path of changes.files.keys()) {
       if (!isTestFile(path)) continue;
@@ -118,6 +144,38 @@ export class ChangeCheckProvider implements CheckProvider {
       tests.push({ path, before: await this.#atBase(root, changes.base, path), after: content.toString("utf8") });
     }
     return tests;
+  }
+
+  /**
+   * Symbols that production files the change edits or deletes declared at the base and that no
+   * file the change leaves, tracked or untracked, mentions anymore: code removed from the repository.
+   */
+  async #goneSymbols(root: string, changes: ChangeSet): Promise<ReadonlySet<string>> {
+    const candidates = new Set<string>();
+    if (changes.base === null) return candidates;
+    const kept = new Set<string>();
+    for (const path of [...changes.files.keys(), ...changes.deleted]) {
+      if (!declaresSymbols(path)) continue;
+      const before = await this.#atBase(root, changes.base, path);
+      if (before.length > maxScannedBytes) continue;
+      for (const symbol of declaredSymbols(path, before)) candidates.add(symbol);
+      const content = changes.files.has(path) ? await this.changeSets.content(root, path, changes.staged) : null;
+      if (content !== null && !isBinary(content)) for (const symbol of declaredSymbols(path, content.toString("utf8"))) kept.add(symbol);
+    }
+    for (const symbol of kept) candidates.delete(symbol);
+    if (candidates.size === 0) return candidates;
+    const patterns = [...candidates].flatMap((symbol) => ["-e", symbol]);
+    const scope = changes.staged ? ["--cached"] : ["--untracked"];
+    const result = await this.process.run(
+      "git",
+      ["grep", "-I", "-w", "-F", "-o", "-h", "--no-color", ...scope, ...patterns],
+      { cwd: root, timeoutMs: 60_000 },
+    );
+    // 1 means no file mentions any of them; anything else unreadable keeps every symbol in use.
+    if (result.exitCode === 1) return candidates;
+    if (result.exitCode !== 0) return new Set();
+    for (const found of result.stdout.split("\n")) candidates.delete(found.trim());
+    return candidates;
   }
 
   /** A file as the base held it; empty when the change adds it. */
@@ -133,6 +191,27 @@ export class ChangeCheckProvider implements CheckProvider {
     const result = await this.process.run("git", ["cat-file", "-e", `${base}:${path}`], { cwd: root, timeoutMs: 30_000 });
     return result.exitCode === 0;
   }
+}
+
+/**
+ * What a `change-integrity` finding is about. `finding_policy` may report one of the relaxable
+ * kinds instead of blocking on it; a protected configuration and a file too large to scan always
+ * block, since relaxing them would hide the policy itself or what nobody could read.
+ */
+const relaxableFindings = ["suppression", "test-deleted", "test-removed", "test-renamed", "test-obsolete"] as const;
+type FindingKind = "protected-config" | "unscannable" | (typeof relaxableFindings)[number];
+
+const defaultFindingPolicy = ["test-renamed=report", "test-obsolete=report"];
+
+/** `<kind>=<block|report>` entries; the last entry of a kind decides, and other kinds always block. */
+function findingPolicy(entries: readonly string[]): ReadonlyMap<string, "block" | "report"> {
+  const policy = new Map<string, "block" | "report">();
+  for (const entry of entries) {
+    const [kind = "", level] = entry.split("=");
+    if (!(relaxableFindings as readonly string[]).includes(kind)) continue;
+    if (level === "block" || level === "report") policy.set(kind, level);
+  }
+  return policy;
 }
 
 /** Git's own heuristic: a NUL byte in the first 8000 bytes marks the file as binary. */

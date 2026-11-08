@@ -28,7 +28,7 @@ Keep `verification-profile:go-quality` as the portable baseline, then select onl
 |---|---|---|---|
 | `verification-profile:go-assurance` | `go mod verify` when dependencies change; golangci-lint on issues introduced by the change | changed-line coverage (100% core, 80% elsewhere; full mode 100% core, 85% overall); govulncheck when dependencies change | `tool_modfile`, `test_packages`, `core_packages`, `core_cover_packages`, `overall_cover_packages` |
 | `verification-profile:go-fuzz` | — | each case whose package changed | `package:FuzzName:duration` cases |
-| `verification-profile:go-mutation` | — | Gremlins on changed packages; any LIVED or NOT_COVERED mutant on a changed line fails | `tool_modfile`, `packages` scope |
+| `verification-profile:go-mutation` | — | Gremlins on changed packages; any LIVED or NOT COVERED mutant on a changed line fails | `tool_modfile`, `packages` scope |
 | `verification-profile:go-e2e` | — | `e2e`-tagged packages whenever the module changed | E2E package patterns |
 
 A profile whose inputs keep the default `disabled` sentinel is intentionally incomplete and is classified `MISSING` until explicit inputs replace it.

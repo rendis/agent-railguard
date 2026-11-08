@@ -8,10 +8,11 @@ import { NodeProcessRunner } from "../../src/adapters/platform/process/node-proc
 import { ChangeCheckProvider } from "../../src/adapters/verification/change-check-provider.js";
 import {
   changedLineCount,
+  declaredSymbols,
   globToRegExp,
   parseAllowances,
-  removedTestFindings,
   suppressionFindings,
+  testChanges,
   testNames,
 } from "../../src/domain/verification/change-guard.js";
 import type { CheckRequest } from "../../src/domain/verification/checks.js";
@@ -70,12 +71,94 @@ describe("change guard rules", () => {
   });
 
   it("reports tests the change removes but not tests it moves between changed files", () => {
-    expect(removedTestFindings([
+    expect(testChanges([
       { path: "a_test.go", before: "func TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}", after: "func TestA(t *testing.T) {}" },
       { path: "b_test.go", before: "func TestC(t *testing.T) {}", after: "" },
       { path: "c_test.go", before: "", after: "func TestC(t *testing.T) {}" },
       { path: "d.test.ts", before: "it('twice', f)\nit('twice', f)", after: "it('twice', f)" },
-    ])).toEqual(["a_test.go: test TestB removed", "d.test.ts: test twice removed"]);
+    ])).toEqual({ deleted: [], removed: ["a_test.go: test TestB removed", "d.test.ts: test twice removed"], renamed: [], obsolete: [] });
+  });
+
+  it("tells a test renamed in place from one removed while another is added elsewhere", () => {
+    const go = (...names: string[]) => names.map((name) => `func ${name}(t *testing.T) {}`).join("\n");
+    const changes = (before: string[], after: string[]) => {
+      const { removed, renamed } = testChanges([{ path: "a_test.go", before: go(...before), after: go(...after) }]);
+      return { removed, renamed };
+    };
+
+    expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestTotal", "TestC"]))
+      .toEqual({ removed: [], renamed: ["a_test.go: test TestB renamed to TestTotal"] });
+    expect(changes(["TestA", "TestB"], ["TestNewA", "TestNewB"]))
+      .toEqual({ removed: [], renamed: ["a_test.go: test TestA renamed to TestNewA", "a_test.go: test TestB renamed to TestNewB"] });
+    // Reordering renames nothing; the surviving test it follows identifies the place.
+    expect(changes(["TestA", "TestB", "TestC"], ["TestC", "TestA", "TestX"]))
+      .toEqual({ removed: [], renamed: ["a_test.go: test TestB renamed to TestX"] });
+    expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestC", "TestX"]))
+      .toEqual({ removed: ["a_test.go: test TestB removed"], renamed: [] });
+    // A place that loses more tests than it gains, or gains more than it loses, renames none.
+    expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestX"]))
+      .toEqual({ removed: ["a_test.go: test TestB removed", "a_test.go: test TestC removed"], renamed: [] });
+    expect(changes(["TestMax"], ["TestMin", "TestClamp"]))
+      .toEqual({ removed: ["a_test.go: test TestMax removed"], renamed: [] });
+    // The same text under a new name is a rename, even next to a removal.
+    const body = (name: string, call: string) => `func ${name}(t *testing.T) {\n\tif ${call} {\n\t\tt.Fatal("x")\n\t}\n}\n`;
+    expect(testChanges([{
+      path: "a_test.go",
+      before: body("TestMax", "Max(2, 1) != 2") + body("TestMin", "Min(2, 1) != 1"),
+      after: body("TestMinPicksTheSmaller", "Min(2, 1) != 1") + body("TestAbs", "Abs(-1) != 1"),
+    }])).toMatchObject({ removed: ["a_test.go: test TestMax removed"], renamed: ["a_test.go: test TestMin renamed to TestMinPicksTheSmaller"] });
+    // A test that went with its code does not keep a new name from taking the place of another.
+    expect(testChanges([{
+      path: "a_test.go",
+      before: body("TestMax", "Max(2, 1) != 2") + body("TestMin", "Min(2, 1) != 1"),
+      after: body("TestMinPicksTheSmaller", "Min(1, 2) != 1"),
+    }], new Set(["Max"]))).toMatchObject({
+      removed: [],
+      renamed: ["a_test.go: test TestMin renamed to TestMinPicksTheSmaller"],
+      obsolete: ["a_test.go: test TestMax removed with the code it tested"],
+    });
+    // A test that moves in from another file does not take the place of one that left.
+    expect(testChanges([
+      { path: "a_test.go", before: go("TestA", "TestB"), after: go("TestA", "TestC") },
+      { path: "b_test.go", before: go("TestC"), after: "" },
+    ])).toMatchObject({ removed: ["a_test.go: test TestB removed"], renamed: [] });
+  });
+
+  it("reads the functions, types and classes production code declares", () => {
+    expect(declaredSymbols("orders.go", "package orders\n\ntype Order struct{}\n\nfunc Total() int { return 0 }\nfunc (o Order) Refund() {}\n"))
+      .toEqual(["Total", "Refund", "Order"]);
+    expect(declaredSymbols("src/orders.ts", "export function total() {}\nexport class Ledger {}\nexport const rate = 1\nconst local = 2\n"))
+      .toEqual(["total", "Ledger", "rate"]);
+    expect(declaredSymbols("orders.py", "class Ledger:\n    def total(self):\n        pass\n")).toEqual(["Ledger", "total"]);
+    expect(declaredSymbols("Orders.java", "public class Orders {\n  public int total(int a) { return a; }\n}\n")).toEqual(["Orders", "total"]);
+    expect(declaredSymbols("orders_test.go", "func TestTotal(t *testing.T) {}")).toEqual([]);
+  });
+
+  it("tells a test that went with the code it tested from a removed one", () => {
+    const before = "func TestTotal(t *testing.T) { Total() }\nfunc TestRefund(t *testing.T) { Refund() }\nfunc TestTax(t *testing.T) { Tax() }\n";
+    const after = "func TestTax(t *testing.T) { Tax() }\n";
+
+    expect(testChanges([{ path: "a_test.go", before, after }], new Set(["Total", "Subtotal"]))).toEqual({
+      deleted: [],
+      removed: ["a_test.go: test TestRefund removed"],
+      renamed: [],
+      obsolete: ["a_test.go: test TestTotal removed with the code it tested"],
+    });
+    // The test's own name does not count as using the symbol.
+    expect(testChanges([{ path: "a_test.go", before: "func TestTotal(t *testing.T) {}\n", after: "" }], new Set(["Total"])))
+      .toMatchObject({ removed: ["a_test.go: test TestTotal removed"], obsolete: [] });
+    expect(testChanges([
+      { path: "a_test.go", before, after: "", deleted: true },
+      { path: "b_test.go", before: "func TestTax(t *testing.T) { Tax() }\n", after: "", deleted: true },
+      { path: "c_test.go", before: "package c\n", after: "", deleted: true },
+    ], new Set(["Total", "Refund", "Tax"]))).toEqual({
+      deleted: ["c_test.go: test file deleted"],
+      removed: [],
+      renamed: [],
+      obsolete: ["a_test.go: test file deleted with the code it tested", "b_test.go: test file deleted with the code it tested"],
+    });
+    expect(testChanges([{ path: "a_test.go", before, after: "", deleted: true }], new Set(["Total", "Tax"])))
+      .toMatchObject({ deleted: ["a_test.go: test file deleted"], obsolete: [] });
   });
 
   it("counts new files by lines and accepts only allowances with a reason", () => {
@@ -154,6 +237,79 @@ describe("ChangeCheckProvider", () => {
     const outcome = await provider().run("change-integrity", await request(root));
 
     expect(outcome).toMatchObject({ status: "passed", summary: "No suppression, removed test or protected configuration change" });
+  });
+
+  it("reports a test renamed in place by default and blocks it when the policy says so", async () => {
+    const { root, git } = await repository({
+      "a.test.ts": "it('adds', f)\nit('rounds down', f)\nit('subtracts', f)\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a.test.ts"), "it('adds', f)\nit('rounds half up', f)\nit('subtracts', f)\n");
+
+    expect(await provider().run("change-integrity", await request(root))).toMatchObject({
+      status: "passed",
+      summary: "1 change(s) reported, none blocking",
+      details: ["a.test.ts: test rounds down renamed to rounds half up (reported: test-renamed=report)"],
+    });
+    // Relaxing another kind keeps the default of this one.
+    expect(await provider().run("change-integrity", await request(root, { finding_policy: ["test-removed=report"] })))
+      .toMatchObject({ status: "passed", summary: "1 change(s) reported, none blocking" });
+    const blocked = await provider().run("change-integrity", await request(root, { finding_policy: ["test-renamed=block"] }));
+    expect(blocked.status).toBe("failed");
+    expect(blocked.details[0]).toBe("a.test.ts: test rounds down renamed to rounds half up");
+  });
+
+  it("reports the relaxed kinds of finding and still blocks a protected configuration", async () => {
+    const { root, git } = await repository({
+      ".golangci.yml": "version: \"2\"\n",
+      "a.go": "package a\n",
+      "a_test.go": "package a\n\nfunc TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a.go"), "package a\n\nfunc A() {} //nolint:all\n");
+    await writeFile(join(root, "a_test.go"), "package a\n\nfunc TestA(t *testing.T) {}\n");
+    const relaxed = ["suppression=report", "test-removed=report"];
+
+    expect(await provider().run("change-integrity", await request(root, { finding_policy: relaxed }))).toMatchObject({
+      status: "passed",
+      details: [
+        "a.go:3: lint suppression: func A() {} //nolint:all (reported: suppression=report)",
+        "a_test.go: test TestB removed (reported: test-removed=report)",
+      ],
+    });
+
+    await writeFile(join(root, ".golangci.yml"), "version: \"2\"\nlinters: {default: none}\n");
+    const protectedChange = await provider().run("change-integrity", await request(root, { finding_policy: [...relaxed, "protected-config=report"] }));
+    expect(protectedChange.status).toBe("failed");
+    expect(protectedChange.details[0]).toBe(".golangci.yml: protected quality configuration changed");
+  });
+
+  it("reports a test removed with code the change deleted from the repository and blocks one whose code survives", async () => {
+    const { root, git } = await repository({
+      "orders.go": "package orders\n\nfunc Total() int { return 1 }\n\nfunc Refund() int { return 2 }\n",
+      "orders_test.go": "package orders\n\nfunc TestTotal(t *testing.T) { Total() }\nfunc TestRefund(t *testing.T) { Refund() }\n",
+      "legacy.go": "package orders\n\nfunc Legacy() {}\n",
+      "legacy_test.go": "package orders\n\nfunc TestLegacy(t *testing.T) { Legacy() }\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "orders.go"), "package orders\n\nfunc Refund() int { return 2 }\n");
+    await writeFile(join(root, "orders_test.go"), "package orders\n\nfunc TestRefund(t *testing.T) { Refund() }\n");
+    await rm(join(root, "legacy.go"));
+    await rm(join(root, "legacy_test.go"));
+
+    expect(await provider().run("change-integrity", await request(root))).toMatchObject({
+      status: "passed",
+      details: [
+        "legacy_test.go: test file deleted with the code it tested (reported: test-obsolete=report)",
+        "orders_test.go: test TestTotal removed with the code it tested (reported: test-obsolete=report)",
+      ],
+    });
+
+    // Another file still uses Total, so it was not removed from the repository.
+    await writeFile(join(root, "report.go"), "package orders\n\nvar total = Total\n");
+    const kept = await provider().run("change-integrity", await request(root));
+    expect(kept.status).toBe("failed");
+    expect(kept.details[0]).toBe("orders_test.go: test TestTotal removed");
   });
 
   it("accepts a removed test with a person's trailer and judges later removals", async () => {

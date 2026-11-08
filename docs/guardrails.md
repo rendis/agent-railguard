@@ -96,10 +96,35 @@ method); `it(…)` and `test(…)` with a literal name in `*.test.*` and `*.spec
 test…` in Python tests; methods with `@Test`, `@ParameterizedTest`, `@RepeatedTest`,
 `@TestFactory` or `@TestTemplate` in `*Test.java`, `*Tests.java` and `*IT.java`, and the
 `Scenario`, `Scenario Outline` and `Example` of `.feature` files. It is compared by name:
-moving a test to another test file in the same change does not count, but renaming it
-does, because mechanically it cannot be told apart from deleting one and adding another.
-What changes inside a test that is still declared (removed assertions, empty body) is not
-detected; that is measured by each stack's coverage and mutation testing.
+moving a test to another test file in the same change does not count. A test whose name
+disappears while a new name takes its place in the same file (after the same surviving
+test, or at the start, with as many tests arriving there as leaving) is **renamed**, not
+removed. A removed test is **obsolete** when it
+went with the code it tested: its text on the base mentions a function, type or class that
+the change removed from a production file (Go, JavaScript/TypeScript, Python, Java) and that
+no file left in the repository mentions anymore, tracked or untracked. A deleted test file is
+obsolete when every test it had is. Any other test a file loses is reported as removed. What changes inside a test that is still declared (removed
+assertions, empty body) is not detected; that is measured by each stack's coverage and
+mutation testing.
+
+`finding_policy` decides, per kind of finding, whether it blocks or is only reported
+([D-034](decisions.md#d-034--renamed-and-obsolete-tests-are-reported-and-each-project-sets-what-blocks)).
+A reported finding is listed in the check's result, which passes:
+
+| Kind | What it is | Default |
+| --- | --- | --- |
+| `suppression` | a suppression marker on a changed line | `block` |
+| `test-deleted` | a test file deleted | `block` |
+| `test-removed` | a test declaration removed from a file that still exists | `block` |
+| `test-renamed` | a test renamed in place | `report` |
+| `test-obsolete` | a test removed, or a test file deleted, with the code it tested | `report` |
+
+A changed or deleted protected configuration, and a file too large to scan, always block.
+The policy lives in `.railguard/project.yaml`, itself a protected path, so only a person
+can relax it. Each entry changes the default of its kind only:
+`--set 'verification-profile:change-guard.finding_policy=["test-renamed=block","test-obsolete=block"]'`
+blocks every test change, and `["test-removed=report"]` suits a prototype where tests come
+and go while renamed and obsolete tests stay reported.
 
 `railguard report` lists each accepted trailer and the agent hook activity, to see which
 rules actually block and which are only accepted out of habit

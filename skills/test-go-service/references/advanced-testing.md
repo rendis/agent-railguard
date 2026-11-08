@@ -1,6 +1,6 @@
 # Advanced Go Testing
 
-`railguard verify --changed` already runs race tests, bounded fuzz cases, and a Gremlins mutation campaign on changed lines, failing on any `LIVED` or `NOT_COVERED` mutant. This reference covers the judgment those runs still need: which paths deserve the probe, and how to read an unresolved result.
+`railguard verify --changed` already runs race tests, bounded fuzz cases, and a Gremlins mutation campaign on changed lines, failing on any `LIVED` or `NOT COVERED` mutant. This reference covers the judgment those runs still need: which paths deserve the probe, and how to read an unresolved result.
 
 ## Fuzzing, race, and benchmarks
 
