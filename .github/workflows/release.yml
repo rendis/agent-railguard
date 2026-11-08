@@ -43,10 +43,12 @@ jobs:
             exit 0
           fi
           # A tag without its release must already name this commit, or the binaries would not match it.
-          tagged=$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha 2>/dev/null || true)
-          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
-            echo "::error::Tag $tag points to $tagged, not $GITHUB_SHA. Bump package.json or remove the tag."
-            exit 1
+          # gh prints an error body on stdout, so its exit status, not its output, says whether the tag exists.
+          if tagged=$(gh api "repos/$GH_REPO/commits/refs/tags/$tag" --jq .sha 2>/dev/null); then
+            if [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $tag points to $tagged, not $GITHUB_SHA. Bump package.json or remove the tag."
+              exit 1
+            fi
           fi
           echo "publish=true" >> "$GITHUB_OUTPUT"
       - if: steps.version.outputs.publish == 'true'
