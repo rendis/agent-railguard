@@ -95,8 +95,28 @@ describe("change guard rules", () => {
       .toEqual({ removed: [], renamed: ["a_test.go: test TestB renamed to TestX"] });
     expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestC", "TestX"]))
       .toEqual({ removed: ["a_test.go: test TestB removed"], renamed: [] });
+    // A place that loses more tests than it gains, or gains more than it loses, renames none.
     expect(changes(["TestA", "TestB", "TestC"], ["TestA", "TestX"]))
-      .toEqual({ removed: ["a_test.go: test TestC removed"], renamed: ["a_test.go: test TestB renamed to TestX"] });
+      .toEqual({ removed: ["a_test.go: test TestB removed", "a_test.go: test TestC removed"], renamed: [] });
+    expect(changes(["TestMax"], ["TestMin", "TestClamp"]))
+      .toEqual({ removed: ["a_test.go: test TestMax removed"], renamed: [] });
+    // The same text under a new name is a rename, even next to a removal.
+    const body = (name: string, call: string) => `func ${name}(t *testing.T) {\n\tif ${call} {\n\t\tt.Fatal("x")\n\t}\n}\n`;
+    expect(testChanges([{
+      path: "a_test.go",
+      before: body("TestMax", "Max(2, 1) != 2") + body("TestMin", "Min(2, 1) != 1"),
+      after: body("TestMinPicksTheSmaller", "Min(2, 1) != 1") + body("TestAbs", "Abs(-1) != 1"),
+    }])).toMatchObject({ removed: ["a_test.go: test TestMax removed"], renamed: ["a_test.go: test TestMin renamed to TestMinPicksTheSmaller"] });
+    // A test that went with its code does not keep a new name from taking the place of another.
+    expect(testChanges([{
+      path: "a_test.go",
+      before: body("TestMax", "Max(2, 1) != 2") + body("TestMin", "Min(2, 1) != 1"),
+      after: body("TestMinPicksTheSmaller", "Min(1, 2) != 1"),
+    }], new Set(["Max"]))).toMatchObject({
+      removed: [],
+      renamed: ["a_test.go: test TestMin renamed to TestMinPicksTheSmaller"],
+      obsolete: ["a_test.go: test TestMax removed with the code it tested"],
+    });
     // A test that moves in from another file does not take the place of one that left.
     expect(testChanges([
       { path: "a_test.go", before: go("TestA", "TestB"), after: go("TestA", "TestC") },
@@ -231,6 +251,9 @@ describe("ChangeCheckProvider", () => {
       summary: "1 change(s) reported, none blocking",
       details: ["a.test.ts: test rounds down renamed to rounds half up (reported: test-renamed=report)"],
     });
+    // Relaxing another kind keeps the default of this one.
+    expect(await provider().run("change-integrity", await request(root, { finding_policy: ["test-removed=report"] })))
+      .toMatchObject({ status: "passed", summary: "1 change(s) reported, none blocking" });
     const blocked = await provider().run("change-integrity", await request(root, { finding_policy: ["test-renamed=block"] }));
     expect(blocked.status).toBe("failed");
     expect(blocked.details[0]).toBe("a.test.ts: test rounds down renamed to rounds half up");

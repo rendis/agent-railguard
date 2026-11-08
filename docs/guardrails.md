@@ -98,7 +98,8 @@ test…` in Python tests; methods with `@Test`, `@ParameterizedTest`, `@Repeated
 `Scenario`, `Scenario Outline` and `Example` of `.feature` files. It is compared by name:
 moving a test to another test file in the same change does not count. A test whose name
 disappears while a new name takes its place in the same file (after the same surviving
-test, or at the start) is **renamed**, not removed. A removed test is **obsolete** when it
+test, or at the start, with as many tests arriving there as leaving) is **renamed**, not
+removed. A removed test is **obsolete** when it
 went with the code it tested: its text on the base mentions a function, type or class that
 the change removed from a production file (Go, JavaScript/TypeScript, Python, Java) and that
 no file left in the repository mentions anymore, tracked or untracked. A deleted test file is

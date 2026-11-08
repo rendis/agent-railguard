@@ -121,17 +121,22 @@ export interface TestChanges {
 /**
  * Judges the tests the base declared in changed and deleted test files. A test moved to another
  * changed file keeps its name and is no finding. A test whose name disappears is renamed when a new
- * name takes its place in the same file: after the same surviving declaration (or at the start),
- * paired in order. Otherwise it is obsolete when its text at the base mentions a symbol in
- * `goneSymbols` (production code the change removed from the whole repository), and removed when
- * it does not. A deleted test file is obsolete when each of its tests that left is, and at least
- * one did; a file that ends with fewer tests never passes unreported.
+ * test in the same file has its exact text, of more than one line, under another name. Otherwise it is obsolete when its
+ * text at the base mentions a symbol in `goneSymbols` (production code the change removed from the
+ * whole repository). Otherwise it is renamed when a new name takes its place: after the same
+ * surviving declaration (or at the start), with as many tests arriving there as leaving, paired in
+ * order, and using an identifier that set the old test apart from the rest of the file (unless
+ * none did). Any other is removed. A deleted test file is obsolete when each of its tests that left is,
+ * and at least one did.
  */
 export function testChanges(
   files: readonly { readonly path: string; readonly before: string; readonly after: string; readonly deleted?: boolean }[],
   goneSymbols: ReadonlySet<string> = new Set(),
 ): TestChanges {
-  const declared = files.map((file) => ({ ...file, tests: testDeclarationsIn(file.path, file.before), after: testNames(file.path, file.after) }));
+  const declared = files.map((file) => {
+    const afterTests = testDeclarationsIn(file.path, file.after);
+    return { ...file, tests: testDeclarationsIn(file.path, file.before), afterTests, after: afterTests.map(({ name }) => name) };
+  });
   const net = new Map<string, number>();
   for (const { tests, after } of declared) {
     for (const { name } of tests) net.set(name, (net.get(name) ?? 0) + 1);
@@ -139,27 +144,46 @@ export function testChanges(
   }
   const findings = { deleted: new Set<string>(), removed: new Set<string>(), renamed: new Set<string>(), obsolete: new Set<string>() };
   const isObsolete = (body: string) => [...goneSymbols].some((symbol) => mentions(body, symbol));
-  for (const { path, tests, after, deleted } of declared) {
+  for (const { path, tests, afterTests, after, deleted } of declared) {
     const before = tests.map(({ name }) => name);
     // A name that left every changed file is gone; one no changed file had before is new.
-    const gone = slotted(before, after).filter(({ name }) => (net.get(name) ?? 0) > 0);
-    const added = slotted(after, before).filter(({ name }) => (net.get(name) ?? 0) < 0);
+    let gone = slotted(before, after).filter(({ name }) => (net.get(name) ?? 0) > 0);
+    let added = slotted(after, before).filter(({ name }) => (net.get(name) ?? 0) < 0);
     if (deleted === true) {
       const obsolete = gone.length > 0 && gone.every(({ index }) => isObsolete(tests[index]!.body));
       (obsolete ? findings.obsolete : findings.deleted)
         .add(obsolete ? `${path}: test file deleted with the code it tested` : `${path}: test file deleted`);
       continue;
     }
-    for (const entry of gone) {
-      const index = added.findIndex((candidate) => candidate.slot === entry.slot);
-      if (index !== -1) {
-        findings.renamed.add(`${path}: test ${entry.name} renamed to ${added[index]!.name}`);
-        added.splice(index, 1);
-      } else if (isObsolete(tests[entry.index]!.body)) {
-        findings.obsolete.add(`${path}: test ${entry.name} removed with the code it tested`);
-      } else {
-        findings.removed.add(`${path}: test ${entry.name} removed`);
-      }
+    const rename = (from: { readonly name: string }, to: { readonly name: string }) => {
+      findings.renamed.add(`${path}: test ${from.name} renamed to ${to.name}`);
+      gone = gone.filter((entry) => entry !== from);
+      added = added.filter((entry) => entry !== to);
+    };
+    // The same text under a new name is a rename wherever it lands; a one-line test says too little.
+    for (const entry of [...gone]) {
+      const text = unnamed(tests[entry.index]!);
+      if (!text.includes("\n")) continue;
+      const match = added.find((candidate) => unnamed(afterTests[candidate.index]!) === text);
+      if (match !== undefined) rename(entry, match);
+    }
+    // A test that went with its code leaves no place for a new name to take.
+    for (const entry of gone.filter(({ index }) => isObsolete(tests[index]!.body))) {
+      findings.obsolete.add(`${path}: test ${entry.name} removed with the code it tested`);
+      gone = gone.filter((candidate) => candidate !== entry);
+    }
+    const shared = sharedIdentifiers([...tests, ...afterTests]);
+    for (const slot of new Set(gone.map((entry) => entry.slot))) {
+      const leaving = gone.filter((entry) => entry.slot === slot);
+      const arriving = added.filter((entry) => entry.slot === slot);
+      leaving.forEach((entry, index) => {
+        const to = arriving[index];
+        if (leaving.length === arriving.length && to !== undefined && testsTheSame(tests[entry.index]!, afterTests[to.index]!, shared)) {
+          rename(entry, to);
+        } else {
+          findings.removed.add(`${path}: test ${entry.name} removed`);
+        }
+      });
     }
   }
   return {
@@ -168,6 +192,35 @@ export function testChanges(
     renamed: [...findings.renamed],
     obsolete: [...findings.obsolete],
   };
+}
+
+function identifiers(test: { readonly name: string; readonly body: string }): ReadonlySet<string> {
+  return new Set([...test.body.replace(test.name, "").matchAll(/[A-Za-z_$][\w$]*/gu)].map((match) => match[0]));
+}
+
+/** Identifiers every test of a file uses, such as its framework's: they tell no test apart. */
+function sharedIdentifiers(tests: readonly { readonly name: string; readonly body: string }[]): ReadonlySet<string> {
+  const [first, ...rest] = tests.map(identifiers);
+  return new Set([...(first ?? [])].filter((identifier) => rest.every((others) => others.has(identifier))));
+}
+
+/**
+ * Whether a new test can be the old one under a new name: it uses one of the identifiers that set
+ * the old test apart from the rest of the file, or the old test had none.
+ */
+function testsTheSame(
+  from: { readonly name: string; readonly body: string },
+  to: { readonly name: string; readonly body: string },
+  shared: ReadonlySet<string>,
+): boolean {
+  const own = [...identifiers(from)].filter((identifier) => !shared.has(identifier));
+  const target = identifiers(to);
+  return own.length === 0 || own.some((identifier) => target.has(identifier));
+}
+
+/** A test's text without its name or surrounding blank lines, to tell a pure rename. */
+function unnamed(test: { readonly name: string; readonly body: string }): string {
+  return test.body.replace(test.name, "").trim();
 }
 
 /**

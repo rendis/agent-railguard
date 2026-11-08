@@ -49,7 +49,8 @@ export class ChangeCheckProvider implements CheckProvider {
 
   async #integrity(request: CheckRequest, changes: ChangeSet): Promise<CheckOutcome> {
     const protectedPaths = request.inputs.protected_paths ?? [];
-    const policy = findingPolicy(request.inputs.finding_policy ?? defaultFindingPolicy);
+    // An entry overrides the default of its kind only: relaxing one kind keeps the other defaults.
+    const policy = findingPolicy([...defaultFindingPolicy, ...(request.inputs.finding_policy ?? [])]);
     const findings: { readonly kind: FindingKind; readonly text: string }[] = [];
     const add = (kind: FindingKind, texts: readonly string[]) => findings.push(...texts.map((text) => ({ kind, text })));
     for (const [path, lines] of changes.files) {

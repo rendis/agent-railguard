@@ -631,7 +631,8 @@ approving out of habit weakened the check for the case it exists for. Three chan
 
 - **A rename in place is told apart.** Within one changed test file, a name that left every
   changed file is paired with a new name that follows the same surviving declaration (or the start
-  of the file), in order. A paired name is renamed; an unpaired one is still removed, so a file
+  of the file), in order, only when as many tests arrive at that place as leave it. A paired name
+  is renamed; an unpaired one is still removed, so a file
   that ends with fewer tests always reports a removal, and a test that moves in from another file
   never takes the place of one that left. Comparing bodies would catch more swaps, but it needs a
   parser per language; the position is mechanical and shared by every stack.
