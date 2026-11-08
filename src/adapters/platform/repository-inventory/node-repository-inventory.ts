@@ -42,16 +42,34 @@ const defaultExcludedDirectories = Object.freeze([
   "vendor",
 ]);
 
-const configurationDirectories = new Set([
-  ".agents",
-  ".claude",
-  ".codex",
-  ".cursor",
-  ".github",
-  ".opencode",
+/**
+ * The configuration Railguard reads and writes: its own directory, each harness adapter's
+ * project surfaces and Claude Code's local settings. These stay inventoried even when Git ignores them, a directory with all it
+ * holds; the rest of an ignored directory (captures, transcripts, caches) is not.
+ */
+export const inventoriedConfigurationPaths = Object.freeze([
+  ".agents/skills",
+  ".claude/agents",
+  ".claude/settings.json",
+  ".claude/settings.local.json",
+  ".claude/skills",
+  ".codex/agents",
+  ".codex/config.toml",
+  ".codex/hooks.json",
+  ".cursor/agents",
+  ".cursor/hooks.json",
+  ".cursor/mcp.json",
+  ".github/agents",
+  ".opencode/agents",
   ".railguard",
-  ".vscode",
+  ".vscode/mcp.json",
 ]);
+
+/** Whether a path inside an ignored directory is configuration, or leads to some. */
+function keptWhenIgnored(path: string): boolean {
+  return inventoriedConfigurationPaths.some((kept) =>
+    path === kept || path.startsWith(`${kept}/`) || kept.startsWith(`${path}/`));
+}
 
 const execute = promisify(execFile);
 
@@ -171,6 +189,8 @@ export class NodeRepositoryInventory implements RepositoryInventory {
     readonly depth: number;
     readonly rootRealPath: string;
     readonly ignoredDirectories: ReadonlySet<string>;
+    /** Whether this directory is, or lies inside, one Git ignores. */
+    readonly ignored?: boolean;
     readonly entries: RepositoryEntry[];
     readonly files: Map<RelativePosixPath, { readonly bytes: ReadonlyBytes; readonly mode: number }>;
     readonly budget: InventoryBudget;
@@ -191,11 +211,13 @@ export class NodeRepositoryInventory implements RepositoryInventory {
         input.relativeDirectory.length === 0
           ? directoryEntry.name
           : `${input.relativeDirectory}/${directoryEntry.name}`;
+      const ignored =
+        input.ignored === true ||
+        (directoryEntry.isDirectory() && input.ignoredDirectories.has(relativeValue));
       if (
         directoryEntry.name === ".git" ||
-        (directoryEntry.isDirectory() &&
-          (this.#excludedDirectories.has(directoryEntry.name) ||
-            input.ignoredDirectories.has(relativeValue)))
+        (directoryEntry.isDirectory() && this.#excludedDirectories.has(directoryEntry.name)) ||
+        (ignored && !keptWhenIgnored(relativeValue))
       ) {
         continue;
       }
@@ -246,6 +268,7 @@ export class NodeRepositoryInventory implements RepositoryInventory {
           absoluteDirectory: absolutePath,
           relativeDirectory: relativeValue,
           depth: input.depth + 1,
+          ignored,
         });
         continue;
       }
@@ -294,9 +317,9 @@ export class NodeRepositoryInventory implements RepositoryInventory {
 }
 
 /**
- * Git-ignored output and caches, including hidden directories, are not project inputs.
- * Agent and guard configuration stays inventoried even when ignored; nested repositories
- * inside those directories are skipped separately.
+ * Directories Git ignores: output, caches and local captures, hidden or not, are not project
+ * inputs. Only `inventoriedConfigurationPaths` inside them is walked; nested repositories are
+ * skipped separately.
  */
 async function ignoredOutputDirectories(root: string): Promise<ReadonlySet<string>> {
   try {
@@ -308,7 +331,7 @@ async function ignoredOutputDirectories(root: string): Promise<ReadonlySet<strin
     return new Set(
       stdout
         .split("\0")
-        .filter((path) => path.endsWith("/") && !path.split("/").some((part) => configurationDirectories.has(part)))
+        .filter((path) => path.endsWith("/"))
         .map((path) => path.slice(0, -1)),
     );
   } catch {

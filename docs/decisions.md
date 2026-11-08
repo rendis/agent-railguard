@@ -609,9 +609,12 @@ Agents keep their git worktrees inside the checkout (`.claude/worktrees/<name>`)
 inventory walked into them, took their Go modules for project units of the repository and wrote
 them into `.railguard/verify.sh`, which then failed in CI where the worktrees do not exist. The
 inventory now skips every directory that holds its own `.git` (a linked worktree, a submodule or a
-nested clone), whether or not Git ignores it. It keeps skipping git-ignored directories outside
-hidden configuration directories, which stay inventoried because harness configuration lives in
-them.
+nested clone), whether or not Git ignores it. It skips every git-ignored directory, also inside
+an agent configuration directory such as `.claude` or `.codex`, where ignored content is work
+output (screen captures, transcripts, caches) that could exceed the inventory's byte limit. Only
+the configuration Railguard reads stays inventoried when ignored: `.railguard/`, each harness
+adapter's project surfaces (`.claude/skills`, `.codex/config.toml`, `.agents/skills`, …) and
+`.claude/settings.local.json`. A test checks that the list covers every adapter's surfaces.
 
 `core.hooksPath` lives in the Git configuration that all worktrees of a clone share, so a relative
 value is the only one that works in all of them: each worktree runs the hooks of its own
