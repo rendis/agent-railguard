@@ -609,9 +609,12 @@ Agents keep their git worktrees inside the checkout (`.claude/worktrees/<name>`)
 inventory walked into them, took their Go modules for project units of the repository and wrote
 them into `.railguard/verify.sh`, which then failed in CI where the worktrees do not exist. The
 inventory now skips every directory that holds its own `.git` (a linked worktree, a submodule or a
-nested clone), whether or not Git ignores it. It keeps skipping git-ignored directories outside
-hidden configuration directories, which stay inventoried because harness configuration lives in
-them.
+nested clone), whether or not Git ignores it. It skips every git-ignored directory, also inside
+an agent configuration directory such as `.claude` or `.codex`, where ignored content is work
+output (screen captures, transcripts, caches) that could exceed the inventory's byte limit. Only
+the configuration Railguard reads stays inventoried when ignored: `.railguard/`, each harness
+adapter's project surfaces (`.claude/skills`, `.codex/config.toml`, `.agents/skills`, …) and
+`.claude/settings.local.json`. A test checks that the list covers every adapter's surfaces.
 
 `core.hooksPath` lives in the Git configuration that all worktrees of a clone share, so a relative
 value is the only one that works in all of them: each worktree runs the hooks of its own
@@ -644,7 +647,20 @@ approving out of habit weakened the check for the case it exists for. Three chan
   obsolete when its text at the base mentions a symbol (function, type, class) that the change
   removed from a production file and that `git grep -w` no longer finds in any file the change
   leaves, and that no declaration the change adds repeats under another name: renaming code is
-  not removing it. A deleted test file is obsolete when every test it lost is. A symbol still mentioned
+  not removing it. A deleted test file is obsolete when every test it lost is. A constant or
+  variable is code as well (Go `const`, `var` and their grouped blocks, JavaScript `export
+  const`), and one line with the same value under a new name is a rename. A test that reaches
+  removed code through a helper of its own file is obsolete too, when the change removed the
+  helper and the helper's text names that code: removing a shipped feature flag removes its key,
+  the helper that set it and the test of its off state together. A helper is a declaration
+  outside every test, no deeper than the tests, gone from the file, and every statement it runs
+  uses the removed code (one expression counts as one statement). A broad helper that also does
+  something else should have been edited: its tests stay removed and the finding names the
+  statement to keep, while a narrow one is the removed code written once. One level is followed
+  and the finding names the helper. What remains for a person: a broad helper written as one
+  expression, and the test of a flag's on state removed with the flag, which reads like its off
+  state and would pass with the flag line dropped. A test's text ends at its closing bracket, or its
+  indented block in Python, so a declaration that follows it is not part of it. A symbol still mentioned
   anywhere, even in prose, keeps the test removed: the check errs toward asking a person.
   Behavior moved elsewhere under another name is new or changed code, so the stack's
   changed-line coverage and mutation testing still judge it.

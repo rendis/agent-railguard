@@ -3,7 +3,16 @@ import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { NodeRepositoryInventory } from "../../src/adapters/platform/repository-inventory/node-repository-inventory.js";
+import { ClaudeCodeAdapter } from "../../src/adapters/harness/claude-code/claude-code-adapter.js";
+import { CodexAdapter } from "../../src/adapters/harness/codex/codex-adapter.js";
+import { CursorAdapter } from "../../src/adapters/harness/cursor/cursor-adapter.js";
+import { OpenCodeAdapter } from "../../src/adapters/harness/opencode/opencode-adapter.js";
+import { VsCodeAdapter } from "../../src/adapters/harness/vscode/vscode-adapter.js";
+import {
+  NodeRepositoryInventory,
+  inventoriedConfigurationPaths,
+} from "../../src/adapters/platform/repository-inventory/node-repository-inventory.js";
+import type { ExecutableProbe } from "../../src/domain/harness/model.js";
 import { relativePosixPath } from "../../src/domain/shared/types.js";
 import { createTempRepository } from "../helpers/temp-repository.js";
 
@@ -112,6 +121,48 @@ describe("NodeRepositoryInventory", () => {
     expect(paths).toContain(relativePosixPath(".local/source.ts"));
     expect(await readFile(join(repository.root, ".runs/history/report.json"), "utf8")).toBe(report);
     expect(await readFile(join(repository.root, ".cache/snapshot.txt"), "utf8")).toBe(report);
+  });
+
+  it("skips ignored work output inside agent configuration directories and keeps the configuration there", async () => {
+    const capture = "x".repeat(256);
+    const repository = await createTempRepository({
+      ".gitignore": ".claude/compare/\n.codex/\n.agents/\n",
+      ".claude/settings.json": "{}\n",
+      ".claude/compare/home.png": capture,
+      ".claude/compare/flow/recording.webm": capture,
+      ".codex/config.toml": "model = \"x\"\n",
+      ".codex/sessions/transcript.jsonl": capture,
+      ".agents/skills/tdd/SKILL.md": "# TDD\n",
+      ".agents/cache/index.bin": capture,
+    });
+    cleanups.push(repository.cleanup);
+    await promisify(execFile)("git", ["init", "--quiet", repository.root]);
+
+    const snapshot = await new NodeRepositoryInventory({ maxTotalBytes: 128 }).snapshot(repository.root);
+    const paths = snapshot.entries.map((entry) => entry.path);
+
+    expect(paths.filter((path) => /compare|sessions|cache/u.test(path))).toEqual([]);
+    expect(paths).toEqual(expect.arrayContaining([
+      ".claude/settings.json",
+      ".codex/config.toml",
+      ".agents/skills/tdd/SKILL.md",
+    ].map((path) => relativePosixPath(path))));
+  });
+
+  it("keeps every harness surface inventoried when Git ignores it", async () => {
+    const probe: ExecutableProbe = { probe: async () => ({ detected: false, path: null, version: null, diagnostics: [] }) };
+    const repository = await createTempRepository({ "README.md": "x\n" });
+    cleanups.push(repository.cleanup);
+    const snapshot = await new NodeRepositoryInventory().snapshot(repository.root);
+    const harnesses = [ClaudeCodeAdapter, CodexAdapter, CursorAdapter, OpenCodeAdapter, VsCodeAdapter].map((Adapter) => new Adapter(probe));
+
+    const surfaces = (await Promise.all(harnesses.map((harness) => harness.inspect(snapshot))))
+      .flatMap((inspection) => inspection.surfaces.map(({ path }) => path as string))
+      .filter((path) => path.includes("/"));
+
+    expect(surfaces.length).toBeGreaterThan(0);
+    expect(surfaces.filter((path) => !inventoriedConfigurationPaths.some((kept) => path === kept || path.startsWith(`${kept}/`))))
+      .toEqual([]);
   });
 
   it("does not walk into linked worktrees, submodules or nested clones, even inside ignored hidden directories", async () => {
