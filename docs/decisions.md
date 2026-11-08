@@ -43,9 +43,13 @@ access to a registry.
 
 ### D-003 — Releases on GitHub
 
-Every tag `vX.Y.Z` that matches `package.json` runs `pnpm run check`, compiles the
-binaries for all platforms and publishes them together with `SHA256SUMS` in the tag's
-GitHub Release. There is no other distribution or content channel.
+Every `package.json` version that reaches `main` without a release yet runs `pnpm run
+check`, compiles the binaries for all platforms and publishes them together with `SHA256SUMS`
+in a GitHub Release, tagging `vX.Y.Z` on the commit it built. Merging the version bump is the
+whole release: no one pushes a tag, so a person or an agent that can merge does not wait on
+someone who can. A push to `main` whose version is already released publishes nothing, and a
+`vX.Y.Z` tag that exists without its release must name the commit being built, or the run
+fails. There is no other distribution or content channel.
 
 ### D-004 — Installation with a script
 

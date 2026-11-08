@@ -190,10 +190,13 @@ railguard --source /path/to/checkout scan --format json
 
 ## Publishing a release
 
-1. Update `version` in `package.json`.
-2. Create and publish the tag `vX.Y.Z` with that same version.
-3. The `Release` workflow runs `pnpm run check`, builds the four binaries with
-   `node scripts/build-binaries.mjs` with Bun pinned, attests each binary's provenance, and
-   creates the GitHub Release with `SHA256SUMS`.
+1. Update `version` in `package.json` in a pull request, and merge it into `main`.
+2. On that push, the `Release` workflow finds that `vX.Y.Z` has no release yet, runs
+   `pnpm run check`, builds the four binaries with `node scripts/build-binaries.mjs` with Bun
+   pinned, attests each binary's provenance, and creates the GitHub Release with `SHA256SUMS`,
+   tagging `vX.Y.Z` on the commit it built.
 
-A tag that does not match `package.json` fails the build.
+Nobody pushes the tag. A push to `main` whose version is already released publishes nothing.
+If a run failed, start it again from the Actions tab (**Run workflow** on `main`, or
+**Re-run failed jobs**). A `vX.Y.Z` tag that exists without its release must point to the
+commit being built, or the run fails: bump the version, or remove the tag.
