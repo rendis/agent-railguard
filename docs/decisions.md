@@ -642,7 +642,11 @@ approving out of habit weakened the check for the case it exists for. Three chan
   is renamed; an unpaired one is still removed, so a file
   that ends with fewer tests always reports a removal, and a test that moves in from another file
   never takes the place of one that left. Comparing bodies would catch more swaps, but it needs a
-  parser per language; the position is mechanical and shared by every stack.
+  parser per language; the position is mechanical and shared by every stack. One body comparison
+  is exact and needs no parser: a test of more than one line whose text reappears under a new name,
+  in its own file or in another changed test file, is renamed or moved. Its text may differ only in
+  whitespace and, for a move, in naming the new file's subject where it named the old one's
+  (`Shell` in `Shell.test.tsx`, `Header` in `Header.test.tsx`); any other edit keeps it removed.
 - **A test that went with its code is told apart.** A removed test, not paired as a rename, is
   obsolete when its text at the base mentions a symbol (function, type, class) that the change
   removed from a production file and that `git grep -w` no longer finds in any file the change
@@ -664,6 +668,9 @@ approving out of habit weakened the check for the case it exists for. Three chan
   anywhere, even in prose, keeps the test removed: the check errs toward asking a person.
   Behavior moved elsewhere under another name is new or changed code, so the stack's
   changed-line coverage and mutation testing still judge it.
+- **The rules stop here.** A coherent removal is a judgment, not a mechanical fact: each new
+  heuristic covers the last case seen and widens what a deleted test can hide behind. What these
+  rules do not tell apart is asked of a person with `Railguard-Request`, not answered with another rule.
 - **Each project decides what blocks.** The `finding_policy` input of `change-guard` sets the
   relaxable kinds (`suppression`, `test-deleted`, `test-removed`, `test-renamed`,
   `test-obsolete`) to `block` or `report`. A reported finding is listed and the check passes. The

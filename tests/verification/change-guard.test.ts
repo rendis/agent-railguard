@@ -125,6 +125,31 @@ describe("change guard rules", () => {
     ])).toMatchObject({ removed: ["a_test.go: test TestB removed"], renamed: [] });
   });
 
+  it("tells a test moved to another changed file under a new name from one removed", () => {
+    const shell = 'it("renders", () => {\n  render(<Shell />);\n  expect(screen.getByRole("main")).toBeTruthy();\n});\n';
+    const header = 'it("shows the title", () => {\n  render(<Header title="x" />);\n  expect(screen.getByText("x")).toBeTruthy();\n});\n';
+    const back = (name: string, subject: string, assertion = "toHaveBeenCalled()", indent = "") =>
+      `${indent}it("${name}", () => {\n${indent}  const back = vi.fn();\n${indent}  render(<${subject} onBack={back} />);\n`
+      + `${indent}  click(screen.getByLabelText("back"));\n${indent}  expect(back).${assertion};\n${indent}});\n`;
+    const move = (after: string) => testChanges([
+      { path: "src/Shell.test.tsx", before: shell + back("shows a back key that goes back", "Shell"), after: shell },
+      { path: "src/Header.test.tsx", before: header, after: header + after },
+    ]);
+    const moved = { removed: [], renamed: ["src/Shell.test.tsx: test shows a back key that goes back moved to src/Header.test.tsx as goes back with its key"] };
+
+    // The same text, re-indented, or naming the new file's subject instead of the old one's.
+    expect(move(back("goes back with its key", "Shell"))).toMatchObject(moved);
+    expect(move(`describe("back", () => {\n${back("goes back with its key", "Header", undefined, "  ")}});\n`)).toMatchObject(moved);
+    // Any other difference is a removal: here a weaker assertion.
+    expect(move(back("goes back with its key", "Header", "not.toThrow()")))
+      .toMatchObject({ removed: ["src/Shell.test.tsx: test shows a back key that goes back removed"], renamed: [] });
+    // A one-line test says too little to follow it to another file.
+    expect(testChanges([
+      { path: "a_test.go", before: "func TestA(t *testing.T) {}\nfunc TestB(t *testing.T) { check(t) }", after: "func TestA(t *testing.T) {}" },
+      { path: "b_test.go", before: "", after: "func TestC(t *testing.T) { check(t) }" },
+    ])).toMatchObject({ removed: ["a_test.go: test TestB removed"], renamed: [] });
+  });
+
   it("reads the functions, types and classes production code declares", () => {
     expect(declaredSymbols("orders.go", "package orders\n\ntype Order struct{}\n\nfunc Total() int { return 0 }\nfunc (o Order) Refund() {}\n"))
       .toEqual(["Order", "Total", "Refund"]);

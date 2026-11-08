@@ -99,7 +99,10 @@ test…` in Python tests; methods with `@Test`, `@ParameterizedTest`, `@Repeated
 moving a test to another test file in the same change does not count. A test whose name
 disappears while a new name takes its place in the same file (after the same surviving
 test, or at the start, with as many tests arriving there as leaving) is **renamed**, not
-removed. A removed test is **obsolete** when it
+removed. So is a test of more than one line whose text reappears under a new name in its own
+file, or **moved** to another changed test file: the text may differ only in whitespace and in
+naming the new file's subject instead of the old one's (`Shell` for `Shell.test.tsx`, `Header`
+for `Header.test.tsx`). Both are `test-renamed` findings. A removed test is **obsolete** when it
 went with the code it tested: its text on the base mentions a function, type, class,
 constant or variable (Go `const` and `var`, grouped blocks included; JavaScript `export const`)
 that the change removed from a production file (Go, JavaScript/TypeScript, Python, Java) and that
