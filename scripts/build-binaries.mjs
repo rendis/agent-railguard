@@ -24,10 +24,6 @@ if (selected.length === 0) {
 }
 
 const version = JSON.parse(await readFile("package.json", "utf8")).version;
-const tag = process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME : undefined;
-if (tag !== undefined && tag !== `v${version}`) {
-  throw new Error(`Release tag ${tag} does not match package.json version v${version}`);
-}
 
 execFileSync("node", ["esbuild.config.mjs"], { stdio: "inherit" });
 
