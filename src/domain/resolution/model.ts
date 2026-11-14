@@ -25,6 +25,11 @@ export interface TargetCapabilities {
 export interface ResolutionRequest {
   readonly catalog: CatalogSnapshot;
   readonly directSelections: readonly ComponentRef[];
+  /**
+   * Components the project disabled: a pack's `includes` relation does not bring them in. A
+   * component another one `requires` cannot be disabled.
+   */
+  readonly disabled?: readonly ComponentRef[];
   readonly projectUnits: readonly ProjectUnitFact[];
   readonly targets: readonly TargetCapabilities[];
 }
@@ -81,6 +86,7 @@ export type ResolutionBlocker =
   | { readonly kind: "unknown-selection"; readonly component: ComponentRef }
   | { readonly kind: "non-selectable-component"; readonly component: ComponentRef }
   | { readonly kind: "git-gate-without-profile"; readonly component: ComponentRef }
+  | { readonly kind: "disabled-required"; readonly component: ComponentRef; readonly requiredBy: readonly ComponentRef[] }
   | {
       readonly kind: "conflict";
       readonly pair: readonly [ComponentRef, ComponentRef];

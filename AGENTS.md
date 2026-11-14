@@ -17,7 +17,7 @@ Before delivering, run `pnpm run check` (typecheck, tests with coverage threshol
 
 - The project is public: no company, client, project or person data in code, docs, tests, fixtures or commits.
 - Railguard is a local tool. Consumer CI runs its own commands and must never depend on the binary or on access to its releases for the whole-repository checks (`.railguard/verify.sh`). The one exception is the optional `railguard gate`, which runs the pinned engine in a job of its own ([D-031](docs/decisions.md)).
-- Only a person adds a `Railguard-Allow` trailer; an agent never accepts its own guard finding. An agent may write a `Railguard-Request` trailer, which accepts nothing: a configured approver's approval of the pull request's head commit does.
+- Only a person adds a `Railguard-Allow` trailer; an agent never accepts its own guard finding. An agent may write a `Railguard-Request` trailer, which accepts nothing: a configured approver's approval of the pull request does, on its head or on an earlier commit with the same findings. An agent may also write a `Railguard-Justify` trailer, which passes only the findings whose `finding_policy` level is `justify`.
 - Conventional Commits, without AI attribution.
 - Replace obsolete paths atomically and remove the displaced code. Add compatibility or migrations only for an observed external contract the task requires.
 - Prefer maintained standard capabilities; keep custom code narrow and owned by the component that needs it.

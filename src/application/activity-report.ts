@@ -6,13 +6,16 @@ export type Tally = readonly { readonly name: string; readonly count: number }[]
 
 /**
  * How the guardrails behave on this clone: which findings people accepted, how often agent hooks
- * blocked or flagged work and on which checks, and whether a change is left unverified. It answers
+ * blocked or flagged work, which findings agents justified and on which checks, and whether a change is left unverified. It answers
  * which rules earn their place, not whether the current change passes.
  */
 export interface ActivityReport {
   readonly since: string | null;
   readonly acceptances: readonly Acceptance[];
   readonly acceptancesByKind: Tally;
+  /** Findings an agent justified with a `Railguard-Justify` trailer, newest first. */
+  readonly justifications: readonly Acceptance[];
+  readonly justificationsByKind: Tally;
   /** Time of the oldest agent hook event recorded on this clone, or null without events. */
   readonly recordedSince: string | null;
   readonly stopBlocks: { readonly total: number; readonly checks: Tally };
@@ -33,6 +36,7 @@ export async function buildActivityReport(
   },
 ): Promise<ActivityReport> {
   const acceptances = await sources.history.read(root, since);
+  const justifications = await sources.history.justifications(root, since);
   const events = (await sources.activity.read(root)).filter((event) => since === null || event.at >= since);
   const of = <T extends RecordedActivity["type"]>(type: T) =>
     events.filter((event): event is Extract<RecordedActivity, { type: T }> => event.type === type);
@@ -44,6 +48,8 @@ export async function buildActivityReport(
     since,
     acceptances,
     acceptancesByKind: tally(acceptances.map((acceptance) => acceptance.kind)),
+    justifications,
+    justificationsByKind: tally(justifications.map((justification) => justification.kind)),
     recordedSince: events.reduce<string | null>((oldest, event) => (oldest === null || event.at < oldest ? event.at : oldest), null),
     stopBlocks: { total: stops.length, checks: tally(stops.flatMap((event) => event.checks)) },
     unverifiedSessions: { total: unverified.length, checks: tally(unverified.flatMap((event) => event.checks)) },

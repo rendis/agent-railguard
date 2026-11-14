@@ -69,6 +69,19 @@ railguard init \
 is kept in `.railguard/project.yaml` next to the pack. A component the catalog does not have blocks
 the plan with `resolution.selection.unknown`.
 
+To turn off a component that a pack includes, select it with `disabled: true` (and no inputs) in
+`.railguard/project.yaml`, then run `railguard sync --yes`; the pack no longer brings it in:
+
+```yaml
+selections:
+  - ref: pack:go-service-foundation
+  - ref: verification-profile:change-guard
+    disabled: true
+```
+
+A component that another selected component requires (a `requires` relation, not a pack's
+`includes`) cannot be disabled: the plan blocks with `resolution.selection.disabled-required`.
+
 When a plan is blocked, `--out` writes no file; the output lists each diagnostic with its message,
 evidence and next step, and says that no plan file was written (exit code `5`).
 
@@ -167,13 +180,16 @@ set, which in Actions needs `pull-requests: read`, and with the `gh` login other
 the repository. Nothing is written to GitHub or to the repository.
 
 - A finding that a commit asked a person to accept (`Railguard-Request`) **passes** when an
-  approver of its profile (the `approvers` input) approved the pull request's head commit, and
-  **fails** with `awaiting approval` otherwise.
+  approver of its profile (the `approvers` input) approved the pull request's head commit, or an
+  earlier commit whose findings for that check include every finding of the head (a rebase keeps an
+  approval), and **fails** with `awaiting approval` otherwise.
+- A finding that the policy lets pass with a reason passes once a commit of the branch carries a
+  `Railguard-Justify: <kind>: <reason>` trailer, with no approval.
 - A finding with no request fails; a person's `Railguard-Allow` trailer still accepts it.
 - The checkout must be the pull request's head commit with its full history; any other commit
-  blocks the gate (`verification.pull-request.head-mismatch`), because an approval applies to a
-  commit. Reviews by the author or by a bot, approvals of an earlier commit and approvals by
-  logins that are not approvers never count, and the report says which.
+  blocks the gate (`verification.pull-request.head-mismatch`). Reviews by the author or by a bot,
+  approvals of an earlier commit with other findings and approvals by logins that are not
+  approvers never count, and the report says which.
 - A repository without `change-guard` or `secret-guard` blocks the gate
   (`verification.pull-request.no-profile`) instead of passing it.
 

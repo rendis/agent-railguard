@@ -235,6 +235,36 @@ describe("DefaultResolver", () => {
     );
   });
 
+  it("leaves out a component the project disabled even though a pack includes it", async () => {
+    const catalog = await loadCatalog();
+    const resolver = new DefaultResolver();
+    const pack = componentRef("pack:go-service-foundation");
+    const changeGuard = componentRef("verification-profile:change-guard");
+    const targets = [{ target: codex, capabilities: codexCapabilities }] as const;
+    const included = resolver.resolve({ catalog, directSelections: [pack], projectUnits: [goUnit()], targets });
+    const disabled = resolver.resolve({ catalog, directSelections: [pack], disabled: [changeGuard], projectUnits: [goUnit()], targets });
+
+    expect(included.components.map((component) => component.ref)).toContain(changeGuard);
+    expect(disabled.components.map((component) => component.ref)).not.toContain(changeGuard);
+    expect(disabled.components.map((component) => component.ref)).toContain("verification-profile:secret-guard");
+  });
+
+  it("blocks disabling a component that another selected component requires", async () => {
+    const result = new DefaultResolver().resolve({
+      catalog: await loadCatalog(),
+      directSelections: [componentRef("pack:testing-foundation")],
+      disabled: [componentRef("skill:design-tests")],
+      projectUnits: [],
+      targets: [{ target: codex, capabilities: [projectSkills] }],
+    });
+
+    expect(result.kind).toBe("blocked");
+    expect(result.blockers).toEqual([
+      { kind: "disabled-required", component: "skill:design-tests", requiredBy: ["skill:build-e2e-test-suite", "skill:tdd"] },
+    ]);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("resolution.selection.disabled-required");
+  });
+
   it("is invariant to duplicate and permuted normalized inputs", async () => {
     const catalog = await loadCatalog();
     const resolver = new DefaultResolver();

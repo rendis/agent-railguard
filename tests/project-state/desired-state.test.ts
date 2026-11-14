@@ -63,6 +63,27 @@ selections:
 `);
   });
 
+  it("keeps a disabled selection without inputs and rejects one that has inputs", async () => {
+    const module = new DesiredStateModule();
+    const catalog = await readyCatalog();
+    const source = "schema: railguard/project/v1\ntargets: []\nselections:\n  - ref: pack:go-service-foundation\n  - ref: verification-profile:change-guard\n    disabled: true\n";
+
+    const result = module.evaluate({ kind: "yaml", source }, catalog);
+    const withInputs = module.evaluate({
+      kind: "draft",
+      targets: [],
+      selections: [{ ref: "verification-profile:change-guard", disabled: true, inputs: { approvers: ["rendis"] } }],
+    }, catalog);
+
+    expect(result.kind).toBe("ready");
+    if (result.kind === "ready") {
+      expect(result.state.selections[1]).toEqual({ ref: "verification-profile:change-guard", inputs: {}, disabled: true });
+      expect(result.bytes.toString()).toBe(source);
+    }
+    expect(withInputs.kind).toBe("invalid");
+    if (withInputs.kind === "invalid") expect(withInputs.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["project-state.disabled-inputs"]);
+  });
+
   it("renders an empty project deterministically without blocking a new repository", async () => {
     const module = new DesiredStateModule();
     const catalog = await readyCatalog();

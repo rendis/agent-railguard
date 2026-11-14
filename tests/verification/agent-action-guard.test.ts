@@ -51,6 +51,8 @@ describe("action guard", () => {
     expect(shell("git commit -m 'feat: add client'")).toBeNull();
     expect(shell("git commit --allow-empty -m 'chore: ask' -m 'Railguard-Request: change-size: reviewed diff'")).toBeNull();
     expect(shell("git commit -m 'fix' -m 'Railguard-Allow: change-size: big'")).toContain("Railguard-Request");
+    expect(shell("git commit --allow-empty -m 'chore: justify' -m 'Railguard-Justify: test-deleted: the feature went with #41'")).toBeNull();
+    expect(shell("git commit -m 'x' -m 'Railguard-Justify: test-deleted: y' -m 'Railguard-Allow: change-integrity: z'")).toContain("Only a person may add");
     const rule = (command: string) => guard("codex", root, { tool_name: "Bash", tool_input: { command } }).refused;
     expect([
       rule("git push --no-verify"), rule("echo 'Railguard-Allow: x: y'"), rule("git config core.hooksPath x"), rule("ls"),

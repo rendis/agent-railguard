@@ -34,4 +34,9 @@ export interface Acceptance {
 export interface AcceptanceHistory {
   /** Acceptances reachable from HEAD, newest first, optionally from a `YYYY-MM-DD` date on. */
   read(root: string, since: string | null): Promise<readonly Acceptance[]>;
+  /**
+   * `Railguard-Justify` trailers reachable from HEAD, newest first: findings an agent explained
+   * where the policy lets a reason pass them. `kind` is the finding or check kind it names.
+   */
+  justifications(root: string, since: string | null): Promise<readonly Acceptance[]>;
 }

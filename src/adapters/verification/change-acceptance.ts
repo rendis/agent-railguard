@@ -1,5 +1,5 @@
 import { pendingSuffix } from "../../domain/verification/acceptance.js";
-import { parseAllowances, parseRequests } from "../../domain/verification/change-guard.js";
+import { parseAllowances, parseJustifications, parseRequests } from "../../domain/verification/change-guard.js";
 import {
   changesAt,
   type ChangeSet,
@@ -18,6 +18,9 @@ import {
  * - A `Railguard-Request: <check-kind>: <reason>` trailer, which an agent may write, asks a person
  *   to accept what is still failing. It accepts nothing: the check ends `pending`, which does not
  *   block locally and which CI resolves with the pull request's approval.
+ * - A `Railguard-Justify: <kind>: <reason>` trailer, which an agent may write, explains a finding
+ *   that the check's policy lets pass once justified. The check reads those trailers from the same
+ *   commits and shows each reason; it decides which findings they cover.
  */
 export class ChangeAcceptance {
   public constructor(
@@ -28,16 +31,16 @@ export class ChangeAcceptance {
   public async judge(
     request: CheckRequest,
     kind: string,
-    judge: (scope: ChangeSet) => Promise<CheckOutcome>,
+    judge: (scope: ChangeSet, justified: ReadonlyMap<string, string>) => Promise<CheckOutcome>,
   ): Promise<CheckOutcome> {
     const trailers = await this.#trailers(request.repositoryRoot, request.changes.base);
     const accepted = trailers.allowed.get(kind) ?? null;
     let outcome: CheckOutcome;
     if (accepted === null) {
-      outcome = await judge(request.changes);
+      outcome = await judge(request.changes, trailers.justified);
     } else {
       const since = await this.changeSets.read(request.repositoryRoot, accepted.commit, { staged: request.changes.staged });
-      const judged = await judge(changesAt(since, request.paths));
+      const judged = await judge(changesAt(since, request.paths), trailers.justified);
       const label = `since ${accepted.commit.slice(0, 12)} (accepted: ${accepted.reason})`;
       outcome = { ...judged, summary: `${judged.summary} ${label}` };
     }
@@ -49,6 +52,7 @@ export class ChangeAcceptance {
       summary: `${outcome.summary}${pendingSuffix}`,
       details: outcome.details,
       requested,
+      ...(outcome.findings === undefined ? {} : { findings: outcome.findings }),
     };
   }
 
@@ -58,20 +62,23 @@ export class ChangeAcceptance {
   ): Promise<{
     readonly allowed: ReadonlyMap<string, { readonly commit: string; readonly reason: string }>;
     readonly requested: ReadonlyMap<string, string>;
+    readonly justified: ReadonlyMap<string, string>;
   }> {
     const allowed = new Map<string, { readonly commit: string; readonly reason: string }>();
     const requested = new Map<string, string>();
-    if (base === null) return { allowed, requested };
+    const justified = new Map<string, string>();
+    if (base === null) return { allowed, requested, justified };
     const log = await this.process.run("git", ["log", "--format=%H%x1f%B%x1e", `${base}..HEAD`], { cwd: root, timeoutMs: 60_000 });
-    if (log.exitCode !== 0) return { allowed, requested };
+    if (log.exitCode !== 0) return { allowed, requested, justified };
     // Newest first: the latest trailer of a kind decides.
     for (const entry of log.stdout.split("\x1e")) {
       const [commit, message] = entry.trim().split("\x1f");
       if (commit === undefined || message === undefined) continue;
       for (const [kind, reason] of parseAllowances(message)) if (!allowed.has(kind)) allowed.set(kind, { commit, reason });
       for (const [kind, reason] of parseRequests(message)) if (!requested.has(kind)) requested.set(kind, reason);
+      for (const [kind, reason] of parseJustifications(message)) if (!justified.has(kind)) justified.set(kind, reason);
     }
-    return { allowed, requested };
+    return { allowed, requested, justified };
   }
 }
 

@@ -81,6 +81,9 @@
               "ref": {
                 "$ref": "#/$defs/componentRef"
               },
+              "disabled": {
+                "type": "boolean"
+              },
               "inputs": {
                 "type": "object",
                 "propertyNames": {

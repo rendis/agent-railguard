@@ -670,6 +670,15 @@ export function parseRequests(messages: string): ReadonlyMap<string, string> {
   return parseTrailers("Railguard-Request", messages);
 }
 
+/**
+ * `Railguard-Justify: <kind>: <reason>` trailers from commit messages. An agent may write one to
+ * explain a finding whose `finding_policy` level is `justify`; `<kind>` is that finding's kind, such
+ * as `test-deleted`, or its check kind to cover every such finding of the check.
+ */
+export function parseJustifications(messages: string): ReadonlyMap<string, string> {
+  return parseTrailers("Railguard-Justify", messages);
+}
+
 /** Trailer lines `<label>: <check-kind>: <reason>`; the last one of a kind in a message wins. */
 function parseTrailers(label: string, messages: string): ReadonlyMap<string, string> {
   const trailers = new Map<string, string>();

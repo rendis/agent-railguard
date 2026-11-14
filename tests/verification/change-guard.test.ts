@@ -440,7 +440,7 @@ describe("ChangeCheckProvider", () => {
     expect(outcome).toMatchObject({ status: "passed", summary: "No suppression, removed test or protected configuration change" });
   });
 
-  it("reports a test renamed in place by default and blocks it when the policy says so", async () => {
+  it("reports a test renamed in place when the policy reports it and blocks it when the policy says so", async () => {
     const { root, git } = await repository({
       "a.test.ts": "it('adds', f)\nit('rounds down', f)\nit('subtracts', f)\n",
     });
@@ -449,15 +449,67 @@ describe("ChangeCheckProvider", () => {
 
     expect(await provider().run("change-integrity", await request(root))).toMatchObject({
       status: "passed",
-      summary: "1 change(s) reported, none blocking",
+      summary: "1 change(s) reported or justified, none blocking",
       details: ["a.test.ts: test rounds down renamed to rounds half up (reported: test-renamed=report)"],
     });
     // Relaxing another kind keeps the default of this one.
     expect(await provider().run("change-integrity", await request(root, { finding_policy: ["test-removed=report"] })))
-      .toMatchObject({ status: "passed", summary: "1 change(s) reported, none blocking" });
+      .toMatchObject({ status: "passed", summary: "1 change(s) reported or justified, none blocking" });
     const blocked = await provider().run("change-integrity", await request(root, { finding_policy: ["test-renamed=block"] }));
     expect(blocked.status).toBe("failed");
     expect(blocked.details[0]).toBe("a.test.ts: test rounds down renamed to rounds half up");
+  });
+
+  it("passes the test findings of the default policy once the branch justifies them, and blocks them until then", async () => {
+    const { root, git } = await repository({
+      "a.go": "package a\n",
+      "a_test.go": "package a\n\nfunc TestA(t *testing.T) {}\nfunc TestB(t *testing.T) {}\n",
+      "old_test.go": "package a\n\nfunc TestOld(t *testing.T) {}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "a_test.go"), "package a\n\nfunc TestA(t *testing.T) {}\n");
+    await rm(join(root, "old_test.go"));
+    const judge = async () => await provider().run("change-integrity", await request(root, {}, false, { defaultPolicy: true }));
+
+    const unjustified = await judge();
+    expect(unjustified.status).toBe("failed");
+    expect(unjustified.details).toEqual([
+      "old_test.go: test file deleted (test-deleted: needs a justification)",
+      "a_test.go: test TestB removed (test-removed: needs a justification)",
+      expect.stringContaining('-m "Railguard-Justify: change-integrity: <why this is right>"'),
+      "Fix the cause instead of weakening the checks.",
+      expect.stringContaining("Railguard-Request"),
+    ]);
+    expect(unjustified.findings).toEqual([
+      "test-deleted\u0000old_test.go: test file deleted",
+      "test-removed\u0000a_test.go: test TestB removed",
+    ]);
+
+    await git("commit", "-q", "--allow-empty", "-m", "chore: justify\n\nRailguard-Justify: test-deleted: the old behavior went with #41");
+    const partly = await judge();
+    expect(partly.status).toBe("failed");
+    expect(partly.details.slice(0, 2)).toEqual([
+      "a_test.go: test TestB removed (test-removed: needs a justification)",
+      "old_test.go: test file deleted (justified: the old behavior went with #41)",
+    ]);
+
+    await git("commit", "-q", "--allow-empty", "-m", "chore: justify\n\nRailguard-Justify: change-integrity: TestB moved to the e2e suite");
+    expect(await judge()).toMatchObject({
+      status: "passed",
+      summary: "2 change(s) reported or justified, none blocking",
+      details: [
+        "old_test.go: test file deleted (justified: the old behavior went with #41)",
+        "a_test.go: test TestB removed (justified: TestB moved to the e2e suite)",
+      ],
+    });
+
+    // A suppression blocks by default, and a protected configuration always does, justified or not.
+    await writeFile(join(root, "a.go"), "package a\n\nfunc A() {} //nolint:all\n");
+    const suppressed = await judge();
+    expect(suppressed.status).toBe("failed");
+    expect(suppressed.details[0]).toBe("a.go:3: lint suppression: func A() {} //nolint:all");
+    const justifiable = await provider().run("change-integrity", await request(root, { finding_policy: ["suppression=justify"] }, false, { defaultPolicy: true }));
+    expect(justifiable.status).toBe("passed");
   });
 
   it("reports the relaxed kinds of finding and still blocks a protected configuration", async () => {
@@ -691,6 +743,23 @@ describe("ChangeCheckProvider", () => {
     expect(over).toMatchObject({ status: "failed", details: ["b.go: 5", expect.stringContaining("Split the change"), expect.stringContaining("Railguard-Request")] });
   });
 
+  it("leaves data files out of the size by default and counts them when the project opts back in", async () => {
+    const { root, git } = await repository({ "a.go": "package a\n" });
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "b.go"), "x\n".repeat(3));
+    await mkdir(join(root, "training"));
+    await writeFile(join(root, "training", "phrases.jsonl"), "{}\n".repeat(50));
+    await writeFile(join(root, "training", "labels.csv"), "a,b\n".repeat(50));
+    const data = ["*.jsonl", "*.csv", "*.tsv", "*.parquet"];
+
+    const excluded = await provider().run("change-size", await request(root, { max_changed_lines: ["5"], size_excluded_data: data }));
+    const counted = await provider().run("change-size", await request(root, { max_changed_lines: ["5"], size_excluded_data: ["none"] }));
+
+    expect(excluded).toMatchObject({ status: "passed", summary: "3 changed line(s) outside tests, within 5" });
+    expect(counted).toMatchObject({ status: "failed", details: ["training/labels.csv: 50", "training/phrases.jsonl: 50", "b.go: 3", expect.any(String), expect.any(String)] });
+    expect(counted.findings).toEqual(["change-size\u0000b.go", "change-size\u0000training/labels.csv", "change-size\u0000training/phrases.jsonl"]);
+  });
+
   it("counts every new text file however large and skips only binary files", async () => {
     const { root, git } = await repository({ "a.go": "package a\n" });
     await git("checkout", "-q", "-b", "feature");
@@ -718,16 +787,24 @@ function provider(): ChangeCheckProvider {
   return new ChangeCheckProvider(process, changeSets);
 }
 
+/**
+ * The heuristic tests judge how each finding is classified, so they block or report each kind
+ * explicitly instead of relying on the default policy, which `justify` tests cover.
+ */
+const classifyingPolicy = ["test-deleted=block", "test-removed=block", "test-renamed=report", "test-obsolete=report"];
+
 async function request(
   root: string,
   inputs: Record<string, readonly string[]> = {},
   staged = false,
+  options: { readonly defaultPolicy?: boolean } = {},
 ): Promise<CheckRequest> {
+  const policy = options.defaultPolicy === true ? inputs.finding_policy ?? [] : [...classifyingPolicy, ...(inputs.finding_policy ?? [])];
   return {
     repositoryRoot: root,
     unitRoot: ".",
     params: {},
-    inputs: { protected_paths: [".golangci.*"], size_excluded_paths: ["go.sum"], ...inputs },
+    inputs: { protected_paths: [".golangci.*"], size_excluded_paths: ["go.sum"], ...inputs, finding_policy: policy },
     changes: await changeSets.read(root, undefined, { staged }),
   };
 }

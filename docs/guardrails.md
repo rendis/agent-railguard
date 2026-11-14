@@ -124,33 +124,56 @@ obsolete when every test it had is. Any other test a file loses is reported as r
 assertions, empty body) is not detected; that is measured by each stack's coverage and
 mutation testing.
 
-`finding_policy` decides, per kind of finding, whether it blocks or is only reported
-([D-034](decisions.md#d-034--renamed-and-obsolete-tests-are-reported-and-each-project-sets-what-blocks)).
-A reported finding is listed in the check's result, which passes:
+`finding_policy` decides, per kind of finding, whether it blocks, passes once justified, or is
+only reported
+([D-034](decisions.md#d-034--renamed-and-obsolete-tests-are-reported-and-each-project-sets-what-blocks),
+[D-035](decisions.md#d-035--test-findings-pass-with-a-reason-and-an-approval-follows-its-findings)):
+
+- `block` fails the check until a person accepts the finding.
+- `justify` fails the check until a commit of the branch explains it with a
+  `Railguard-Justify: <kind>: <reason>` trailer, which an agent may write. `<kind>` is the finding's
+  kind, or `change-integrity` to cover every justifiable finding of the branch. The check then
+  passes and lists the finding with `(justified: <reason>)`, and `railguard report` records each
+  reason. Without the trailer the failure prints the exact commit to make.
+- `report` lists the finding and the check passes.
 
 | Kind | What it is | Default |
 | --- | --- | --- |
 | `suppression` | a suppression marker on a changed line | `block` |
-| `test-deleted` | a test file deleted | `block` |
-| `test-removed` | a test declaration removed from a file that still exists | `block` |
-| `test-renamed` | a test renamed in place | `report` |
-| `test-obsolete` | a test removed, or a test file deleted, with the code it tested | `report` |
+| `test-deleted` | a test file deleted | `justify` |
+| `test-removed` | a test declaration removed from a file that still exists | `justify` |
+| `test-renamed` | a test renamed in place, or moved to another changed test file | `justify` |
+| `test-obsolete` | a test removed, or a test file deleted, with the code it tested | `justify` |
+
+A suppression keeps blocking by default: it silences a check on code that stays, where a deleted
+test leaves with its behavior. A project may still set `suppression=justify`.
+
+```bash
+git commit --allow-empty -m "chore: justify test-deleted" \
+  -m "Railguard-Justify: test-deleted: the export feature and its tests went with #41"
+```
+
+Like a request, the justification goes into an empty commit before the change, because a commit is
+checked before its message exists.
 
 A changed or deleted protected configuration, and a file too large to scan, always block.
 The policy lives in `.railguard/project.yaml`, itself a protected path, so only a person
 can relax it. Each entry changes the default of its kind only:
 `--set 'verification-profile:change-guard.finding_policy=["test-renamed=block","test-obsolete=block"]'`
-blocks every test change, and `["test-removed=report"]` suits a prototype where tests come
-and go while renamed and obsolete tests stay reported.
+blocks every test change, `["test-removed=report"]` suits a prototype where tests come and go,
+and `["test-deleted=block","test-removed=block"]` asks a person again for every lost test.
 
-`railguard report` lists each accepted trailer and the agent hook activity, to see which
+`railguard report` lists each accepted trailer, each justification and the agent hook activity, to see which
 rules actually block and which are only accepted out of habit
 ([CLI](cli.md#activity-report)).
 
 Documentation (`**/*.md`, `docs/**`), tests, generated code, lockfiles and harness
 configuration do not count toward `max_changed_lines`
 ([D-033](decisions.md#d-033--documentation-does-not-count-toward-the-size-limit)); override
-`size_excluded_paths` to count them.
+`size_excluded_paths` to count them. Data files (`*.jsonl`, `*.csv`, `*.tsv`, `*.parquet`), such as
+fixtures or training sets, do not count either: they are listed in their own input,
+`size_excluded_data`, so a project that overrides `size_excluded_paths` keeps them out. Set
+`size_excluded_data: ["none"]` to count them, or list the data globs that should stay out.
 
 ## Accepting a finding
 
@@ -177,7 +200,8 @@ Only a person decides that a finding is acceptable, and the person should not ne
    change-integrity, change-size and secret-exposure checks on the pull request's diff and reads its
    reviews through the GitHub API ([CLI](cli.md#gate-a-pull-request),
    [CI setup](installation.md#railguard-and-ci)). A pending finding passes when one of the
-   `approvers` approved the pull request's head commit, and fails otherwise, naming who is awaited.
+   `approvers` approved the pull request's head commit, or an earlier commit with the same findings
+   ([below](#an-approval-follows-the-findings)), and fails otherwise, naming who is awaited.
    The gate re-runs when the review is submitted, so approving the pull request turns it green.
    A finding with no request fails whatever the reviews say, and a person's `Railguard-Allow`
    trailer keeps working.
@@ -199,12 +223,31 @@ missed:
 
 | Rule | Why |
 | --- | --- |
-| Given on the pull request's **current head commit** | The person saw exactly this change. A later commit makes every earlier approval stale; approve again. |
+| Given on the pull request's **current head commit**, or on an earlier commit whose findings include all of the head's | The person accepted these findings. A rebase or an unrelated fix keeps the approval; a new or different finding needs a new one. |
 | By a configured approver (GitHub login, any case) | Anyone can review; only the owner's decision accepts. |
 | Not by the pull request's author | A change cannot accept itself. |
 | Not by a bot (`type: Bot` or a `[bot]` login) | An agent's own app can never accept for the person. |
 | It is the reviewer's latest review that is more than a comment | A later "changes requested" or a dismissal withdraws it. |
 | Read from the target branch's `project.yaml` | The pull request cannot add itself as an approver. |
+
+### An approval follows the findings
+
+A rebase, a fix of a review comment or a commit that removes a finding gives the pull request a
+new head, and the approval was given on an older one. The gate then checks out the approved commit
+in a temporary worktree (fetching it from `origin` by its id when a force push left the clone
+without it), runs the same check there and compares the findings by a stable key, free of line
+numbers and commit ids:
+
+| Check | A finding's key |
+| --- | --- |
+| `change-integrity` | its kind with the path and test name (`test-deleted`, `test-removed`, …), the marker and its line text (`suppression`), or the path and the SHA-256 of its new content (protected configuration) |
+| `change-size` | each counted file's path: more lines in the same files keep the approval, a new counted file does not |
+| `secret-exposure` | none: a secret finding always needs an approval of the head |
+
+When every finding of the head is also a finding of the approved commit, the approval counts and
+the result says on which commit it was given. Otherwise the report names the findings the approved
+commit did not have, and a person approves again. An approved commit that cannot be checked out
+counts as no approval.
 
 Approvals come only from GitHub's API: a commit message, a comment or any file of the checkout
 cannot stand for one. See [D-031](decisions.md#d-031--an-agent-requests-a-person-accepts-by-approving-the-pull-request)

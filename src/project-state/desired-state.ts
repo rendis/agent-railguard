@@ -26,6 +26,7 @@ import { lazyValidator } from "../shared/schema-validator.js";
 export interface DesiredSelectionDraft {
   readonly ref: string;
   readonly inputs?: Readonly<Record<string, unknown>>;
+  readonly disabled?: boolean;
 }
 
 export type DesiredStateInput =
@@ -39,6 +40,22 @@ export type DesiredStateInput =
 export interface DesiredSelection {
   readonly ref: ComponentRef;
   readonly inputs: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The project turns this component off: a pack that includes it no longer brings it in. It is
+   * not installed, and it has no inputs.
+   */
+  readonly disabled?: true;
+}
+
+/** The refs a project selects directly and the ones it disables, for the resolver. */
+export function selectionRefs(selections: readonly { readonly ref: string; readonly disabled?: boolean }[]): {
+  readonly direct: readonly ComponentRef[];
+  readonly disabled: readonly ComponentRef[];
+} {
+  return {
+    direct: selections.filter((selection) => selection.disabled !== true).map((selection) => selection.ref as ComponentRef),
+    disabled: selections.filter((selection) => selection.disabled === true).map((selection) => selection.ref as ComponentRef),
+  };
 }
 
 export interface DesiredState {
@@ -101,6 +118,14 @@ export class DesiredStateModule {
       const component = components.get(ref);
       if (component === undefined) {
         diagnostics.push(projectDiagnostic("project-state.component-unknown", `Component ${ref} is not present in this catalog.`, [ref], [ref]));
+        continue;
+      }
+      if (candidate.disabled === true) {
+        if (candidate.inputs !== undefined && Object.keys(candidate.inputs).length > 0) {
+          diagnostics.push(projectDiagnostic("project-state.disabled-inputs", `Component ${ref} is disabled, so it takes no inputs.`, [ref], [ref]));
+          continue;
+        }
+        selections.push(Object.freeze({ ref, inputs: Object.freeze({}), disabled: true as const }));
         continue;
       }
       const definitions = component.kind === "verification-profile" ? component.inputs : [];
@@ -200,6 +225,7 @@ function render(state: DesiredState): string {
   lines.push("selections:");
   for (const selection of state.selections) {
     lines.push(`  - ref: ${selection.ref}`);
+    if (selection.disabled === true) lines.push("    disabled: true");
     const inputs = Object.entries(selection.inputs);
     if (inputs.length > 0) {
       lines.push("    inputs:");

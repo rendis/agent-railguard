@@ -88,6 +88,8 @@ export type RemoveRequest =
 export interface ComponentSelectionDraft {
   readonly ref: ComponentRef;
   readonly inputs?: Readonly<Record<string, readonly string[]>>;
+  /** The project turns off a component that a pack would include. */
+  readonly disabled?: boolean;
 }
 
 export interface DoctorCheck {
@@ -111,6 +113,8 @@ export interface RailguardCases {
     scan: ScanResult,
     directSelections: readonly ComponentRef[],
     targets: readonly HarnessTargetId[],
+    /** Components the project disabled, which a pack's inclusion does not bring in. */
+    disabled?: readonly ComponentRef[],
   ): ResolutionResult;
   prepareInstall(
     scan: ScanResult,

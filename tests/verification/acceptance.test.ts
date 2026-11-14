@@ -4,7 +4,7 @@ import {
   type PullRequestReview,
   type PullRequestState,
 } from "../../src/domain/verification/acceptance.js";
-import { parseAllowances, parseRequests } from "../../src/domain/verification/change-guard.js";
+import { parseAllowances, parseJustifications, parseRequests } from "../../src/domain/verification/change-guard.js";
 
 const head = "a".repeat(40);
 const older = "b".repeat(40);
@@ -19,22 +19,24 @@ function pullRequest(reviews: readonly PullRequestReview[], author = "baby-team-
 
 describe("approval of a pull request", () => {
   it("counts an approval by a configured approver on the head commit", () => {
-    expect(assessApproval(pullRequest([review("rendis", "APPROVED")]), ["rendis"])).toEqual({ approvedBy: "rendis", notes: [] });
+    expect(assessApproval(pullRequest([review("rendis", "APPROVED")]), ["rendis"])).toEqual({ approvedBy: "rendis", earlier: [], notes: [] });
   });
 
   it("matches logins regardless of case", () => {
     expect(assessApproval(pullRequest([review("Rendis", "APPROVED")]), ["rendis"]).approvedBy).toBe("Rendis");
   });
 
-  it("does not count an approval given on an earlier commit and says why", () => {
+  it("returns an approval given on an earlier commit apart, for its findings to be compared", () => {
     const result = assessApproval(pullRequest([review("rendis", "APPROVED", older)]), ["rendis"]);
 
-    expect(result.approvedBy).toBeNull();
-    expect(result.notes).toEqual([expect.stringContaining(`${older.slice(0, 12)}, not on the current head ${head.slice(0, 12)}`)]);
+    expect(result).toEqual({ approvedBy: null, earlier: [{ login: "rendis", commit: older }], notes: [] });
   });
 
   it("does not count an approval without a commit", () => {
-    expect(assessApproval(pullRequest([review("rendis", "APPROVED", null)]), ["rendis"]).approvedBy).toBeNull();
+    const result = assessApproval(pullRequest([review("rendis", "APPROVED", null)]), ["rendis"]);
+
+    expect(result).toMatchObject({ approvedBy: null, earlier: [] });
+    expect(result.notes).toEqual([expect.stringContaining("names no commit")]);
   });
 
   it("never counts the author of the pull request", () => {
@@ -80,7 +82,8 @@ describe("approval of a pull request", () => {
     );
 
     expect(result.approvedBy).toBe("rendis");
-    expect(result.notes).toHaveLength(2);
+    expect(result.notes).toHaveLength(1);
+    expect(result.earlier).toEqual([{ login: "old", commit: older }]);
   });
 });
 
@@ -95,6 +98,17 @@ describe("acceptance trailers", () => {
     const message = "Railguard-Request: change-size: reviewed\nRailguard-Allow: secret-exposure: example key";
 
     expect(parseRequests(message)).toEqual(new Map([["change-size", "reviewed"]]));
+    expect(parseJustifications(message)).toEqual(new Map());
     expect(parseAllowances(message)).toEqual(new Map([["secret-exposure", "example key"]]));
+  });
+
+  it("reads justifications, which an agent may write, by finding or check kind", () => {
+    const message = "chore: justify\n\nRailguard-Justify: test-deleted: the feature went with #41\nRailguard-Justify: change-integrity: tests moved\nRailguard-Justify: test-removed:";
+
+    expect(parseJustifications(message)).toEqual(new Map([
+      ["test-deleted", "the feature went with #41"],
+      ["change-integrity", "tests moved"],
+    ]));
+    expect(parseRequests(message)).toEqual(new Map());
   });
 });

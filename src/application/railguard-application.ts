@@ -27,6 +27,8 @@ import type {
 } from "../domain/transaction/model.js";
 import {
   DesiredStateModule,
+  selectionRefs,
+  type DesiredSelection,
   type DesiredSelectionDraft,
 } from "../project-state/desired-state.js";
 import type { ProjectStateReader } from "../project-state/store.js";
@@ -169,7 +171,7 @@ export class RailguardApplication implements RailguardCases {
           catalogResult.catalog,
           assessment,
           harnesses,
-          desired.state.selections.map((selection) => selection.ref),
+          selectionRefs(desired.state.selections),
           desired.state.targets,
         );
     const observed = lock === null
@@ -219,6 +221,7 @@ export class RailguardApplication implements RailguardCases {
     scan: ScanResult,
     directSelections: readonly ComponentRef[],
     targets: readonly HarnessTargetId[],
+    disabled: readonly ComponentRef[] = [],
   ) {
     const ready = requireReadyScan(scan);
     this.#emit("resolve", "graph", "started", "Resolving desired component graph");
@@ -226,7 +229,7 @@ export class RailguardApplication implements RailguardCases {
       ready.catalog,
       ready.assessment,
       ready.harnesses,
-      directSelections,
+      { direct: directSelections, disabled },
       targets,
     );
     this.#emit(
@@ -314,7 +317,7 @@ export class RailguardApplication implements RailguardCases {
     const unknown = [...requested].filter((ref) => !currentRefs.has(ref)).sort(compareUtf8);
     const remaining: DesiredSelectionDraft[] = currentSelections
       .filter((selection) => !requested.has(selection.ref))
-      .map((selection) => ({ ref: selection.ref, inputs: selection.inputs }));
+      .map((selection) => selectionDraft(selection));
     const preparation = await this.#prepare(
       ready,
       remaining,
@@ -479,8 +482,8 @@ export class RailguardApplication implements RailguardCases {
   ): Promise<InstallPreparation> {
     const ready = requireReadyScan(scan);
     const canonicalTargetIds = canonicalTargets(targets);
-    const directSelections = selections.map((selection) => selection.ref as ComponentRef);
-    const resolution = this.resolve(ready, directSelections, canonicalTargetIds);
+    const refs = selectionRefs(selections);
+    const resolution = this.resolve(ready, refs.direct, canonicalTargetIds, refs.disabled);
     const desiredResult = uninitialize
       ? null
       : this.#desiredState.evaluate(
@@ -601,7 +604,7 @@ export class RailguardApplication implements RailguardCases {
     catalog: ReadyScanResult["catalog"],
     assessment: ReadyScanResult["assessment"],
     harnesses: readonly HarnessInspection[],
-    directSelections: readonly ComponentRef[],
+    selections: { readonly direct: readonly ComponentRef[]; readonly disabled: readonly ComponentRef[] },
     targets: readonly HarnessTargetId[],
   ) {
     const targetFacts = canonicalTargets(targets).map((target) => {
@@ -613,7 +616,8 @@ export class RailguardApplication implements RailguardCases {
     });
     return this.#resolver.resolve({
       catalog,
-      directSelections,
+      directSelections: selections.direct,
+      disabled: selections.disabled,
       projectUnits: assessment.projectUnits,
       targets: targetFacts,
     });
@@ -697,9 +701,7 @@ function removeSelectionDiagnostic(ref: ComponentRef): Diagnostic {
 
 function currentSelections(scan: ReadyScanResult): readonly DesiredSelectionDraft[] {
   return Object.freeze(
-    scan.desired?.state.selections.map((selection) =>
-      Object.freeze({ ref: selection.ref, inputs: selection.inputs }),
-    ) ?? [],
+    scan.desired?.state.selections.map((selection) => Object.freeze(selectionDraft(selection))) ?? [],
   );
 }
 
@@ -724,4 +726,8 @@ function blockedUninitializedPreparation(
     plan: null,
     diagnostics: Object.freeze([diagnostic]),
   });
+}
+
+function selectionDraft(selection: DesiredSelection): DesiredSelectionDraft {
+  return selection.disabled === true ? { ref: selection.ref, disabled: true } : { ref: selection.ref, inputs: selection.inputs };
 }

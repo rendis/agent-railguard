@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeChangeSetReader } from "../../src/adapters/platform/git/node-change-set-reader.js";
+import { NodeRevisionCheckouts } from "../../src/adapters/platform/git/node-revision-checkouts.js";
 import { NodeProcessRunner } from "../../src/adapters/platform/process/node-process-runner.js";
 import { ChangeCheckProvider } from "../../src/adapters/verification/change-check-provider.js";
 import type { ScanResult } from "../../src/application/model.js";
@@ -48,7 +49,11 @@ describe("acceptance by pull request approval", () => {
     expect(report.results[0]?.outcome).toMatchObject({
       status: "pending",
       requested: "covered by the e2e suite",
-      details: ["a_test.go: test file deleted", "Fix the cause instead of weakening the checks."],
+      details: [
+        "a_test.go: test file deleted (test-deleted: needs a justification)",
+        expect.stringContaining("Railguard-Justify: test-deleted: <why this is right>"),
+        "Fix the cause instead of weakening the checks.",
+      ],
     });
   });
 
@@ -89,6 +94,87 @@ describe("acceptance by pull request approval", () => {
     expect(report.results[0]?.outcome).toMatchObject({ status: "failed" });
     expect(report.results[0]?.outcome.summary).toContain("awaiting approval (requested: covered by the e2e suite)");
     expect(report.results[0]?.outcome.details.at(-1)).toContain("@rendis");
+  });
+
+  it("passes a justified finding without any approval, showing its reason", async () => {
+    const { service } = await scenario({ request: false, justify: "test-deleted", reviews: () => [] });
+
+    const local = await service.run({ root: scenarioRoot(), stage: "check", changed: true });
+    const gate = await service.run({ root: scenarioRoot(), stage: "verify", changed: true, pullRequest: 7 });
+
+    expect(local.verdict).toBe("passed");
+    expect(gate.verdict).toBe("passed");
+    expect(gate.results[0]?.outcome.details).toEqual(["a_test.go: test file deleted (justified: the feature went with its code)"]);
+  });
+
+  it("fails a justifiable finding without a justification and says how to give one", async () => {
+    const { service } = await scenario({ request: false, reviews: () => [] });
+
+    const gate = await service.run({ root: scenarioRoot(), stage: "verify", changed: true, pullRequest: 7 });
+
+    expect(gate.verdict).toBe("failed");
+    expect(gate.results[0]?.outcome.details.join("\n")).toContain('-m "Railguard-Justify: test-deleted: <why this is right>"');
+  });
+
+  it("does not let a justification of another kind cover the finding", async () => {
+    const { service } = await scenario({ request: false, justify: "test-removed", reviews: () => [] });
+
+    expect((await service.run({ root: scenarioRoot(), stage: "check", changed: true })).verdict).toBe("failed");
+  });
+
+  it("keeps an approval across a rebase that leaves the findings as they were", async () => {
+    const { service, head, approved } = await scenario({
+      request: true,
+      reviews: (_head, approved) => [approval("rendis", approved)],
+      afterApproval: async (git) => {
+        await git("checkout", "-q", "main");
+        await writeFile(join(scenarioRoot(), "b.go"), "package a\n\nfunc B() {}\n");
+        await git("add", "b.go");
+        await git("commit", "-qm", "feat: unrelated work on main");
+        await git("checkout", "-q", "feature");
+        await git("rebase", "-q", "main");
+      },
+    });
+
+    const report = await service.run({ root: scenarioRoot(), stage: "verify", changed: true, pullRequest: 7 });
+
+    expect(approved).not.toBe(head);
+    expect(report.verdict).toBe("passed");
+    expect(report.results[0]?.outcome.summary).toContain(`accepted by the approval of rendis on ${approved.slice(0, 12)}, whose findings include every finding of ${head.slice(0, 12)}`);
+    expect(report.pullRequest).toMatchObject({ approvedBy: "rendis", notes: [] });
+  });
+
+  it("keeps an approval when a later commit removes a finding", async () => {
+    const { service } = await scenario({
+      request: true,
+      extraTest: true,
+      reviews: (_head, approved) => [approval("rendis", approved)],
+      afterApproval: async (git) => {
+        await writeFile(join(scenarioRoot(), "b_test.go"), testFile.replace("TestA", "TestB"));
+        await git("add", "b_test.go");
+        await git("commit", "-qm", "test: keep the second test");
+      },
+    });
+
+    expect((await service.run({ root: scenarioRoot(), stage: "verify", changed: true, pullRequest: 7 })).verdict).toBe("passed");
+  });
+
+  it("needs a new approval for a finding the approved commit did not have", async () => {
+    const { service, approved } = await scenario({
+      request: true,
+      reviews: (_head, approved) => [approval("rendis", approved)],
+      afterApproval: async (git) => {
+        await writeFile(join(scenarioRoot(), "a.go"), "package a\n\nfunc A() {} //nolint:all\n");
+        await git("commit", "-qam", "fix: silence the linter");
+      },
+    });
+
+    const report = await service.run({ root: scenarioRoot(), stage: "verify", changed: true, pullRequest: 7 });
+
+    expect(report.verdict).toBe("failed");
+    expect(report.pullRequest?.notes).toEqual([
+      expect.stringContaining(`The approval of rendis on ${approved.slice(0, 12)} does not cover 1 finding(s) of integrity that ${approved.slice(0, 12)} did not have (suppression: a.go: lint suppression: func A() {} //nolint:all): approve again`),
+    ]);
   });
 
   it("does not count an approval given before a later commit and says to approve again", async () => {
@@ -192,9 +278,15 @@ function approval(login: string, commit: string): PullRequestReview {
 
 interface ScenarioOptions {
   readonly request: boolean;
+  /** Writes a `Railguard-Justify` trailer of this kind before the change. */
+  readonly justify?: string;
+  /** The base also holds b_test.go, which the change deletes too. */
+  readonly extraTest?: boolean;
+  /** Runs after the commit the reviews approve, which then is no longer the head. */
+  readonly afterApproval?: (git: (...args: string[]) => Promise<unknown>) => Promise<void>;
   readonly kind?: string;
   readonly allow?: boolean;
-  readonly reviews?: (head: string) => readonly PullRequestReview[];
+  readonly reviews?: (head: string, approved: string) => readonly PullRequestReview[];
   readonly author?: string;
   readonly baseProject?: string;
   readonly branchProject?: string;
@@ -204,10 +296,11 @@ interface ScenarioOptions {
 }
 
 /** A branch that deletes a test file, optionally preceded by a request commit, judged as a pull request. */
-async function scenario(options: ScenarioOptions): Promise<{ service: VerificationService; head: string }> {
+async function scenario(options: ScenarioOptions): Promise<{ service: VerificationService; head: string; approved: string }> {
   const temporary = await createTempRepository({
     "a.go": "package a\n",
     "a_test.go": testFile,
+    ...(options.extraTest === true ? { "b_test.go": testFile.replace("TestA", "TestB") } : {}),
     ".railguard/project.yaml": options.baseProject ?? project(["rendis"]),
   });
   cleanups.push(temporary.cleanup);
@@ -224,7 +317,11 @@ async function scenario(options: ScenarioOptions): Promise<{ service: Verificati
     const kind = options.kind ?? "change-integrity";
     await git("commit", "-q", "--allow-empty", "-m", `chore: request acceptance\n\nRailguard-Request: ${kind}: covered by the e2e suite`);
   }
+  if (options.justify !== undefined) {
+    await git("commit", "-q", "--allow-empty", "-m", `chore: justify\n\nRailguard-Justify: ${options.justify}: the feature went with its code`);
+  }
   await rm(join(root, "a_test.go"));
+  if (options.extraTest === true) await rm(join(root, "b_test.go"));
   if (options.branchProject !== undefined) {
     await mkdir(join(root, ".railguard"), { recursive: true });
     await writeFile(join(root, ".railguard/project.yaml"), options.branchProject);
@@ -232,6 +329,8 @@ async function scenario(options: ScenarioOptions): Promise<{ service: Verificati
   const trailer = options.allow === true ? "\n\nRailguard-Allow: change-integrity: a person accepted it" : "";
   await git("add", "-A");
   await git("commit", "-qm", `test: drop the unit test${trailer}`);
+  const approved = (await git("rev-parse", "HEAD")).stdout.trim();
+  await options.afterApproval?.(git);
   const head = (await git("rev-parse", "HEAD")).stdout.trim();
 
   const catalog = await loadCatalog();
@@ -251,7 +350,7 @@ async function scenario(options: ScenarioOptions): Promise<{ service: Verificati
         number: 7,
         author: options.author ?? "baby-team-agent[bot]",
         head,
-        reviews: options.reviews?.(head) ?? [],
+        reviews: options.reviews?.(head, approved) ?? [],
         checkedOut: options.checkedOut ?? head,
       };
     },
@@ -262,8 +361,9 @@ async function scenario(options: ScenarioOptions): Promise<{ service: Verificati
     providers: [new ChangeCheckProvider(runner, changeSets)],
     script: { read: async () => null, step: async () => { throw new Error("no script in this test"); } },
     pullRequests,
+    revisions: new NodeRevisionCheckouts(runner),
   });
-  return { service, head };
+  return { service, head, approved };
 }
 
 async function loadCatalog() {
