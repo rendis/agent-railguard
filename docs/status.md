@@ -5,7 +5,7 @@ guardrails, in [guardrails.md](guardrails.md).
 
 ## Status
 
-- Current release: `v0.1.28`, with binaries for macOS, Linux, and Windows on arm64/x64 and
+- Current release: `v0.1.29`, with binaries for macOS, Linux, and Windows on arm64/x64 and
   `SHA256SUMS`, published by `release.yml` when a new `package.json` version reaches `main`. The `rendis/agent-railguard`
   repository is public: downloads work with `curl` or `wget`, the visual guide is published on
   GitHub Pages, and releases from `v0.1.14` on carry build provenance attestation.
@@ -22,7 +22,8 @@ guardrails, in [guardrails.md](guardrails.md).
   acceptance of a guard finding with a `Railguard-Request` trailer, the finding is `pending`
   locally, and the optional CI job `railguard gate --pull-request` passes it only when a
   configured approver (`approvers` input of `change-guard` and `secret-guard`) approves the pull
-  request's head commit. Not yet exercised on a real GitHub pull request; the engine's tests use a
+  request's head commit, or an earlier commit with the same findings. Test findings pass with an
+  agent's `Railguard-Justify` reason by default ([D-035](decisions.md)). Not yet exercised on a real GitHub pull request; the engine's tests use a
   fake `gh`.
 - Reports: `railguard report` (accepted findings and agent hook activity in the clone),
   `railguard issue bug|improvement`, and `railguard issue --check`.

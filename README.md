@@ -52,7 +52,9 @@ judged: the debt the repository already had blocks nobody.
 Only a person can accept a finding: with a `Railguard-Allow` trailer in a commit they make, or by
 approving the pull request after the agent asked with a `Railguard-Request` trailer (the finding is
 then pending: it does not block the agent, and CI fails until a configured approver approves the
-pull request's head commit). Details in [Quality guardrails](docs/guardrails.md#accepting-a-finding).
+pull request, an approval that survives a rebase while the findings stay the same). A test removed,
+renamed or deleted with its behavior needs only a reason: the agent writes a `Railguard-Justify`
+trailer and the check shows it. Details in [Quality guardrails](docs/guardrails.md#accepting-a-finding).
 
 ## What the agent receives
 

@@ -198,8 +198,9 @@ class DefaultInteractionSession implements InteractionSession {
     const resolution = this.#withTaskScope("resolve", () =>
       this.#application.resolve(
         scan,
-        this.#selections.map((selection) => selection.ref),
+        this.#selections.filter((selection) => selection.disabled !== true).map((selection) => selection.ref),
         this.#targets,
+        this.#selections.filter((selection) => selection.disabled === true).map((selection) => selection.ref),
       ),
     );
     this.#emit({
@@ -218,7 +219,7 @@ class DefaultInteractionSession implements InteractionSession {
     const selections = new Map<ComponentRef, ComponentSelectionDraft>(
       base.map((selection) => [
         selection.ref,
-        { ref: selection.ref, inputs: selection.inputs },
+        selection.disabled === true ? { ref: selection.ref, disabled: true } : { ref: selection.ref, inputs: selection.inputs },
       ]),
     );
     if (action.recommended) {
@@ -234,6 +235,7 @@ class DefaultInteractionSession implements InteractionSession {
     for (const assignment of action.setInputs) {
       // Setting an input selects the component directly, so its value is kept in the project state
       // even when a pack only includes the component; the catalog validates the input.
+      // Configuring a disabled component enables it again.
       const selection = selections.get(assignment.ref) ?? { ref: assignment.ref };
       selections.set(assignment.ref, {
         ref: assignment.ref,
@@ -995,7 +997,9 @@ function canonicalSelections(
           .map(([id, values]) => [id, Object.freeze([...values])]),
       ),
     );
-    return Object.freeze({ ref: selection.ref, inputs });
+    return Object.freeze(selection.disabled === true && Object.keys(inputs).length === 0
+      ? { ref: selection.ref, inputs, disabled: true }
+      : { ref: selection.ref, inputs });
   });
   canonicalized.sort((left, right) => compareUtf8(left.ref, right.ref));
   return Object.freeze(canonicalized);

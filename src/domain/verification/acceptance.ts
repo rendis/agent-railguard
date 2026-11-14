@@ -36,6 +36,12 @@ export interface PullRequestReader {
 export interface ApprovalAssessment {
   /** The acceptor whose approval of the head commit counts, or null. */
   readonly approvedBy: string | null;
+  /**
+   * Acceptors whose latest approval was given on an earlier commit, such as the head before a
+   * rebase. Such an approval still counts for a finding only when the head's findings are the same
+   * as, or fewer than, the ones that commit had.
+   */
+  readonly earlier: readonly { readonly login: string; readonly commit: string }[];
   /** Why other reviews do not count, for the person who has to act. */
   readonly notes: readonly string[];
 }
@@ -43,8 +49,9 @@ export interface ApprovalAssessment {
 /**
  * Whether the pull request carries an approval that accepts findings. Only the latest review of
  * each reviewer speaks for them, except that a plain comment changes nothing. An approval counts
- * only when a configured acceptor gave it on the current head commit and is neither the pull
- * request's author nor a bot: the person approved exactly the change that is being judged.
+ * only when a configured acceptor gave it and is neither the pull request's author nor a bot. One
+ * given on the current head commit accepts the change; one given on an earlier commit is returned
+ * in `earlier`, for the caller to compare the findings of that commit with the head's.
  */
 export function assessApproval(pullRequest: PullRequestState, approvers: readonly string[]): ApprovalAssessment {
   const acceptors = new Set(approvers.map(normalizeLogin));
@@ -55,6 +62,7 @@ export function assessApproval(pullRequest: PullRequestState, approvers: readonl
     latest.set(normalizeLogin(review.login), review);
   }
   const notes: string[] = [];
+  const earlier: { readonly login: string; readonly commit: string }[] = [];
   let approvedBy: string | null = null;
   for (const [login, review] of [...latest].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))) {
     if (review.state !== "APPROVED") continue;
@@ -64,15 +72,15 @@ export function assessApproval(pullRequest: PullRequestState, approvers: readonl
       notes.push(`The approval of ${review.login} does not count: the author of the pull request cannot accept its own change.`);
     } else if (!acceptors.has(login)) {
       notes.push(`The approval of ${review.login} does not count: they are not one of the configured approvers.`);
+    } else if (review.commit === null) {
+      notes.push(`The approval of ${review.login} names no commit: approve again to accept this change.`);
     } else if (review.commit !== pullRequest.head) {
-      notes.push(
-        `The approval of ${review.login} was given on ${review.commit?.slice(0, 12) ?? "an unknown commit"}, not on the current head ${pullRequest.head.slice(0, 12)}: approve again to accept this change.`,
-      );
+      earlier.push(Object.freeze({ login: review.login, commit: review.commit }));
     } else if (approvedBy === null) {
       approvedBy = review.login;
     }
   }
-  return Object.freeze({ approvedBy, notes: Object.freeze(notes) });
+  return Object.freeze({ approvedBy, earlier: Object.freeze(earlier), notes: Object.freeze(notes) });
 }
 
 function normalizeLogin(login: string): string {

@@ -12,6 +12,7 @@ import { VsCodeAdapter } from "../adapters/harness/vscode/vscode-adapter.js";
 import { VsCodeMcpSessionAdapter } from "../adapters/harness/vscode/vscode-mcp-session-adapter.js";
 import { NodeInteractiveCommandRunner } from "../adapters/platform/process/node-interactive-command-runner.js";
 import { NodeChangeSetReader } from "../adapters/platform/git/node-change-set-reader.js";
+import { NodeRevisionCheckouts } from "../adapters/platform/git/node-revision-checkouts.js";
 import { GitHubPullRequests } from "../adapters/platform/github/github-pull-requests.js";
 import { NodeGitConfig } from "../adapters/platform/git/node-git-config.js";
 import { NodeGitHookInventory } from "../adapters/platform/git/node-git-hook-inventory.js";
@@ -191,6 +192,7 @@ export async function createDefaultApplication(
     providers: checkProviders,
     script: new NodeVerifyScript(unitProcessRunner),
     pullRequests: new GitHubPullRequests(processRunner, options.environment ?? process.env),
+    revisions: new NodeRevisionCheckouts(processRunner),
   });
   return Object.freeze({
     application,

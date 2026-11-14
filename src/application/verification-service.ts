@@ -16,8 +16,11 @@ import {
   type ChangeSetReader,
   type CheckOutcome,
   type CheckProvider,
+  type CheckRequest,
   type CheckStage,
   type ProcessResult,
+  type RevisionCheckout,
+  type RevisionCheckouts,
 } from "../domain/verification/checks.js";
 import {
   planFullSteps,
@@ -97,6 +100,8 @@ export interface VerificationDependencies {
   readonly providers: readonly CheckProvider[];
   readonly script: VerifyScript;
   readonly pullRequests?: PullRequestReader;
+  /** Checks out the commit an earlier approval was given on, to compare its findings with the head's. */
+  readonly revisions?: RevisionCheckouts;
 }
 
 /**
@@ -131,7 +136,7 @@ export class VerificationService {
     const resolved = new Set(
       scan.resolution?.kind === "ready"
         ? scan.resolution.components.map((component) => component.ref)
-        : scan.desired.state.selections.map((selection) => selection.ref),
+        : scan.desired.state.selections.filter((selection) => selection.disabled !== true).map((selection) => selection.ref),
     );
     const profiles = scan.catalog.components
       .filter(
@@ -160,6 +165,8 @@ export class VerificationService {
     }
 
     const results: CheckResult[] = [];
+    // How each result's check judges another checkout of the repository, for earlier approvals.
+    const reruns = new Map<CheckResult, (root: string) => Promise<CheckOutcome>>();
     for (const profile of profiles) {
       const inputs = profileInputs(profile, selectedInputs.get(profile.ref));
       const checks = profile.checks.filter(
@@ -170,19 +177,26 @@ export class VerificationService {
       for (const unit of profileUnits(profile, projectUnits)) {
         for (const check of checks) {
           progress({ type: "started", profile: profile.ref, check: check.id, unit });
+          const checkRequest = (repositoryRoot: string, judged: ChangeSet): CheckRequest => ({
+            repositoryRoot,
+            unitRoot: unit,
+            params: check.params,
+            inputs,
+            changes: judged,
+            ...(request.paths === undefined ? {} : { paths: request.paths }),
+            ...(request.signal === undefined ? {} : { signal: request.signal }),
+          });
           const outcome = unitUnchanged(changes, unit)
             ? Object.freeze({ status: "skipped" as const, summary: "No change in this project unit", details: [] })
-            : await this.#run(check.kind, {
-                repositoryRoot: scan.snapshot.realRoot,
-                unitRoot: unit,
-                params: check.params,
-                inputs,
-                changes,
-                ...(request.paths === undefined ? {} : { paths: request.paths }),
-                ...(request.signal === undefined ? {} : { signal: request.signal }),
-              });
+            : await this.#run(check.kind, checkRequest(scan.snapshot.realRoot, changes));
           const result = Object.freeze({ profile: profile.ref, check: check.id, kind: check.kind, unit, outcome });
           results.push(result);
+          reruns.set(result, async (root) => {
+            const judged = await this.#dependencies.changeSets.read(root, request.base);
+            return unitUnchanged(judged, unit)
+              ? { status: "passed", summary: "No change in this project unit", details: [], findings: [] }
+              : await this.#run(check.kind, checkRequest(root, judged));
+          });
           progress({ type: "completed", result });
         }
       }
@@ -206,7 +220,30 @@ export class VerificationService {
       request.base ?? changes.base,
       scan.catalog,
     );
-    const settled = resolvePending(results, pullRequest, approvers);
+    const checkouts = new Map<string, Promise<RevisionCheckout | null>>();
+    let settled: Awaited<ReturnType<typeof resolvePending>>;
+    try {
+      settled = await resolvePending(results, pullRequest, approvers, async (result, commit) => {
+        const revisions = this.#dependencies.revisions;
+        const rerun = reruns.get(result);
+        if (revisions === undefined || rerun === undefined) return null;
+        let checkout = checkouts.get(commit);
+        if (checkout === undefined) {
+          checkout = revisions.checkout(scan.snapshot.realRoot, commit).catch(() => null);
+          checkouts.set(commit, checkout);
+        }
+        const at = await checkout;
+        if (at === null) return null;
+        try {
+          const outcome = await rerun(at.root);
+          return outcome.status === "unavailable" || outcome.status === "skipped" ? null : (outcome.findings ?? null);
+        } catch {
+          return null;
+        }
+      });
+    } finally {
+      for (const checkout of checkouts.values()) await (await checkout)?.release();
+    }
     return Object.freeze({
       stage: request.stage,
       mode,
@@ -414,51 +451,86 @@ function changeSetDiagnostic(error: unknown): Diagnostic {
 
 /**
  * Settles the findings a commit asked a person to accept: each becomes `passed` when a configured
- * approver of its profile approved the pull request's head commit, and `failed` otherwise.
+ * approver of its profile approved the pull request's head commit, or approved an earlier commit
+ * whose findings for the same check include every finding the head has (a rebase or an unrelated
+ * fix keeps the approval; a new or different finding needs a new one), and `failed` otherwise. A
+ * check that names no findings needs an approval of the head.
  */
-function resolvePending(
+async function resolvePending(
   results: readonly CheckResult[],
   pullRequest: PullRequestState,
   approvers: ReadonlyMap<ComponentRef, readonly string[]>,
-): { readonly results: readonly CheckResult[]; readonly report: PullRequestReport } {
+  findingsAt: (result: CheckResult, commit: string) => Promise<readonly string[] | null>,
+): Promise<{ readonly results: readonly CheckResult[]; readonly report: PullRequestReport }> {
   const head = pullRequest.head.slice(0, 12);
   const approvedBy = new Set<string>();
   const acceptors = new Set<string>();
   const notes = new Set<string>();
   let requests = 0;
-  const settled = results.map((result): CheckResult => {
+  const settled: CheckResult[] = [];
+  for (const result of results) {
     const { outcome } = result;
-    if (outcome.status !== "pending") return result;
+    if (outcome.status !== "pending") {
+      settled.push(result);
+      continue;
+    }
     requests += 1;
     const logins = approvers.get(result.profile) ?? [];
     for (const login of logins) acceptors.add(login);
     const assessment = assessApproval(pullRequest, logins);
     const finding = outcome.summary.endsWith(pendingSuffix) ? outcome.summary.slice(0, -pendingSuffix.length) : outcome.summary;
     const requested = outcome.requested === undefined ? "" : ` (requested: ${outcome.requested})`;
-    if (assessment.approvedBy !== null) {
-      approvedBy.add(assessment.approvedBy);
-      return Object.freeze({
+    let accepted: { readonly login: string; readonly commit: string } | null =
+      assessment.approvedBy === null ? null : { login: assessment.approvedBy, commit: pullRequest.head };
+    for (const approval of accepted === null ? assessment.earlier : []) {
+      const short = approval.commit.slice(0, 12);
+      if (outcome.findings === undefined) {
+        notes.add(`The approval of ${approval.login} was given on ${short}, not on the current head ${head}: approve again to accept this change.`);
+        continue;
+      }
+      const before = await findingsAt(result, approval.commit);
+      if (before === null) {
+        notes.add(`The approval of ${approval.login} was given on ${short}, which could not be judged: approve again to accept this change.`);
+        continue;
+      }
+      const known = new Set(before);
+      const added = outcome.findings.filter((key) => !known.has(key));
+      if (added.length === 0) {
+        accepted = approval;
+        break;
+      }
+      notes.add(
+        `The approval of ${approval.login} on ${short} does not cover ${added.length} finding(s) of ${result.check} that ${short} did not have (${added.map(describeKey).join("; ")}): approve again to accept this change.`,
+      );
+    }
+    if (accepted !== null) {
+      approvedBy.add(accepted.login);
+      const on = accepted.commit === pullRequest.head
+        ? head
+        : `${accepted.commit.slice(0, 12)}, whose findings include every finding of ${head}`;
+      settled.push(Object.freeze({
         ...result,
         outcome: Object.freeze({
           status: "passed" as const,
-          summary: `${finding}; accepted by the approval of ${assessment.approvedBy} on ${head}${requested}`,
+          summary: `${finding}; accepted by the approval of ${accepted.login} on ${on}${requested}`,
           details: outcome.details,
         }),
-      });
+      }));
+      continue;
     }
     for (const note of assessment.notes) notes.add(note);
     const next = logins.length === 0
       ? `No approver is configured for ${result.profile}: set its \`approvers\` input in .railguard/project.yaml on the target branch, or have a person accept the finding with a trailer in a commit.`
       : `Waiting for an approving review of ${head} from ${logins.map((login) => `@${login}`).join(" or ")}.`;
-    return Object.freeze({
+    settled.push(Object.freeze({
       ...result,
       outcome: Object.freeze({
         status: "failed" as const,
         summary: `${finding}; awaiting approval${requested}`,
         details: Object.freeze([...outcome.details, next]),
       }),
-    });
-  });
+    }));
+  }
   return {
     results: settled,
     report: Object.freeze({
@@ -471,6 +543,11 @@ function resolvePending(
       requests,
     }),
   };
+}
+
+/** A finding key as a person reads it: its kind and identity. */
+function describeKey(key: string): string {
+  return key.replace("\u0000", ": ");
 }
 
 function pullRequestUnavailableDiagnostic(number: number, reason: string): Diagnostic {

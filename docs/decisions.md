@@ -679,6 +679,39 @@ approving out of habit weakened the check for the case it exists for. Three chan
   `.railguard/project.yaml`, a protected path, so an agent that loosens it is blocked until a
   person accepts the change.
 
+### D-035 — Test findings pass with a reason, and an approval follows its findings
+
+Narrowing the heuristics of D-034 (renames across files, helpers, constants) kept missing the next
+case: a test moved to another file with a small text change, tests removed together with the
+behavior they covered, a synthetic data set over the size limit. Each one asked the owner for an
+approval, and every rebase asked again. Approving out of habit protects nothing. The way a finding
+is accepted changes instead of the detection:
+
+- **A third level, `justify`.** A finding at this level fails like `block` until a commit of the
+  branch carries `Railguard-Justify: <kind>: <reason>`, which an agent may write; then it passes and
+  shows the reason, and `railguard report` lists every reason, so a person reads them in the pull
+  request or later instead of approving each one. `<kind>` is the finding's kind, or the check
+  kind to cover all of them. The four test kinds default to `justify`: a test that leaves with its
+  behavior, or moves, is routine, and the reason keeps the history honest. A suppression stays
+  `block`: it silences a check on code that stays, which a reason does not make safe. Protected
+  configuration, a file too large to scan and secrets always need a person.
+- **An approval follows the findings, not the commit.** A finding asked for with
+  `Railguard-Request` passes when an approver approved the head, or an earlier commit whose findings
+  for that check include all of the head's. The gate checks out the approved commit, runs the same
+  check and compares findings by keys free of line numbers and commit ids (kind, path and test name;
+  for a protected configuration, its content's hash; for the size, the counted files). A rebase or
+  an unrelated fix keeps the approval; any new or different finding needs a new one. Secret findings
+  have no such key and still need an approval of the head. What would prove this wrong: a change
+  that adds risk without adding a finding key, such as growing a file that was already over the
+  size limit; the size key accepts that on purpose, since the person already accepted reviewing
+  those files.
+- **Data files leave the size limit.** `*.jsonl`, `*.csv`, `*.tsv` and `*.parquet` are excluded by a
+  separate input, `size_excluded_data`, so projects that override `size_excluded_paths` keep the
+  exclusion; `["none"]` counts them again.
+- **A project can turn off what a pack includes.** A selection with `disabled: true` keeps a pack's
+  `includes` relation from bringing the component in, so removing a configured profile no longer
+  brings it back with its defaults. A `requires` relation cannot be disabled.
+
 ## Closed observable flow
 
 ```text

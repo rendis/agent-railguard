@@ -30,6 +30,17 @@ export interface ChangeSetReader {
   show(root: string, revision: string, path: string): Promise<string | null>;
 }
 
+/** A commit of the repository checked out apart from the working tree, to judge it as it was. */
+export interface RevisionCheckout {
+  readonly root: string;
+  release(): Promise<void>;
+}
+
+export interface RevisionCheckouts {
+  /** Checks out a commit, fetching it from `origin` when the clone lacks it; null when it cannot. */
+  checkout(root: string, commit: string): Promise<RevisionCheckout | null>;
+}
+
 export type CheckParams = Readonly<Record<string, string | number | boolean>>;
 
 export interface CheckRequest {
@@ -61,6 +72,13 @@ export interface CheckOutcome {
   readonly details: readonly string[];
   /** For `pending`: the reason the request gave for the person who is asked to accept. */
   readonly requested?: string;
+  /**
+   * For `failed` and `pending`: a stable key for each finding that fails the check, such as its
+   * kind, path and test name, free of line numbers and commit ids. An approval of an earlier commit
+   * still accepts the change when its findings are a subset of the ones that commit had. Absent
+   * when a check cannot name its findings that way: then only an approval of the head counts.
+   */
+  readonly findings?: readonly string[];
 }
 
 export interface FullCheckRequest {

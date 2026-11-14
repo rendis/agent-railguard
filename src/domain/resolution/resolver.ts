@@ -39,7 +39,8 @@ export class DefaultResolver implements Resolver {
     const selectableDirectSelections = knownDirectSelections.filter(
       (ref) => requireComponent(byRef, ref).kind !== "instruction-fragment",
     );
-    const closure = hardClosure(selectableDirectSelections, byRef);
+    const disabled = new Set(request.disabled ?? []);
+    const closure = hardClosure(selectableDirectSelections.filter((ref) => !disabled.has(ref)), byRef, disabled);
     const orderedRefs = topologicalOrder(closure, byRef);
     const directSet = new Set(directSelections);
     const causes = inclusionCauses(closure, byRef);
@@ -76,6 +77,7 @@ export class DefaultResolver implements Resolver {
         ),
       ...conflictBlockers(closure, byRef),
       ...gateProfileBlockers(closure, byRef),
+      ...disabledRequiredBlockers(closure, byRef, disabled),
       ...capabilityBlockers(closure, byRef, request.targets),
     ];
     blockers.sort(compareBlockers);
@@ -117,6 +119,7 @@ export class DefaultResolver implements Resolver {
 function hardClosure(
   selections: readonly ComponentRef[],
   byRef: ReadonlyMap<ComponentRef, CatalogComponent>,
+  disabled: ReadonlySet<ComponentRef>,
 ): ReadonlySet<ComponentRef> {
   const closure = new Set<ComponentRef>();
   const pending = [...selections].sort(compareUtf8).reverse();
@@ -129,6 +132,8 @@ function hardClosure(
     const component = requireComponent(byRef, ref);
     const dependencies = component.relations
       .filter(isHardRelation)
+      // A pack's inclusion yields to the project's choice; a requirement does not.
+      .filter((relation) => relation.kind === "requires" || !disabled.has(relation.target))
       .map((relation) => relation.target)
       .sort(compareUtf8)
       .reverse();
@@ -459,13 +464,42 @@ function blockerKey(blocker: ResolutionBlocker): string {
       return `non-selectable-component\0${blocker.component}`;
     case "git-gate-without-profile":
       return `git-gate-without-profile\0${blocker.component}`;
+    case "disabled-required":
+      return `disabled-required\0${blocker.component}`;
     case "unsupported-capability":
       return `unsupported-capability\0${blocker.component}\0${blocker.target}\0${blocker.capability}`;
   }
 }
 
+/** Disabled components that stay in the closure because another component requires them. */
+function disabledRequiredBlockers(
+  closure: ReadonlySet<ComponentRef>,
+  byRef: ReadonlyMap<ComponentRef, CatalogComponent>,
+  disabled: ReadonlySet<ComponentRef>,
+): ResolutionBlocker[] {
+  return [...disabled]
+    .filter((ref) => closure.has(ref))
+    .sort(compareUtf8)
+    .map((component) => Object.freeze({
+      kind: "disabled-required" as const,
+      component,
+      requiredBy: Object.freeze([...closure]
+        .filter((from) => requireComponent(byRef, from).relations.some((relation) => relation.kind === "requires" && relation.target === component))
+        .sort(compareUtf8)),
+    }));
+}
+
 function blockerDiagnostic(blocker: ResolutionBlocker): Diagnostic {
   switch (blocker.kind) {
+    case "disabled-required":
+      return diagnostic({
+        code: "resolution.selection.disabled-required",
+        subjects: [blocker.component],
+        evidence: [blocker.component, ...blocker.requiredBy],
+        message: "A disabled component is required by another selected component.",
+        impact: "The component that requires it could not work without it.",
+        action: "Enable the component again, or remove the selection that requires it.",
+      });
     case "unknown-selection":
       return diagnostic({
         code: "resolution.selection.unknown",

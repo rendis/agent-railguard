@@ -107,6 +107,7 @@ describe("railguard report", () => {
       harnesses: [{ name: "claude-code", count: 3 }, { name: "cursor", count: 2 }],
     });
     expect((await buildActivityReport(root, null, sources)).acceptances).toHaveLength(4);
+    expect(report.justifications).toEqual([]);
 
     const text = renderActivityReport(report);
     expect(text).toContain("Accepted findings (Railguard-Allow trailers from HEAD): 3");
@@ -118,6 +119,30 @@ describe("railguard report", () => {
       since: "2026-09-01",
       refused_actions: { total: 1 },
       unverified_change: null,
+    });
+  });
+
+  it("records the reasons agents gave in justification trailers", async () => {
+    const { root, git } = await repository();
+    await git(["commit", "--allow-empty", "-qm", "chore: justify\n\nRailguard-Justify: test-deleted: the feature went with #41"], "2026-09-21T10:00:00Z");
+    await git(["commit", "--allow-empty", "-qm", "chore: justify\n\nRailguard-Justify: change-integrity: tests moved to the e2e suite"], "2026-09-22T10:00:00Z");
+
+    const report = await buildActivityReport(root, null, {
+      history: new GitAcceptanceHistory(runner),
+      activity: { async read() { return []; } },
+      unverified: { async read() { return null; } },
+    });
+
+    expect(report.acceptances).toEqual([]);
+    expect(report.justifications.map(({ kind, reason }) => ({ kind, reason }))).toEqual([
+      { kind: "change-integrity", reason: "tests moved to the e2e suite" },
+      { kind: "test-deleted", reason: "the feature went with #41" },
+    ]);
+    const text = renderActivityReport(report);
+    expect(text).toContain("Justified findings (Railguard-Justify trailers from HEAD): 2");
+    expect(text).toContain("change-integrity: tests moved to the e2e suite");
+    expect(JSON.parse(encodeActivityReport(report))).toMatchObject({
+      justifications_by_kind: [{ name: "change-integrity", count: 1 }, { name: "test-deleted", count: 1 }],
     });
   });
 

@@ -16,6 +16,18 @@ export function renderActivityReport(report: ActivityReport): string {
     lines.push("  Check that a person, not an agent, wrote each one.");
   }
   lines.push("");
+  lines.push(`Justified findings (Railguard-Justify trailers from HEAD): ${report.justifications.length}`);
+  if (report.justifications.length > 0) {
+    lines.push(`  by kind: ${inline(report.justificationsByKind)}`);
+    for (const justification of report.justifications.slice(0, recentAcceptances)) {
+      lines.push(`  ${justification.commit.slice(0, 12)} ${justification.date.slice(0, 10)} ${justification.author} · ${justification.kind}: ${justification.reason}`);
+    }
+    if (report.justifications.length > recentAcceptances) {
+      lines.push(`  … ${report.justifications.length - recentAcceptances} older`);
+    }
+    lines.push("  Read the reasons: a kind justified often may deserve a stricter policy.");
+  }
+  lines.push("");
   if (report.recordedSince === null) {
     lines.push("Agent hooks: no activity recorded on this clone yet.");
   } else {
@@ -41,6 +53,8 @@ export function encodeActivityReport(report: ActivityReport): string {
     since: report.since,
     acceptances: report.acceptances,
     acceptances_by_check: report.acceptancesByKind,
+    justifications: report.justifications,
+    justifications_by_kind: report.justificationsByKind,
     recorded_since: report.recordedSince,
     stop_blocks: report.stopBlocks,
     unverified_sessions: report.unverifiedSessions,
