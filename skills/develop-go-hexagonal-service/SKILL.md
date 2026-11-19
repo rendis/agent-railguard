@@ -18,6 +18,7 @@ description: Deliver a Go change spanning hexagonal boundaries, from discovery t
    | Inbound or outbound HTTP stack | [REST stack selection](references/rest-stack-selection.md) |
    | New or changed runtime configuration | [runtime configuration](references/runtime-configuration.md) |
    | Changed error contracts | [error-management.md](references/error-management.md) |
+   | Existing service moving to the hexagonal layout | [migration-milestones.md](references/migration-milestones.md) |
 
    Present options when REST selection, or compatibility, data, architecture, migration, external consumers, or cost, needs a user decision; otherwise pick the simplest durable solution, replace obsolete internal paths atomically, and add no fallback, alias, or speculative abstraction. Complete when the selected contracts are explicit and any obsolete-path replacement is decided.
 4. **Develop.** Load `tdd` for a feature, fix, or behavior-preserving refactor; load `design-tests` once only when a proof is created or materially redesigned. Implement the smallest working vertical slice and refactor while green: features and fixes need a discriminating RED→GREEN, refactors need a green safety net and must not manufacture RED. Complete when the slice's behavior contract closes through observed FAIL→PASS or an explicit green safety net.
