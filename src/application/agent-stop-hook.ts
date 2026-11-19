@@ -32,7 +32,8 @@ const maxReasonLength = 8_000;
  * agent as its next instruction, at most `maxRetries` times per session; after that the agent may
  * stop, the change is reported as unverified and the next session is told about it until a later
  * run passes. Readiness problems (a tool that is not installed, a repository without selection)
- * never trap the agent in a loop: they are reported and allowed.
+ * never trap the agent in a loop: they are reported and allowed. While the harness reports a
+ * subagent in flight, the hook judges nothing.
  */
 export async function runStopHook(
   request: StopHookRequest,
@@ -44,6 +45,14 @@ export async function runStopHook(
   const input = parseInput(request.input);
   if (request.harness === "cursor" && input.status !== undefined && input.status !== "completed") {
     return { stdout: "", stderr: "" };
+  }
+  if (input.runningSubagents > 0) {
+    // A subagent may hold a temporary edit, such as a mutation under review: judging that working
+    // tree would describe a transient state. The turn ends again when the subagent returns.
+    return {
+      stdout: "",
+      stderr: `Railguard: ${input.runningSubagents} subagent${input.runningSubagents === 1 ? " is" : "s are"} still running, so the change is checked when the turn ends without one.\n`,
+    };
   }
   const counter = join(
     request.stateDirectory,
@@ -97,18 +106,34 @@ export async function runStopHook(
   return { stdout: `${JSON.stringify(payload)}\n`, stderr: "" };
 }
 
-function parseInput(source: string): { readonly session?: string; readonly status?: string } {
+interface StopInput {
+  readonly session?: string;
+  readonly status?: string;
+  /** Subagents the harness reports in flight (Claude Code's `background_tasks`). */
+  readonly runningSubagents: number;
+}
+
+const finishedTaskStatuses = new Set(["completed", "failed", "killed", "stopped", "cancelled", "canceled"]);
+
+function parseInput(source: string): StopInput {
   try {
     const value = JSON.parse(source) as Record<string, unknown>;
     const session = [value.session_id, value.conversation_id].find(
       (candidate): candidate is string => typeof candidate === "string" && candidate.length > 0,
     );
+    const tasks: unknown[] = Array.isArray(value.background_tasks) ? value.background_tasks : [];
+    const runningSubagents = tasks.filter((task) => {
+      if (typeof task !== "object" || task === null) return false;
+      const { type, status } = task as Record<string, unknown>;
+      return type === "subagent" && !(typeof status === "string" && finishedTaskStatuses.has(status));
+    }).length;
     return {
       ...(session === undefined ? {} : { session }),
       ...(typeof value.status === "string" ? { status: value.status } : {}),
+      runningSubagents,
     };
   } catch {
-    return {};
+    return { runningSubagents: 0 };
   }
 }
 

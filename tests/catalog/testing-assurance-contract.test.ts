@@ -111,9 +111,9 @@ describe("testing assurance contract", () => {
       (component) => component.ref === componentRef("verification-profile:go-quality"),
     );
     expect(baseline?.kind === "verification-profile" ? baseline.checks.map((check) => check.id) : null)
-      .toEqual(["format", "vet", "test", "race"]);
+      .toEqual(["format", "vet", "test", "race", "dead-code"]);
     expect(baseline?.kind === "verification-profile"
       ? baseline.checks.map((check) => check.stage)
-      : null).toEqual(["check", "check", "check", "verify"]);
+      : null).toEqual(["check", "check", "check", "verify", "verify"]);
   });
 });

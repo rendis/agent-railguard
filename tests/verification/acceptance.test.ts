@@ -98,17 +98,21 @@ describe("acceptance trailers", () => {
     const message = "Railguard-Request: change-size: reviewed\nRailguard-Allow: secret-exposure: example key";
 
     expect(parseRequests(message)).toEqual(new Map([["change-size", "reviewed"]]));
-    expect(parseJustifications(message)).toEqual(new Map());
+    expect(parseJustifications(message)).toEqual([]);
     expect(parseAllowances(message)).toEqual(new Map([["secret-exposure", "example key"]]));
   });
 
   it("reads justifications, which an agent may write, by finding or check kind", () => {
     const message = "chore: justify\n\nRailguard-Justify: test-deleted: the feature went with #41\nRailguard-Justify: change-integrity: tests moved\nRailguard-Justify: test-removed:";
 
-    expect(parseJustifications(message)).toEqual(new Map([
-      ["test-deleted", "the feature went with #41"],
-      ["change-integrity", "tests moved"],
-    ]));
+    expect(parseJustifications(message)).toEqual([
+      { kind: "test-deleted", path: null, reason: "the feature went with #41" },
+      { kind: "change-integrity", path: null, reason: "tests moved" },
+    ]);
+    expect(parseJustifications("Railguard-Justify: test-deleted internal/a/a_test.go: moved by the layout change\nRailguard-Justify: test-deleted: again: with a colon")).toEqual([
+      { kind: "test-deleted", path: "internal/a/a_test.go", reason: "moved by the layout change" },
+      { kind: "test-deleted", path: null, reason: "again: with a colon" },
+    ]);
     expect(parseRequests(message)).toEqual(new Map());
   });
 });

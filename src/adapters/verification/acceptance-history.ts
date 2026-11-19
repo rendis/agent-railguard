@@ -7,17 +7,18 @@ export class GitAcceptanceHistory implements AcceptanceHistory {
   public constructor(private readonly process: ProcessRunner) {}
 
   public async read(root: string, since: string | null): Promise<readonly Acceptance[]> {
-    return await this.#trailers(root, since, parseAllowances);
+    return await this.#trailers(root, since, (message) => [...parseAllowances(message)]);
   }
 
   public async justifications(root: string, since: string | null): Promise<readonly Acceptance[]> {
-    return await this.#trailers(root, since, parseJustifications);
+    return await this.#trailers(root, since, (message) =>
+      parseJustifications(message).map(({ kind, path, reason }) => [kind, path === null ? reason : `${path}: ${reason}`] as const));
   }
 
   async #trailers(
     root: string,
     since: string | null,
-    parse: (message: string) => ReadonlyMap<string, string>,
+    parse: (message: string) => readonly (readonly [string, string])[],
   ): Promise<readonly Acceptance[]> {
     const log = await this.process.run(
       "git",
@@ -28,7 +29,7 @@ export class GitAcceptanceHistory implements AcceptanceHistory {
     return log.stdout.split("\x1e").flatMap((entry) => {
       const [commit, date, author, message] = entry.trim().split("\x1f");
       if (commit === undefined || date === undefined || author === undefined || message === undefined) return [];
-      return [...parse(message)].map(([kind, reason]) => ({ commit, date, author, kind, reason }));
+      return parse(message).map(([kind, reason]) => ({ commit, date, author, kind, reason }));
     });
   }
 }

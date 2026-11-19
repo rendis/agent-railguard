@@ -8,6 +8,17 @@ import { shellQuote } from "../../../domain/verification/verify-script.js";
  */
 export const gremlinsOverrides = ["--test-cpu=0"] as const;
 
+/** golang.org/x/tools' deadcode, pinned: `go run` fetches and verifies it like any module. */
+export const deadcodeModule = "golang.org/x/tools/cmd/deadcode@v0.53.0";
+
+/** Why dead code detection has nothing to start from. */
+export const noProgram = "No main package in dead_code_roots: deadcode needs a program to start from";
+
+/** Why a core rule judged nothing, which must not read as a core that holds. */
+export function noCore(core: readonly string[]): string {
+  return `No package matches core_packages ${core.join(" ")}: the core is not judged; point core_packages at the packages that will form it, with on_violation=report while they migrate`;
+}
+
 /**
  * Shell that judges a whole Go module from its root, for the repository's verify script. Inputs
  * and thresholds are written into the script, so CI needs only Go and the module's pinned tools.
@@ -32,7 +43,14 @@ export function goFullCheck(kind: string, request: FullCheckRequest): FullCheck 
         '[ -z "$unformatted" ] || { echo "Go files need gofmt -w:" >&2; echo "$unformatted" >&2; exit 1; }',
       );
     case "go-vet":
-      return script(`go vet ${testPackages} || exit 1`);
+      return script(
+        `go vet ${testPackages} || exit 1`,
+        // A suite behind a build tag, such as e2e, is vetted (and so type-checked) with its tag.
+        ...input("build_tags", []).filter((value) => value !== "none").map((tags) =>
+          `if grep -rqs --include='*.go' ${tags.split(",").map((tag) => `-e ${shellQuote(`^//go:build.*${tag}`)}`).join(" ")} .; then\n` +
+          `  go vet -tags=${shellQuote(tags)} ${testPackages} || exit 1\n` +
+          "fi"),
+      );
     case "go-test":
       return script(`go test -count=1${request.params.race === true ? " -race -shuffle=on" : ""} ${testPackages} || exit 1`);
     case "go-mod-verify":
@@ -95,6 +113,22 @@ export function goFullCheck(kind: string, request: FullCheckRequest): FullCheck 
     }
     case "go-imports":
       return imports(input);
+    case "go-deadcode": {
+      const roots = input("dead_code_roots", ["./..."]).filter((value) => value !== "disabled");
+      if (roots.length === 0) return skipped("Dead code detection is disabled");
+      return script(
+        'errors=$(mktemp) || exit 4',
+        'trap \'rm -f "$errors"\' EXIT',
+        `if found=$(go run ${deadcodeModule} ${words(roots)} 2>"$errors"); then`,
+        '  [ -z "$found" ] || { echo "Functions no program reaches; delete them, call them from a program, or move a test-only helper into its test:" >&2; printf \'%s\\n\' "$found" >&2; exit 1; }',
+        "elif grep -q 'no main packages' \"$errors\"; then",
+        `  echo ${shellQuote(noProgram)}`,
+        "else",
+        '  cat "$errors" >&2',
+        '  unavailable "deadcode could not analyze the module"',
+        "fi",
+      );
+    }
     default:
       return script(`unavailable ${shellQuote(`Unknown Go check kind ${kind}`)}`);
   }
@@ -161,11 +195,13 @@ function imports(input: (id: string, fallback: readonly string[]) => readonly st
   const rules = input("forbidden_imports", []).filter((value) => value !== "none")
     .map((rule) => rule.split("->").map((part) => part.trim()).join(">"));
   if (core.length === 0 && rules.length === 0) return skipped("No dependency rule configured");
+  const report = input("on_violation", ["block"])[0] === "report";
   return script(
     "module=$(go list -m) || exit 1",
     "listing=$(go list -e -f '{{.ImportPath}}{{range .Imports}} {{.}}{{end}}' ./...) || exit 1",
     `printf '%s\\n' "$listing" | awk -v module="$module" -v core=${shellQuote(core.join(" "))} \\`,
-    `  -v allowed=${shellQuote(allowed.join(" "))} -v denied=${shellQuote(denied.join(" "))} -v rules=${shellQuote(rules.join(" "))} '`,
+    `  -v allowed=${shellQuote(allowed.join(" "))} -v denied=${shellQuote(denied.join(" "))} -v rules=${shellQuote(rules.join(" "))} \\`,
+    `  -v report=${report ? 1 : 0} -v no_core=${shellQuote(core.length === 0 ? "" : noCore(core))} '`,
     packagePatternAwk,
     "  function internal(path) { return path == module || index(path, module \"/\") == 1 }",
     '  function relative(path) { return path == module ? "." : substr(path, length(module) + 2) }',
@@ -177,6 +213,7 @@ function imports(input: (id: string, fallback: readonly string[]) => readonly st
     "  NF > 0 && internal($1) {",
     "    dir = relative($1)",
     "    in_core = matches_any(dir, core)",
+    "    if (in_core) core_seen = 1",
     '    rule_count = split(rules, rule_list, " ")',
     "    for (i = 2; i <= NF; i++) {",
     "      imported = $i",
@@ -198,6 +235,8 @@ function imports(input: (id: string, fallback: readonly string[]) => readonly st
     "    }",
     "  }",
     "  END {",
+    '    if (core != "" && !core_seen) print no_core',
+    '    if (violations > 0 && report) { printf "%d forbidden import(s) reported as debt (on_violation=report)\\n", violations; exit 0 }',
     '    if (violations > 0) { printf "%d forbidden import(s)\\n", violations > "/dev/stderr"; exit 1 }',
     "  }",
     "' || exit 1",

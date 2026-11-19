@@ -712,6 +712,32 @@ is accepted changes instead of the detection:
   `includes` relation from bringing the component in, so removing a configured profile no longer
   brings it back with its defaults. A `requires` relation cannot be disabled.
 
+### D-036 — Lessons from a real migration to a hexagonal layout
+
+Migrating a Go service to a hexagonal layout in milestones, with Railguard on every commit, showed
+where the checks judged a transient or mechanical state instead of the change:
+
+- **A move is not new code.** `change-size` counts a file Git detects as moved by the lines the move
+  changed, and `change-integrity` no longer reports a test file whose tests all moved. Git's rename
+  detection decides, not a Railguard heuristic. Code moved between files that Git does not pair
+  still counts and is asked of a person.
+- **A reason belongs to its findings.** `Railguard-Justify: <kind> <path>: <reason>` keeps a reason
+  with that file's findings, and every reason a kind received is kept, so a later justification no
+  longer replaces an earlier one. A commit that stages no file has nothing for the pre-commit gate
+  to judge, so the empty justification commit passes while the change waits unstaged.
+- **Every compiled file is checked.** `go-quality` vets again with each of `build_tags` (`e2e` by
+  default), so a broken suite behind a tag fails, and reports functions no program reaches with a
+  pinned `deadcode`: dead code that a migration notes and never decides now fails `verify`.
+- **Debt is visible before the layout exists.** `go-architecture` says when no package matches the
+  core, and `on_violation: report` lists violations as debt without failing during a migration.
+- **The guards judge actions, not text.** The action guard refuses changing `core.hooksPath`, not a
+  heredoc that names it, and the stop hook judges nothing while Claude Code reports a subagent in
+  flight, since the subagent may hold a temporary mutation.
+
+What would prove this wrong: a large rewrite that Git pairs as a rename and that the size limit
+then lets through. The similarity threshold (50%) bounds it: a file that changed more than half is
+a new file.
+
 ## Closed observable flow
 
 ```text

@@ -127,7 +127,7 @@ catalog:
     go-quality:
       version: 0.2.0
       description: "Run `railguard check --changed` while developing and `railguard verify --changed` before delivery for Go changes."
-      details: Check formatting of changed Go files and vet and test the packages that contain changes. Verify additionally runs those tests with the race detector and a shuffled order. Without --changed every detected Go module is checked completely through .railguard/verify.sh, the script CI runs.
+      details: "Check formatting of changed Go files and vet and test the packages that contain changes. Vet runs again with each of build_tags (`e2e` by default; `none` turns it off) on the packages whose changed files name that tag in a //go:build line, so a suite behind a build tag that no longer compiles fails. Verify additionally runs those tests with the race detector and a shuffled order, and reports functions that no program reaches (golang.org/x/tools deadcode v0.53.0, fetched by `go run`, starting from the main packages of dead_code_roots; code only tests use is dead) in changed production files. A module without a main package skips dead code detection, and `disabled` turns it off. Without --changed every detected Go module is checked completely through .railguard/verify.sh, the script CI runs."
       applies:
         languages: [go]
       executables: [go, gofmt]
@@ -136,6 +136,14 @@ catalog:
           type: string-list
           default: ["./..."]
           item_pattern: "^(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?$"
+        build_tags:
+          type: string-list
+          default: ["e2e"]
+          item_pattern: "^(?:none|[A-Za-z0-9_.]+(?:,[A-Za-z0-9_.]+)*)$"
+        dead_code_roots:
+          type: string-list
+          default: ["./..."]
+          item_pattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?)$"
       checks:
         - id: format
           kind: go-format
@@ -151,6 +159,9 @@ catalog:
           stage: verify
           params:
             race: true
+        - id: dead-code
+          kind: go-deadcode
+          stage: verify
 
     go-assurance:
       version: 0.2.0
@@ -256,7 +267,7 @@ catalog:
     go-architecture:
       version: 0.1.0
       description: Enforce dependency direction between Go packages; by default the core depends only on itself and the standard library.
-      details: Check fails when a production file in core_packages imports anything but the standard library (minus core_denied_stdlib), other core packages or core_allowed_imports, or when a file breaks a forbidden_imports rule such as "./internal/domain/... -> ./internal/infra/...". With --changed only changed files are judged, so an existing architecture is frozen instead of rewritten. Select it only when the repository adopts that architecture; set core_packages to disabled to keep only forbidden_imports rules.
+      details: "Check fails when a production file in core_packages imports anything but the standard library (minus core_denied_stdlib), other core packages or core_allowed_imports, or when a file breaks a forbidden_imports rule such as \"./internal/domain/... -> ./internal/infra/...\". With --changed only changed files are judged, so an existing architecture is frozen instead of rewritten. When no package matches core_packages the check says so instead of passing in silence. A repository migrating to the architecture points core_packages at the packages that will form the core and sets on_violation to report: the violations are listed as debt and do not fail. Select it when the repository adopts or migrates to that architecture; set core_packages to disabled to keep only forbidden_imports rules."
       applies:
         languages: [go]
       executables: [go]
@@ -277,6 +288,10 @@ catalog:
           type: string-list
           default: ["none"]
           item_pattern: "^(?:none|\\./[A-Za-z0-9_./-]* -> \\./[A-Za-z0-9_./-]*)$"
+        on_violation:
+          type: string-list
+          default: ["block"]
+          item_pattern: "^(?:block|report)$"
       checks:
         - id: imports
           kind: go-imports
@@ -285,7 +300,7 @@ catalog:
     change-guard:
       version: 0.1.0
       description: Block changes that silence checks, delete tests or grow past a reviewable size; the agent justifies a removed test with a reason, and only a person accepts the rest, with a Railguard-Allow trailer or by approving the pull request.
-      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, deletes a test file, or removes a test declaration (Go Test/Benchmark/Fuzz/Example functions, it/test calls, Python test functions, JUnit test methods, Gherkin scenarios) that a changed test file held at the base; a test moved to another changed test file keeps its name and is not reported. A test whose name disappears while a new one takes its place in the same file, after the same surviving declaration and with as many tests arriving there as leaving, is renamed rather than removed; so is a test of more than one line whose text, up to whitespace and the swap of its old file's subject for its new one's, reappears under a new name in its file or another changed test file. A removed test, or a deleted test file whose tests all left, is obsolete when its text at the base mentions a function, type, class, constant or variable that the change removed from a production file, not merely renamed with the same text (or, for a constant or variable, the same value), and that no file left in the repository mentions anymore, or when its code calls a helper of its file that the change removed and whose every statement uses such code; a helper that also did something else keeps its tests removed, one level only, and a local of a test is not a helper. finding_policy sets each relaxable kind of finding (suppression, test-deleted, test-removed, test-renamed, test-obsolete) to block, justify or report: a reported finding is shown and does not fail, and a justified one passes once a commit of the branch carries a `Railguard-Justify: <kind>: <reason>` trailer, which the coding agent may write, naming the finding kind or change-integrity; the reason is shown and recorded by `railguard report`. By default the four test kinds are justify and suppression blocks; a protected configuration change always blocks, and .railguard/project.yaml, where the policy lives, is protected. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests, generated code, lockfiles, harness configuration and data files (size_excluded_data, `*.jsonl`, `*.csv`, `*.tsv` and `*.parquet` by default; `none` counts them). A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: <check-kind>: <reason>` trailer; later changes are still judged. A coding agent may instead ask for that acceptance with a `Railguard-Request: <check-kind>: <reason>` trailer: the finding then stays pending, which does not block locally, and `railguard gate --pull-request` in CI passes it only when one of the approvers approved the pull request's head commit, or an earlier commit whose findings for the check include every finding of the head, so a rebase keeps the approval and a new finding needs a new one. It judges only changes; a full run skips it."
+      details: "Check fails when the change adds a suppression marker (nolint, nosec, NOSONAR, skipped or focused tests, lint or coverage exclusions) to a source file, edits or deletes a protected quality configuration, deletes a test file, or removes a test declaration (Go Test/Benchmark/Fuzz/Example functions, it/test calls, Python test functions, JUnit test methods, Gherkin scenarios) that a changed test file held at the base; a test moved to another changed test file keeps its name and is not reported. A test whose name disappears while a new one takes its place in the same file, after the same surviving declaration and with as many tests arriving there as leaving, is renamed rather than removed; so is a test of more than one line whose text, up to whitespace and the swap of its old file's subject for its new one's, reappears under a new name in its file or another changed test file. A removed test, or a deleted test file whose tests all left, is obsolete when its text at the base mentions a function, type, class, constant or variable that the change removed from a production file, not merely renamed with the same text (or, for a constant or variable, the same value), and that no file left in the repository mentions anymore, or when its code calls a helper of its file that the change removed and whose every statement uses such code; a helper that also did something else keeps its tests removed, one level only, and a local of a test is not a helper. finding_policy sets each relaxable kind of finding (suppression, test-deleted, test-removed, test-renamed, test-obsolete) to block, justify or report: a reported finding is shown and does not fail, and a justified one passes once a commit of the branch carries a `Railguard-Justify: <kind>: <reason>` trailer, which the coding agent may write, naming the finding kind or change-integrity; `Railguard-Justify: <kind> <path>: <reason>` keeps the reason with that file's findings, and every reason a kind received is kept; the reasons are shown and recorded by `railguard report`. By default the four test kinds are justify and suppression blocks; a protected configuration change always blocks, and .railguard/project.yaml, where the policy lives, is protected. A test file moved with its tests is no finding. Verify also fails when the change adds or modifies more than max_changed_lines lines outside tests (a file Git detects as moved counts only the lines the move changed), generated code, lockfiles, harness configuration and data files (size_excluded_data, `*.jsonl`, `*.csv`, `*.tsv` and `*.parquet` by default; `none` counts them). A person, never the coding agent, may accept what the branch holds at one commit with a `Railguard-Allow: <check-kind>: <reason>` trailer; later changes are still judged. A coding agent may instead ask for that acceptance with a `Railguard-Request: <check-kind>: <reason>` trailer: the finding then stays pending, which does not block locally, and `railguard gate --pull-request` in CI passes it only when one of the approvers approved the pull request's head commit, or an earlier commit whose findings for the check include every finding of the head, so a rebase keeps the approval and a new finding needs a new one. It judges only changes; a full run skips it."
       executables: [git]
       inputs:
         approvers:
@@ -370,14 +385,14 @@ catalog:
     pre-commit-check:
       version: 0.4.0
       description: Run `railguard check --changed --staged` before a local commit.
-      details: Add the check stage of every selected verification profile to the managed pre-commit hook. Only what the commit will hold is judged, the staged change since the base branch; unstaged edits and untracked files wait for their own commit. The plan blocks until at least one verification profile is selected.
+      details: Add the check stage of every selected verification profile to the managed pre-commit hook. Only what the commit will hold is judged, the staged change since the base branch; unstaged edits and untracked files wait for their own commit, and a commit that stages no file, such as an empty commit with a trailer, has nothing to judge. The plan blocks until at least one verification profile is selected.
       event: pre-commit
       operation: check
 
     pre-commit-verify:
       version: 0.4.0
       description: Run `railguard verify --changed --staged` before a local commit.
-      details: Add the verify stage of every selected verification profile to the managed pre-commit hook for teams that require full verification before every commit. Only what the commit will hold is judged, the staged change since the base branch. The plan blocks until at least one verification profile is selected.
+      details: Add the verify stage of every selected verification profile to the managed pre-commit hook for teams that require full verification before every commit. Only what the commit will hold is judged, the staged change since the base branch; a commit that stages no file has nothing to judge. The plan blocks until at least one verification profile is selected.
       event: pre-commit
       operation: verify
 
@@ -398,14 +413,14 @@ catalog:
     stop-check:
       version: 0.1.0
       description: Keep a coding agent working until `railguard check --changed` passes.
-      details: Adds a Stop hook to Claude Code, Codex and Cursor. When the agent tries to finish, the check stage of every selected verification profile runs on the change; failures return to the agent as its next instruction, at most three times per session, after which the agent may stop and the change is reported as not verified. A SessionStart hook then tells the next agent session which checks were failing until a later --changed run passes. Missing tools never trap the agent. Codex asks each developer to trust the hook once; Cursor runs it in the editor and its interactive CLI.
+      details: Adds a Stop hook to Claude Code, Codex and Cursor. When the agent tries to finish, the check stage of every selected verification profile runs on the change; failures return to the agent as its next instruction, at most three times per session, after which the agent may stop and the change is reported as not verified. A SessionStart hook then tells the next agent session which checks were failing until a later --changed run passes. Missing tools never trap the agent, and while Claude Code reports a subagent in flight the hook judges nothing, since the subagent may hold a temporary edit. Codex asks each developer to trust the hook once; Cursor runs it in the editor and its interactive CLI.
       event: stop
       operation: check
 
     action-guard:
       version: 0.1.0
       description: Refuse agent commands and file edits that would bypass the guardrails, before they run.
-      details: "Adds a pre-action hook to Claude Code, Codex and Cursor. Before the agent runs a shell command, it refuses skipping Git hooks (--no-verify), writing a Railguard-Allow trailer (the Railguard-Request and Railguard-Justify trailers stay allowed) and changing core.hooksPath; before the agent edits, adds or deletes a file with its file tools, it refuses paths under .railguard/, .git/, the Codex and Cursor hook files and the protected paths of change-guard. The refusal comes back to the agent with its reason. It is a guardrail, not a sandbox: a harness may run tools that skip hooks, and commands that write files are judged afterwards by change-guard. Codex asks each developer to trust the hook once."
+      details: "Adds a pre-action hook to Claude Code, Codex and Cursor. Before the agent runs a shell command, it refuses skipping Git hooks (--no-verify), writing a Railguard-Allow trailer (the Railguard-Request and Railguard-Justify trailers stay allowed) and changing core.hooksPath (git config writing or unsetting it, git -c, GIT_CONFIG_* or an edit of .git/config; a text that only names the key, such as a heredoc written to a file, passes); before the agent edits, adds or deletes a file with its file tools, it refuses paths under .railguard/, .git/, the Codex and Cursor hook files and the protected paths of change-guard. The refusal comes back to the agent with its reason. It is a guardrail, not a sandbox: a harness may run tools that skip hooks, and commands that write files are judged afterwards by change-guard. Codex asks each developer to trust the hook once."
       event: pre-action
 
     edit-feedback:

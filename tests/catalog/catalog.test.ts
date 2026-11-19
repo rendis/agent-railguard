@@ -106,6 +106,18 @@ describe("FilesystemCatalog", () => {
     );
     expect(profile?.kind === "verification-profile" ? profile.inputs : []).toEqual([
       {
+        id: "build_tags",
+        type: "string-list",
+        default: ["e2e"],
+        itemPattern: "^(?:none|[A-Za-z0-9_.]+(?:,[A-Za-z0-9_.]+)*)$",
+      },
+      {
+        id: "dead_code_roots",
+        type: "string-list",
+        default: ["./..."],
+        itemPattern: "^(?:disabled|(?:\\./|[A-Za-z0-9_])[A-Za-z0-9_./-]*(?:\\.\\.\\.)?)$",
+      },
+      {
         id: "test_packages",
         type: "string-list",
         default: ["./..."],
@@ -117,6 +129,7 @@ describe("FilesystemCatalog", () => {
       { id: "vet", kind: "go-vet", stage: "check", params: {} },
       { id: "test", kind: "go-test", stage: "check", params: {} },
       { id: "race", kind: "go-test", stage: "verify", params: { race: true } },
+      { id: "dead-code", kind: "go-deadcode", stage: "verify", params: {} },
     ]);
   });
 

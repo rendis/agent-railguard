@@ -1,5 +1,5 @@
 import { pendingSuffix } from "../../domain/verification/acceptance.js";
-import { parseAllowances, parseJustifications, parseRequests } from "../../domain/verification/change-guard.js";
+import { parseAllowances, parseJustifications, parseRequests, type Justification } from "../../domain/verification/change-guard.js";
 import {
   changesAt,
   type ChangeSet,
@@ -20,7 +20,7 @@ import {
  *   block locally and which CI resolves with the pull request's approval.
  * - A `Railguard-Justify: <kind>: <reason>` trailer, which an agent may write, explains a finding
  *   that the check's policy lets pass once justified. The check reads those trailers from the same
- *   commits and shows each reason; it decides which findings they cover.
+ *   commits, newest first, and shows each reason; it decides which findings they cover.
  */
 export class ChangeAcceptance {
   public constructor(
@@ -31,7 +31,7 @@ export class ChangeAcceptance {
   public async judge(
     request: CheckRequest,
     kind: string,
-    judge: (scope: ChangeSet, justified: ReadonlyMap<string, string>) => Promise<CheckOutcome>,
+    judge: (scope: ChangeSet, justified: readonly Justification[]) => Promise<CheckOutcome>,
   ): Promise<CheckOutcome> {
     const trailers = await this.#trailers(request.repositoryRoot, request.changes.base);
     const accepted = trailers.allowed.get(kind) ?? null;
@@ -62,21 +62,21 @@ export class ChangeAcceptance {
   ): Promise<{
     readonly allowed: ReadonlyMap<string, { readonly commit: string; readonly reason: string }>;
     readonly requested: ReadonlyMap<string, string>;
-    readonly justified: ReadonlyMap<string, string>;
+    readonly justified: readonly Justification[];
   }> {
     const allowed = new Map<string, { readonly commit: string; readonly reason: string }>();
     const requested = new Map<string, string>();
-    const justified = new Map<string, string>();
+    const justified: Justification[] = [];
     if (base === null) return { allowed, requested, justified };
     const log = await this.process.run("git", ["log", "--format=%H%x1f%B%x1e", `${base}..HEAD`], { cwd: root, timeoutMs: 60_000 });
     if (log.exitCode !== 0) return { allowed, requested, justified };
-    // Newest first: the latest trailer of a kind decides.
+    // Newest first: the latest trailer of a kind decides; every justification is kept.
     for (const entry of log.stdout.split("\x1e")) {
       const [commit, message] = entry.trim().split("\x1f");
       if (commit === undefined || message === undefined) continue;
       for (const [kind, reason] of parseAllowances(message)) if (!allowed.has(kind)) allowed.set(kind, { commit, reason });
       for (const [kind, reason] of parseRequests(message)) if (!requested.has(kind)) requested.set(kind, reason);
-      for (const [kind, reason] of parseJustifications(message)) if (!justified.has(kind)) justified.set(kind, reason);
+      justified.push(...parseJustifications(message));
     }
     return { allowed, requested, justified };
   }

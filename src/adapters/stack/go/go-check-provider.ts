@@ -15,7 +15,7 @@ import {
   type ProcessRunner,
 } from "../../../domain/verification/checks.js";
 import { changedLineCoverage, lineRanges, parseCoverProfile } from "./go-coverage.js";
-import { goFullCheck, gremlinsOverrides } from "./go-full-checks.js";
+import { deadcodeModule, goFullCheck, gremlinsOverrides, noCore, noProgram } from "./go-full-checks.js";
 
 const minute = 60_000;
 const golangciConfigs = [".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"];
@@ -37,6 +37,7 @@ export class GoCheckProvider implements CheckProvider {
     "go-mutation",
     "go-e2e",
     "go-imports",
+    "go-deadcode",
   ] as const;
 
   public constructor(private readonly process: ProcessRunner) {}
@@ -70,6 +71,8 @@ export class GoCheckProvider implements CheckProvider {
         return await unit.e2e();
       case "go-imports":
         return await unit.imports();
+      case "go-deadcode":
+        return await unit.deadCode();
       default:
         return unavailable(`Unknown Go check kind ${kind}`);
     }
@@ -103,13 +106,28 @@ class GoUnit {
       : failed(`${unformatted.length} Go file(s) need gofmt`, unformatted.map((file) => `gofmt -w ${file}`));
   }
 
+  /**
+   * Vets the changed packages, and again with each of `build_tags` the packages whose changed
+   * files name one of its tags in a `//go:build` line, such as an end-to-end suite behind `e2e`.
+   * Vet type-checks the test files too, so a suite that no longer compiles fails here.
+   */
   public async vet(): Promise<CheckOutcome> {
-    const packages = await this.#packages();
-    if (packages.length === 0) return skipped("No Go package changed");
-    const result = await this.#run("go", ["vet", ...packages], 10 * minute);
-    return result.exitCode === 0
-      ? passed(`go vet passed for ${describePackages(packages)}`)
-      : failed(`go vet reported problems in ${describePackages(packages)}`, output(result));
+    const runs = [{ tags: null as string | null, packages: await this.#packages() }];
+    for (const tags of this.#input("build_tags", []).filter((value) => value !== "none")) {
+      const files = await this.#filesNamingTags(tags.split(","));
+      if (files.length === 0) continue;
+      const listed = await this.#listPackages([...new Set(files.map(packageDirectory))].map(packagePattern), tags);
+      runs.push({ tags, packages: listed.filter((entry) => entry.files > 0).map((entry) => packagePattern(entry.dir)) });
+    }
+    const vetted = runs.filter((run) => run.packages.length > 0);
+    if (vetted.length === 0) return skipped("No Go package changed");
+    const describe = (run: (typeof vetted)[number]) =>
+      `${describePackages(run.packages)}${run.tags === null ? "" : ` with -tags=${run.tags}`}`;
+    for (const run of vetted) {
+      const result = await this.#run("go", ["vet", ...(run.tags === null ? [] : [`-tags=${run.tags}`]), ...run.packages], 10 * minute);
+      if (result.exitCode !== 0) return failed(`go vet reported problems in ${describe(run)}`, output(result));
+    }
+    return passed(`go vet passed for ${vetted.map(describe).join("; ")}`);
   }
 
   public async test(race: boolean): Promise<CheckOutcome> {
@@ -324,10 +342,18 @@ class GoUnit {
       return from === undefined || to === undefined ? [] : [{ from, to, rule }];
     });
     if (core.length === 0 && rules.length === 0) return skipped("No dependency rule configured");
+    const report = this.#input("on_violation", ["block"])[0] === "report";
+    const notes: string[] = [];
+    if (core.length > 0) {
+      const listed = await this.#listPackages(["./..."]);
+      if (!listed.some((entry) => core.some((pattern) => matchesPackagePattern(entry.dir, pattern)))) {
+        notes.push(noCore(core));
+      }
+    }
     const sources = this.#changedGoFiles()
       .filter((file) => existsSync(join(this.#dir, file)))
       .filter(isProductionGoFile);
-    if (sources.length === 0) return skipped("No production Go file to judge");
+    if (sources.length === 0) return skipped(["No production Go file to judge", ...notes].join("; "));
     const violations: string[] = [];
     for (const file of sources) {
       const dir = packageDirectory(file);
@@ -355,9 +381,45 @@ class GoUnit {
         }
       }
     }
-    return violations.length === 0
-      ? passed(`Dependency rules hold for ${sources.length} file(s)`)
-      : failed(`${violations.length} forbidden import(s)`, violations);
+    if (violations.length === 0) return passed(`Dependency rules hold for ${sources.length} file(s)`, notes);
+    return report
+      ? passed(`${violations.length} forbidden import(s) reported as debt (on_violation=report)`, [...violations, ...notes])
+      : failed(`${violations.length} forbidden import(s)`, [...violations, ...notes]);
+  }
+
+  /**
+   * Functions that no program of `dead_code_roots` reaches, by golang.org/x/tools' deadcode, in the
+   * changed production files. Code reached only from tests is dead: tests are not programs.
+   */
+  public async deadCode(): Promise<CheckOutcome> {
+    const roots = this.#input("dead_code_roots", ["./..."]).filter((value) => value !== "disabled");
+    if (roots.length === 0) return skipped("Dead code detection is disabled");
+    const files = new Set(this.#changedGoFiles().filter(isProductionGoFile));
+    if (files.size === 0) return skipped("No production Go file changed");
+    const result = await this.#run("go", ["run", deadcodeModule, ...roots], 15 * minute);
+    if (result.exitCode !== 0) {
+      return /no main packages/u.test(result.stderr)
+        ? skipped(noProgram)
+        : unavailable("deadcode could not analyze the module", output(result));
+    }
+    const found = lines(result.stdout).filter((line) => files.has(line.slice(0, line.indexOf(":"))));
+    return found.length === 0
+      ? passed(`No unreachable function in ${files.size} changed file(s)`)
+      : failed(`${found.length} unreachable function(s) in changed files`, [
+          ...found.map((line) => posix.join(this.#request.unitRoot, line)),
+          "Delete the code, call it from a program, or, if a test is its only user, move it into the test.",
+        ]);
+  }
+
+  /** Changed Go files whose `//go:build` line names one of `tags`. */
+  async #filesNamingTags(tags: readonly string[]): Promise<string[]> {
+    const files: string[] = [];
+    for (const file of this.#changedGoFiles()) {
+      const source = await readFile(join(this.#dir, file), "utf8").catch(() => "");
+      const constraint = /^\/\/go:build (.*)$/mu.exec(source)?.[1] ?? "";
+      if (tags.some((tag) => new RegExp(`(?<![\\w.])${tag.replace(/\./gu, "\\.")}(?![\\w.])`, "u").test(constraint))) files.push(file);
+    }
+    return files;
   }
 
   /** Packages to vet and test: those that contain a changed Go file. */
@@ -368,10 +430,10 @@ class GoUnit {
     return listed.filter((entry) => entry.files > 0).map((entry) => packagePattern(entry.dir));
   }
 
-  async #listPackages(patterns: readonly string[]): Promise<{ dir: string; files: number }[]> {
+  async #listPackages(patterns: readonly string[], tags: string | null = null): Promise<{ dir: string; files: number }[]> {
     const result = await this.#run(
       "go",
-      ["list", "-e", "-f", "{{.Dir}}\t{{len .GoFiles}}\t{{len .TestGoFiles}}\t{{len .XTestGoFiles}}", ...patterns],
+      ["list", "-e", ...(tags === null ? [] : [`-tags=${tags}`]), "-f", "{{.Dir}}\t{{len .GoFiles}}\t{{len .TestGoFiles}}\t{{len .XTestGoFiles}}", ...patterns],
       5 * minute,
     );
     return lines(result.stdout).flatMap((line) => {
