@@ -712,10 +712,10 @@ is accepted changes instead of the detection:
   `includes` relation from bringing the component in, so removing a configured profile no longer
   brings it back with its defaults. A `requires` relation cannot be disabled.
 
-### D-036 — Lessons from a real migration to a hexagonal layout
+### D-036 — Checks judge the change, not a mechanical or transient state
 
-Migrating a Go service to a hexagonal layout in milestones, with Railguard on every commit, showed
-where the checks judged a transient or mechanical state instead of the change:
+A structural refactor (moving packages, splitting layers) with Railguard on every commit exposed
+checks that judged a mechanical or transient state instead of the change:
 
 - **A move is not new code.** `change-size` counts a file Git detects as moved by the lines the move
   changed, and `change-integrity` no longer reports a test file whose tests all moved. Git's rename
