@@ -6,14 +6,37 @@ Reuse an established E2E harness when it's operational, faithful, and safe for t
 
 1. No additional infrastructure: processes, temp files, or in-memory components when the real system needs no external service for the behavior.
 2. Local process: start project binaries or servers for the real protocol with isolation.
-3. Official simulator/emulator: prefer it when it reproduces the relevant contract and is the provider-supported path.
-4. Testcontainers: tests already live in a compatible language and need per-suite or per-case lifecycle.
-5. Docker Compose: several coordinated dependencies need a shared declarative topology.
-6. Browser or device driver: only for a real visual surface.
-7. Isolated remote service: only when no faithful substitute exists, authorized test credentials are available, and data/cleanup are controlled.
-8. Hybrid: combine mechanisms only when the simplest option can't represent a required boundary.
+3. Official emulator, native: the provider's emulator installed on the machine, started as its own process ([cloud-emulators.md](cloud-emulators.md)).
+4. Official emulator image through Testcontainers: the provider's published image of that emulator, when the native one is not installed or the suite needs a per-suite lifecycle.
+5. Other container through Testcontainers: a real, disposable implementation of the dependency, such as a database; for persistence this is the default (*Persistence* below).
+6. Docker Compose: several coordinated dependencies need a shared declarative topology.
+7. Browser or device driver: only for a real visual surface.
+8. Isolated remote service: only when no faithful substitute exists, authorized test credentials are available, and data/cleanup are controlled.
+9. Hybrid: combine mechanisms only when the simplest option can't represent a required boundary.
 
 Every selected environment defines: checkable prerequisites; pinned versions or images; non-secret configuration plus an external secret mechanism; collision-free ports; deterministic seed data; readiness with a deadline; an idempotent command when practical; diagnostic logs; safe, bounded cleanup.
+
+## A missing prerequisite
+
+A missing emulator, component, runtime or container engine is `BLOCKED_SETUP`; a mock or fake of the dependency never takes its place. Make the blocker actionable:
+
+1. Detect exactly what is missing (the component, its version, the runtime it needs, such as Java for some emulators).
+2. Propose the provider's official install command for it, and ask the user before running it: installing changes their machine.
+3. With the user's yes, install, record the installed version, and rerun from setup. Without it, report `BLOCKED_SETUP` with the command.
+
+## Keep versions current
+
+When preparing the environment, compare each emulator, image and Testcontainers module with its latest release, and report a newer one in the run's evidence (installed and available version). Pin the version the run used in the execution contract; upgrading is a change of its own, decided by the user.
+
+## Docker preflight
+
+Before a suite that needs a container engine, check it answers: `docker info` (or the engine's equivalent) under a short deadline. A stopped engine is `BLOCKED_SETUP` with the command that starts it, found before any test runs.
+
+For a non-default engine such as Colima, set the variables for the suite's process only and leave the user's active Docker context and configuration as they are. Testcontainers' Colima guide gives `DOCKER_HOST=unix://${HOME}/.colima/default/docker.sock` (or the active context's endpoint, `docker context inspect --format '{{.Endpoints.docker.Host}}'`) and `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`; its alternative, `docker context use colima`, changes the user's context, so it stays the user's choice.
+
+## Persistence
+
+For a database, the default is a disposable real engine of the production kind and major version through Testcontainers (a PostgreSQL container for a PostgreSQL service), with the schema applied by the project's own migrations and readiness checked by a real query (in Go, the `modules/postgres` package of Testcontainers with `postgres.BasicWaitStrategies()`, and an image tag pinned explicitly: the module has no default). An in-memory engine, an embedded substitute or a mock of the repository is a deviation: record which behavior it cannot reproduce (types, constraints, transactions, SQL dialect), and keep the claim within what it does reproduce.
 
 ## Decide whether an orchestrator is needed
 
@@ -25,7 +48,7 @@ Compare fidelity, startup, isolation, debugging, CI parity, and maintenance befo
 
 - **Testcontainers:** use framework lifecycle APIs, wait for real readiness, register cleanup. Pin images, expose external dependencies in the harness, and share one container per suite when isolation is preserved.
 - **Compose:** separate E2E topology from development topology when data or lifecycle differ. Use unique project names, bounded health checks, and ephemeral volumes unless the case verifies persistence.
-- **Emulators/simulators:** document known differences from the real service and limit claims to semantics the emulator implements. Prefer official tools and pinned versions.
+- **Emulators/simulators:** document known differences from the real service and limit claims to semantics the emulator implements. Prefer official tools and pinned versions; [cloud-emulators.md](cloud-emulators.md) lists them per cloud.
 
 ## No additional infrastructure, and CI
 
