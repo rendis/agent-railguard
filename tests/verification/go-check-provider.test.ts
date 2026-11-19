@@ -169,3 +169,79 @@ describe.skipIf(!hasGo)("GoCheckProvider against a real module", () => {
     await execute("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: root });
   }
 });
+
+/**
+ * A service with an end-to-end suite behind a build tag and with dead code: legacy dead code at the
+ * base, and a branch that breaks the tagged suite and adds an unreachable function.
+ */
+describe.skipIf(!hasGo)("tagged suites and dead code against a real module", () => {
+  const process = new NodeProcessRunner();
+  const provider = new GoCheckProvider(process);
+  let root = "";
+  let cleanup: () => Promise<void> = async () => undefined;
+  let changes: ChangeSet;
+
+  beforeAll(async () => {
+    const created = await createTempRepository({
+      "go.mod": "module example.com/svc\n\ngo 1.22\n",
+      "cmd/svc/main.go": "package main\n\nimport \"example.com/svc/internal/handler\"\n\nfunc main() { handler.Handle() }\n",
+      "internal/handler/handler.go": "package handler\n\n// Handle serves a request.\nfunc Handle() {}\n",
+      "internal/handler/handler_test.go": "package handler\n\nimport \"testing\"\n\nfunc TestHandle(t *testing.T) { Handle() }\n",
+      "internal/legacy/legacy.go": "package legacy\n\n// Old predates the branch and nothing calls it.\nfunc Old() {}\n",
+      "e2e/e2e_test.go": "//go:build e2e\n\npackage e2e\n\nimport \"testing\"\n\nfunc TestService(t *testing.T) { t.Log(\"ok\") }\n",
+    });
+    cleanup = created.cleanup;
+    root = await realpath(created.root);
+    await git("init", "-q", "-b", "main");
+    await git("add", "-A");
+    await git("commit", "-qm", "legacy");
+    await git("checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "e2e/e2e_test.go"), "//go:build e2e\n\npackage e2e\n\nimport \"testing\"\n\nfunc TestService(t *testing.T) { t.Logf(\"%d\", \"not a number\") }\n");
+    await appendFile(join(root, "internal/handler/handler.go"), "\n// Health is used only by its test.\nfunc Health() bool { return true }\n");
+    await writeFile(join(root, "internal/handler/health_test.go"), "package handler\n\nimport \"testing\"\n\nfunc TestHealth(t *testing.T) { Health() }\n");
+    changes = await new NodeChangeSetReader(process).read(root);
+  }, 60_000);
+
+  afterAll(async () => {
+    await cleanup();
+  });
+
+  it("vets the suites behind a build tag, in the change and in the verify script", async () => {
+    const vet = await provider.run("go-vet", request({ inputs: { build_tags: ["e2e"] } }));
+    const untagged = await provider.run("go-vet", request({ inputs: { build_tags: ["none"] } }));
+
+    expect(vet).toMatchObject({ status: "failed", summary: expect.stringContaining("-tags=e2e") });
+    expect(vet.details.join("\n")).toContain("e2e_test.go");
+    expect(untagged.status).toBe("passed");
+    expect(await runFullCheck(root, provider, "go-vet", { inputs: { build_tags: ["e2e"] } }))
+      .toMatchObject({ code: 1, output: expect.stringContaining("e2e_test.go") });
+  }, 180_000);
+
+  it("reports code no program reaches, only in changed files for a change and everywhere in the verify script", async () => {
+    const outcome = await provider.run("go-deadcode", request({}));
+
+    expect(outcome).toMatchObject({ status: "failed", summary: "1 unreachable function(s) in changed files" });
+    expect(outcome.details[0]).toBe("internal/handler/handler.go:7:6: unreachable func: Health");
+    const full = await runFullCheck(root, provider, "go-deadcode");
+    expect(full).toMatchObject({ code: 1, output: expect.stringContaining("internal/legacy/legacy.go:4:6: unreachable func: Old") });
+    expect(full).toMatchObject({ output: expect.stringContaining("unreachable func: Health") });
+    expect(await runFullCheck(root, provider, "go-deadcode", { inputs: { dead_code_roots: ["disabled"] } }))
+      .toEqual({ skipped: "Dead code detection is disabled" });
+  }, 300_000);
+
+  it("skips dead code detection in a module without a program", async () => {
+    const outcome = await provider.run("go-deadcode", request({ inputs: { dead_code_roots: ["./internal/..."] } }));
+
+    expect(outcome).toMatchObject({ status: "skipped", summary: expect.stringContaining("No main package") });
+    expect(await runFullCheck(root, provider, "go-deadcode", { inputs: { dead_code_roots: ["./internal/..."] } }))
+      .toMatchObject({ code: 0, output: expect.stringContaining("No main package") });
+  }, 300_000);
+
+  function request(overrides: Partial<CheckRequest>): CheckRequest {
+    return { repositoryRoot: root, unitRoot: ".", params: {}, inputs: {}, changes, ...overrides };
+  }
+
+  async function git(...args: string[]): Promise<void> {
+    await execute("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", ...args], { cwd: root });
+  }
+});

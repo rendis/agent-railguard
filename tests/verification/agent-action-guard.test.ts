@@ -60,6 +60,26 @@ describe("action guard", () => {
     expect(shell("go test ./...")).toBeNull();
   });
 
+  it("refuses a change of core.hooksPath, not a text that only names the key", async () => {
+    const { root } = await repository();
+    const shell = (command: string) => denial(guard("claude-code", root, { tool_name: "Bash", tool_input: { command } }));
+
+    expect(shell("cat >> notes.md <<'EOF'\nThe guard said: Do not change core.hooksPath.\nEOF")).toBeNull();
+    expect(shell("grep -rn core.hooksPath docs")).toBeNull();
+    expect(shell("cat <<<'x'\ngit config core.hooksPath /dev/null")).toContain("core.hooksPath");
+    expect(shell("git log --grep core.hooksPath")).toBeNull();
+    expect(shell("git config --get-all core.hooksPath")).toBeNull();
+    expect(shell("git config get core.hooksPath")).toBeNull();
+    expect(shell("git config --local core.hooksPath .githooks")).toContain("core.hooksPath");
+    expect(shell("git config set core.hooksPath .githooks")).toContain("core.hooksPath");
+    expect(shell("git config --unset core.hooksPath")).toContain("core.hooksPath");
+    expect(shell("git config unset core.hooksPath")).toContain("core.hooksPath");
+    expect(shell("cd repo && git -C . -c core.hooksPath=/dev/null commit -m x")).toContain("core.hooksPath");
+    expect(shell("GIT_CONFIG_PARAMETERS=\"'core.hooksPath=/dev/null'\" git commit -m x")).toContain("core.hooksPath");
+    expect(shell("sed -i '' 's/hooksPath = .*//' .git/config")).toContain("core.hooksPath");
+    expect(shell("bash <<'EOF'\ngit config core.hooksPath /dev/null\nEOF")).toContain("core.hooksPath");
+  });
+
   it("refuses file edits to the guardrails, Git internals and protected configuration", async () => {
     const { spelled, root } = await repository();
     const write = (path: string, protectedPaths: readonly string[] = []) =>

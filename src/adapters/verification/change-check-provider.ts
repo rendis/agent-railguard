@@ -3,10 +3,12 @@ import {
   changedLineCount,
   declaresSymbols,
   isTestFile,
+  justificationFor,
   matchesAnyGlob,
   removedSymbols,
   suppressionFindings,
   testChanges,
+  type Justification,
 } from "../../domain/verification/change-guard.js";
 import type {
   ChangeSet,
@@ -48,7 +50,7 @@ export class ChangeCheckProvider implements CheckProvider {
     }
   }
 
-  async #integrity(request: CheckRequest, changes: ChangeSet, justified: ReadonlyMap<string, string>): Promise<CheckOutcome> {
+  async #integrity(request: CheckRequest, changes: ChangeSet, justified: readonly Justification[]): Promise<CheckOutcome> {
     const protectedPaths = request.inputs.protected_paths ?? [];
     // An entry overrides the default of its kind only: relaxing one kind keeps the other defaults.
     const policy = findingPolicy([...defaultFindingPolicy, ...(request.inputs.finding_policy ?? [])]);
@@ -88,12 +90,16 @@ export class ChangeCheckProvider implements CheckProvider {
     add("test-renamed", tests.renamed);
     add("test-obsolete", tests.obsolete);
     const level = (kind: FindingKind) => policy.get(kind) ?? "block";
-    // A justification names the finding's kind, or the check's to cover all of its justifiable kinds.
-    const justification = (kind: FindingKind) => justified.get(kind) ?? justified.get("change-integrity");
-    const blocking = findings.filter(({ kind }) => level(kind) === "block" || (level(kind) === "justify" && justification(kind) === undefined));
+    // A justification names the finding's kind, or the check's to cover all of its justifiable kinds,
+    // and may name the finding's file.
+    const justification = ({ kind, text }: Finding) => justificationFor(justified, kind, "change-integrity", findingPath(text));
+    const blocking = findings.filter((finding) =>
+      level(finding.kind) === "block" || (level(finding.kind) === "justify" && justification(finding) === undefined));
     const passing = findings
       .filter((finding) => !blocking.includes(finding))
-      .map(({ kind, text }) => level(kind) === "report" ? `${text} (reported: ${kind}=report)` : `${text} (justified: ${justification(kind)})`);
+      .map((finding) => level(finding.kind) === "report"
+        ? `${finding.text} (reported: ${finding.kind}=report)`
+        : `${finding.text} (justified: ${justification(finding)})`);
     if (blocking.length === 0) {
       return passing.length === 0
         ? passed("No suppression, removed test or protected configuration change")
@@ -119,9 +125,16 @@ export class ChangeCheckProvider implements CheckProvider {
       ...(request.inputs.size_excluded_paths ?? []),
       ...(request.inputs.size_excluded_data ?? []).filter((glob) => glob !== "none"),
     ];
-    const counted: { readonly path: string; readonly lines: number }[] = [];
+    const counted: { readonly path: string; readonly lines: number; readonly from?: string }[] = [];
+    const renames = await this.#renames(request.repositoryRoot, changes);
     for (const [path, lines] of changes.files) {
       if (isTestFile(path) || matchesAnyGlob(path, excluded)) continue;
+      const rename = renames.get(path);
+      if (rename !== undefined) {
+        // A moved file adds only the lines the move changed, such as its package clause and imports.
+        counted.push({ path, lines: rename.added, from: rename.from });
+        continue;
+      }
       if (lines !== "all") {
         counted.push({ path, lines: lines.size });
         continue;
@@ -137,12 +150,41 @@ export class ChangeCheckProvider implements CheckProvider {
       status: "failed",
       summary: `${total} changed line(s) outside tests exceed the reviewable limit of ${limit}`,
       details: [
-        ...counted.sort((left, right) => right.lines - left.lines).slice(0, 10).map((file) => `${file.path}: ${file.lines}`),
+        ...counted
+          .sort((left, right) => right.lines - left.lines)
+          .slice(0, 10)
+          .map((file) => `${file.path}: ${file.lines}${file.from === undefined ? "" : ` (moved from ${file.from})`}`),
         "Split the change into smaller deliveries.",
       ],
       // A file the approved commit did not count is a new finding; more lines in the same files are not.
       findings: counted.map((file) => `change-size\u0000${file.path}`).sort(),
     };
+  }
+
+  /**
+   * Files the change moved, by Git's rename detection (at least 50% similar to a file the change
+   * deleted), with the lines added relative to their old path. Untracked files are not paired.
+   */
+  async #renames(root: string, changes: ChangeSet): Promise<ReadonlyMap<string, { readonly from: string; readonly added: number }>> {
+    const renames = new Map<string, { readonly from: string; readonly added: number }>();
+    if (changes.base === null || changes.deleted.length === 0) return renames;
+    const result = await this.process.run(
+      "git",
+      ["-c", "core.quotePath=false", "diff", ...(changes.staged ? ["--cached"] : []), "--no-ext-diff", "--find-renames", "--numstat", "-z", changes.base, "--"],
+      { cwd: root, timeoutMs: 60_000 },
+    );
+    if (result.exitCode !== 0) return renames;
+    // `<added>\t<deleted>\t\0<from>\0<to>\0` for a rename; `<added>\t<deleted>\t<path>\0` otherwise.
+    const fields = result.stdout.split("\0");
+    for (let index = 0; index < fields.length; index += 1) {
+      const match = /^(\d+|-)\t(?:\d+|-)\t(.*)$/su.exec(fields[index] ?? "");
+      if (match === null || match[2] !== "") continue;
+      const from = fields[index + 1] ?? "";
+      const to = fields[index + 2] ?? "";
+      index += 2;
+      if (match[1] !== "-" && changes.files.has(to)) renames.set(to, { from, added: Number(match[1]) });
+    }
+    return renames;
   }
 
   /** Changed and deleted test files as the base held them and as the change holds them now. */
@@ -258,8 +300,14 @@ function justifyAdvice(kinds: readonly string[]): string {
   const kind = kinds.length === 1 ? kinds[0] as string : "change-integrity";
   return [
     `To keep ${kinds.join(", ")} on purpose, justify it: \`git commit --allow-empty -m "chore: justify ${kind}" -m "Railguard-Justify: ${kind}: <why this is right>"\`, then commit the change.`,
-    "Use a finding kind to cover only that kind, or change-integrity to cover every justifiable finding of the branch; the reason is shown in the checks and in `railguard report`.",
+    "Use a finding kind to cover only that kind, or change-integrity to cover every justifiable finding of the branch.",
+    `Name the file after the kind (\`Railguard-Justify: ${kind} <path>: <why>\`, one trailer per file) to keep each reason with its own findings; a reason without a file is shown on every finding of its kind, beside the other such reasons, in the checks and in \`railguard report\`.`,
   ].join(" ");
+}
+
+/** The file a finding is about: its text starts with the path, and a line number for a suppression. */
+function findingPath(text: string): string {
+  return /^(.+?)(?::\d+)?: /u.exec(text)?.[1] ?? text;
 }
 
 /** Git's own heuristic: a NUL byte in the first 8000 bytes marks the file as binary. */

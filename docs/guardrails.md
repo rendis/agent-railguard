@@ -8,7 +8,7 @@ acceptable.
 
 ```bash
 railguard check --changed     # fast: format, vet, tests for changed packages, lint, architecture
-railguard verify --changed    # everything: plus race, coverage of changed lines, mutation, E2E, vulnerabilities
+railguard verify --changed    # everything: plus race, dead code, coverage of changed lines, mutation, E2E, vulnerabilities
 ```
 
 With `--changed` the baseline is the merge-base with the default branch (or `--base <ref>`).
@@ -17,7 +17,8 @@ Each check looks only at what the change touched:
 | Check | What it judges with `--changed` |
 | --- | --- |
 | Format | changed Go files |
-| `go vet` and tests | packages that contain changes |
+| `go vet` and tests | packages that contain changes; vet again with each of `build_tags` (`e2e` by default) where a changed file names it in `//go:build` |
+| Dead code | functions in changed production files that no `main` package reaches (`deadcode`); code only tests use is dead |
 | golangci-lint | issues on new or modified lines |
 | Architecture | imports of the changed files |
 | Coverage | changed lines with statements: 100% in core, 80% in the rest |
@@ -43,7 +44,10 @@ COVERAGE_PROFILE=coverage.out .railguard/verify.sh verify  # keeps the coverage 
 ```
 
 It only needs `sh`, Go and the tools pinned in `go.mod` (golangci-lint, govulncheck,
-gremlins); it does not use the binary. `railguard verify` without `--changed` runs those
+gremlins); it does not use the binary. The dead code step runs `go run
+golang.org/x/tools/cmd/deadcode@v0.53.0`, a version Railguard pins, so the Go module proxy must
+be reachable the first time; set `dead_code_roots: [disabled]` to leave it out. A module without a
+`main` package skips it. `railguard verify` without `--changed` runs those
 same steps and reports each one; if the script does not match the current selection, it
 blocks with `verification.script.stale`. To change a rule, edit `project.yaml` and run
 `railguard sync --yes`, which regenerates the script in the same change; `sync --check`
@@ -135,6 +139,10 @@ only reported
   kind, or `change-integrity` to cover every justifiable finding of the branch. The check then
   passes and lists the finding with `(justified: <reason>)`, and `railguard report` records each
   reason. Without the trailer the failure prints the exact commit to make.
+  `Railguard-Justify: <kind> <path>: <reason>` keeps a reason with the findings of that file (a
+  path or glob). A finding takes the reasons of its own file first; otherwise every reason its
+  kind received on the branch, newest first, so a later justification of the same kind never
+  replaces an earlier one.
 - `report` lists the finding and the check passes.
 
 | Kind | What it is | Default |
@@ -154,7 +162,16 @@ git commit --allow-empty -m "chore: justify test-deleted" \
 ```
 
 Like a request, the justification goes into an empty commit before the change, because a commit is
-checked before its message exists.
+checked before its message exists. The pre-commit gate judges what the commit stages, so an empty
+commit has nothing to judge and passes even while the working tree holds the unstaged change.
+
+```bash
+git commit --allow-empty -m "chore: justify test-deleted" \
+  -m "Railguard-Justify: test-deleted src/report/report_test.go: the report left with #13" \
+  -m "Railguard-Justify: test-deleted src/cli/cli_test.go: the CLI left with #12"
+```
+
+A test file moved with all its tests, such as with `git mv`, is no finding.
 
 A changed or deleted protected configuration, and a file too large to scan, always block.
 The policy lives in `.railguard/project.yaml`, itself a protected path, so only a person
@@ -172,7 +189,11 @@ configuration do not count toward `max_changed_lines`
 ([D-033](decisions.md#d-033--documentation-does-not-count-toward-the-size-limit)); override
 `size_excluded_paths` to count them. Data files (`*.jsonl`, `*.csv`, `*.tsv`, `*.parquet`), such as
 fixtures or training sets, do not count either: they are listed in their own input,
-`size_excluded_data`, so a project that overrides `size_excluded_paths` keeps them out. Set
+`size_excluded_data`, so a project that overrides `size_excluded_paths` keeps them out. A file
+Git detects as moved (at least 50% similar to a file the change deleted, staged or tracked) counts
+only the lines the move changed, such as its package clause and imports, so a mechanical move of
+a package stays within the limit. Code moved between files that Git does not pair still counts.
+Set
 `size_excluded_data: ["none"]` to count them, or list the data globs that should stay out.
 
 ## Accepting a finding
@@ -343,7 +364,9 @@ suppression on its own.
    fix them before another task. It is cleared when a `check` or `verify --changed` of the
    whole change passes again, from the hook, the pre-push gate or the terminal; a
    `--staged` pass does not clear it, because it leaves unstaged work out. A missing tool never traps the agent
-   in a loop. VS Code and OpenCode do not have this hook: selecting it with one of them
+   in a loop. While Claude Code reports a subagent in flight (`background_tasks` of its `Stop`
+   input), the hook judges nothing: the subagent may hold a temporary edit, such as a mutation
+   under review. The turn ends again when the subagent returns, and the check runs then. VS Code and OpenCode do not have this hook: selecting it with one of them
    as target blocks the plan (`resolution.capability.unsupported`) instead of silently
    skipping it.
 2. **Before commit or push** (`git-gate:*`), with `core.hooksPath`. Git never activates
@@ -385,7 +408,12 @@ be obtained, the hooks warn and let the process continue.
 - **No rule:** don't select the profile.
 
 In an existing repository, `--changed` freezes the current architecture: only new
-imports that violate it fail.
+imports that violate it fail. When no package matches `core_packages`, the check says so instead
+of passing in silence.
+
+**While migrating to the architecture**, point `core_packages` at the packages that will form the
+core and set `on_violation: [report]`: `railguard verify` lists each violation as debt and passes,
+so the debt is visible before the first move. Set it back to `block` when the migration ends.
 
 ## Hook approval by harness
 

@@ -80,6 +80,22 @@ describe("NodeChangeSetReader", () => {
     expect((await reader.read(root)).files.has("untracked.go")).toBe(true);
   });
 
+  it("reads nothing for a commit that stages no file, such as an empty commit with a trailer", async () => {
+    const root = await repository({ "src/a.go": "package a\n", "src/a_test.go": "package a\n" });
+    await git(root, "checkout", "-q", "-b", "feature");
+    await writeFile(join(root, "src/a.go"), "package a\n\nvar committed = 1\n");
+    await git(root, "commit", "-qam", "committed on the branch");
+    // Moved in the working tree and not staged: the index still lists the old paths.
+    await git(root, "mv", "src", "internal");
+    await git(root, "reset", "-q");
+
+    const changes = await new NodeChangeSetReader(new NodeProcessRunner()).read(root, undefined, { staged: true });
+
+    expect(changes.staged).toBe(true);
+    expect([...changes.files.keys()]).toEqual([]);
+    expect(changes.deleted).toEqual([]);
+  });
+
   it("uses only uncommitted work when HEAD is the default branch", async () => {
     const root = await repository({ "a.go": "package a\n" });
     await writeFile(join(root, "a.go"), "package a\n\nvar x = 1\n");

@@ -72,10 +72,50 @@ function shellRefusal(command: string): Refusal | null {
       reason: "Do not skip the Git hooks: they run the checks this repository requires. Fix what fails instead.",
     };
   }
-  if (/core\.hookspath/iu.test(command) && !/\bgit\s+config\s+(?:--get|--get-all|--list|-l)\b/u.test(command)) {
+  if (changesHooksPath(command)) {
     return { rule: "hooks-path", reason: "Do not change core.hooksPath: it activates the Git hooks this repository requires." };
   }
   return null;
+}
+
+/**
+ * Whether a shell command changes or overrides core.hooksPath: `git config` writing or unsetting it,
+ * `git -c` or GIT_CONFIG_* overriding it, or an edit of `.git/config` that names it. A text that
+ * only names the key, such as a heredoc written to a file or a search, changes nothing.
+ */
+function changesHooksPath(command: string): boolean {
+  return executedLines(command).some((line) => {
+    if (!/hookspath/iu.test(line)) return false;
+    if (/\.git\/config\b/u.test(line) || /\bGIT_CONFIG_(?:PARAMETERS|KEY_\d+)\b/u.test(line)) return true;
+    if (/\bgit\b[^;&|\n]*\s-c\s*core\.hookspath\b/iu.test(line)) return true;
+    const config = /\bgit\b[^;&|\n]*\sconfig\b([^;&|\n]*)/iu.exec(line);
+    if (config === null || !/\bcore\.hookspath\b/iu.test(config[1] ?? "")) return false;
+    return !/\s(?:--get|--get-all|--get-regexp|--list|-l|get|list)(?=\s|$)/u.test(config[1] ?? "");
+  });
+}
+
+const shellInterpreters = /^(?:sudo\s+)?(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish|eval)\b/u;
+
+/** The command's lines without the bodies of heredocs fed to a program other than a shell. */
+function executedLines(command: string): string[] {
+  const lines = command.split("\n");
+  const executed: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    executed.push(line);
+    for (const heredoc of line.matchAll(/(?<!<)<<(?!<)(-?)\s*(['"]?)([\w.-]+)\2/gu)) {
+      const segment = line.slice(0, heredoc.index).split(/[;&|]/u).at(-1)?.trim() ?? "";
+      const runsBody = shellInterpreters.test(segment);
+      const delimiter = heredoc[3] ?? "";
+      while (index + 1 < lines.length) {
+        index += 1;
+        const body = lines[index] ?? "";
+        if ((heredoc[1] === "-" ? body.replace(/^\t+/u, "") : body) === delimiter) break;
+        if (runsBody) executed.push(body);
+      }
+    }
+  }
+  return executed;
 }
 
 function respond(harness: StopHookHarness, reason: string | null): Omit<ActionGuardResponse, "refused"> {

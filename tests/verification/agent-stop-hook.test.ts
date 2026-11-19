@@ -133,6 +133,26 @@ describe("runStopHook", () => {
     expect(store.change).toBeNull();
   });
 
+  it("waits for a running subagent instead of judging a working tree it may be changing", async () => {
+    const verification = fakeVerification(["failed"]);
+    const store = memoryStore();
+    const running = {
+      session_id: "subagent",
+      background_tasks: [
+        { id: "b1", type: "shell", status: "running", description: "dev server" },
+        { id: "a1", type: "subagent", status: "running", description: "review with mutations", agent_type: "reviewer" },
+      ],
+    };
+
+    const response = await hook("claude-code", verification, running, undefined, store);
+
+    expect(response).toEqual({ stdout: "", stderr: expect.stringContaining("1 subagent is still running") });
+    expect(verification.requests).toEqual([]);
+    expect(store.change).toBeNull();
+    const shellOnly = await hook("claude-code", verification, { ...running, background_tasks: [running.background_tasks[0]] });
+    expect(JSON.parse(shellOnly.stdout)).toMatchObject({ decision: "block" });
+  });
+
   it("does nothing when Cursor reports an aborted turn", async () => {
     const verification = fakeVerification(["failed"]);
 

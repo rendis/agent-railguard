@@ -510,6 +510,8 @@ export function testChanges(
     };
     let { gone, added } = changed[at]!;
     if (deleted === true) {
+      // Every test it declared lives on in another changed file: the file moved.
+      if (gone.length === 0 && tests.length > 0) continue;
       const obsolete = gone.length > 0 && gone.every(({ index }) => isObsolete(tests[index]!));
       const through = [...new Set(gone.map(({ index }) => obsoleteThrough(tests[index]!)).filter((helper) => helper))].sort();
       const via = through.length === 0 ? "" : ` (through helper ${through.join(", ")})`;
@@ -670,13 +672,47 @@ export function parseRequests(messages: string): ReadonlyMap<string, string> {
   return parseTrailers("Railguard-Request", messages);
 }
 
+/** One reason an agent gave for findings that need only a reason. */
+export interface Justification {
+  /** A finding kind, such as `test-deleted`, or a check kind to cover every such finding of the check. */
+  readonly kind: string;
+  /** A repository path or glob the reason is about, or null for every finding of the kind. */
+  readonly path: string | null;
+  readonly reason: string;
+}
+
 /**
- * `Railguard-Justify: <kind>: <reason>` trailers from commit messages. An agent may write one to
- * explain a finding whose `finding_policy` level is `justify`; `<kind>` is that finding's kind, such
- * as `test-deleted`, or its check kind to cover every such finding of the check.
+ * `Railguard-Justify: <kind>[ <path>]: <reason>` trailers from commit messages, in order. An agent
+ * may write one to explain a finding whose `finding_policy` level is `justify`. A path keeps the
+ * reason with that file's findings; without one, the reason covers every finding of the kind.
  */
-export function parseJustifications(messages: string): ReadonlyMap<string, string> {
-  return parseTrailers("Railguard-Justify", messages);
+export function parseJustifications(messages: string): readonly Justification[] {
+  return [...messages.matchAll(/^Railguard-Justify:\s*([a-z0-9-]+)(?:[ \t]+([^\s:][^\s]*?))?\s*:\s*(\S.*)$/gmu)].map((match) => ({
+    kind: match[1] as string,
+    path: match[2] ?? null,
+    reason: (match[3] as string).trim(),
+  }));
+}
+
+/**
+ * The reasons that justify a finding of `kind` about `path`, newest first, from the most specific
+ * trailers that cover it: its kind and file, `check` (which covers every kind) and its file, its
+ * kind, then `check`. Every reason of that tier is kept. Undefined when none covers it.
+ */
+export function justificationFor(
+  justifications: readonly Justification[],
+  kind: string,
+  check: string,
+  path: string,
+): string | undefined {
+  const covers = (name: string, scoped: boolean) => (justification: Justification) =>
+    justification.kind === name &&
+    (scoped ? justification.path !== null && matchesAnyGlob(path, [justification.path]) : justification.path === null);
+  for (const tier of [covers(kind, true), covers(check, true), covers(kind, false), covers(check, false)]) {
+    const reasons = [...new Set(justifications.filter(tier).map((justification) => justification.reason))];
+    if (reasons.length > 0) return reasons.join("; ");
+  }
+  return undefined;
 }
 
 /** Trailer lines `<label>: <check-kind>: <reason>`; the last one of a kind in a message wins. */

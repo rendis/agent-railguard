@@ -20,7 +20,8 @@ const defaultBranchCandidates = ["origin/main", "origin/master", "main", "master
  * uses the merge-base with the remote default branch (or a local main/master), so a branch is
  * judged by everything it adds. A repository with commits but no resolvable default branch, such
  * as a shallow CI checkout, is rejected instead of being compared with itself. With `staged` it reads
- * the index instead, so a commit is judged by exactly what it will hold.
+ * the index instead, so a commit is judged by exactly what it will hold; a commit that stages no
+ * file holds nothing new.
  */
 export class NodeChangeSetReader implements ChangeSetReader {
   public constructor(private readonly process: ProcessRunner) {}
@@ -37,6 +38,10 @@ export class NodeChangeSetReader implements ChangeSetReader {
         files.set(path, "all");
       }
       return Object.freeze({ base: null, baseRef: null, files, deleted: Object.freeze(deleted), staged });
+    }
+    // A commit that stages no file, such as an empty commit carrying a trailer, adds nothing to judge.
+    if (staged && (await this.process.run("git", ["diff", "--cached", "--quiet", "HEAD", "--"], { cwd: root, timeoutMs: 60_000 })).exitCode === 0) {
+      return Object.freeze({ base: base.commit, baseRef: base.label, files, deleted: Object.freeze(deleted), staged });
     }
     const diff = await this.#git(root, [
       "-c", "core.quotePath=false",

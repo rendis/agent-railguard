@@ -121,6 +121,27 @@ describe.skipIf(!hasGo)("go-imports against a real module", () => {
       .toEqual({ skipped: "No dependency rule configured" });
   });
 
+  it("lists the violations as debt without failing when the project reports them", async () => {
+    const report = { ...hexagonal, on_violation: ["report"] };
+    const outcome = await provider.run("go-imports", request({ changes: await new NodeChangeSetReader(process).read(root), inputs: report }));
+
+    expect(outcome).toMatchObject({ status: "passed", summary: "2 forbidden import(s) reported as debt (on_violation=report)" });
+    expect(outcome.details).toContain("internal/core/order/order.go: core imports net/http");
+    const full = await runFullCheck(root, provider, "go-imports", { inputs: report });
+    expect(full).toMatchObject({ code: 0, output: expect.stringContaining("3 forbidden import(s) reported as debt") });
+    expect(full).toMatchObject({ output: expect.stringContaining("internal/core/legacy: core imports example.com/svc/internal/adapters/db") });
+  });
+
+  it("says when no package matches the core instead of passing in silence", async () => {
+    const inputs = { ...hexagonal, core_packages: ["./internal/domain/..."] };
+
+    const full = await runFullCheck(root, provider, "go-imports", { inputs });
+    const changed = await provider.run("go-imports", request({ changes: await new NodeChangeSetReader(process).read(root), inputs }));
+
+    expect(full).toMatchObject({ code: 0, output: expect.stringContaining("No package matches core_packages ./internal/domain/...") });
+    expect(changed).toMatchObject({ status: "passed", details: [expect.stringContaining("No package matches core_packages ./internal/domain/...")] });
+  });
+
   function request(overrides: Partial<CheckRequest> & { changes: ChangeSet }): CheckRequest {
     return { repositoryRoot: root, unitRoot: ".", params: {}, inputs: {}, ...overrides };
   }

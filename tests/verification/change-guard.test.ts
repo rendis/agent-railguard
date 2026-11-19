@@ -512,6 +512,34 @@ describe("ChangeCheckProvider", () => {
     expect(justifiable.status).toBe("passed");
   });
 
+  it("keeps every justification of a kind and gives a file's own reason to its findings", async () => {
+    const { root, git } = await repository({
+      "a_test.go": "package a\n\nfunc TestA(t *testing.T) {}\n",
+      "b_test.go": "package a\n\nfunc TestB(t *testing.T) {}\n",
+      "c_test.go": "package a\n\nfunc TestC(t *testing.T) {}\n",
+    });
+    await git("checkout", "-q", "-b", "feature");
+    await git("commit", "-q", "--allow-empty", "-m", "chore: justify\n\nRailguard-Justify: test-deleted a_test.go: TestA went with the old client");
+    await git("rm", "-q", "a_test.go");
+    await git("commit", "-qm", "drop a");
+    await git("commit", "-q", "--allow-empty", "-m", "chore: justify\n\nRailguard-Justify: test-deleted: the CLI left with #12");
+    await git("rm", "-q", "b_test.go");
+    await git("commit", "-qm", "drop b");
+    await git("commit", "-q", "--allow-empty", "-m", "chore: justify\n\nRailguard-Justify: test-deleted: the report left with #13");
+    await git("rm", "-q", "c_test.go");
+
+    const outcome = await provider().run("change-integrity", await request(root, {}, false, { defaultPolicy: true }));
+
+    expect(outcome).toMatchObject({
+      status: "passed",
+      details: [
+        "a_test.go: test file deleted (justified: TestA went with the old client)",
+        "b_test.go: test file deleted (justified: the report left with #13; the CLI left with #12)",
+        "c_test.go: test file deleted (justified: the report left with #13; the CLI left with #12)",
+      ],
+    });
+  });
+
   it("reports the relaxed kinds of finding and still blocks a protected configuration", async () => {
     const { root, git } = await repository({
       ".golangci.yml": "version: \"2\"\n",
@@ -741,6 +769,29 @@ describe("ChangeCheckProvider", () => {
 
     expect(within.status).toBe("passed");
     expect(over).toMatchObject({ status: "failed", details: ["b.go: 5", expect.stringContaining("Split the change"), expect.stringContaining("Railguard-Request")] });
+  });
+
+  it("follows a file moved with git mv: only the lines the move changed count, and its tests are no finding", async () => {
+    const service = `package service\n\nimport "fmt"\n\n${Array.from({ length: 30 }, (_, index) => `func Step${index}() { fmt.Println(${index}) }\n`).join("")}`;
+    const tests = "package service\n\nimport \"testing\"\n\nfunc TestStep(t *testing.T) {\n\tStep0()\n}\n";
+    const { root, git } = await repository({ "src/service/service.go": service, "src/service/service_test.go": tests });
+    await git("checkout", "-q", "-b", "feature");
+    await mkdir(join(root, "internal/core/service"), { recursive: true });
+    await git("mv", "src/service/service.go", "internal/core/service/service.go");
+    await git("mv", "src/service/service_test.go", "internal/core/service/service_test.go");
+    await writeFile(join(root, "internal/core/service/service.go"), service.replace("import \"fmt\"", "import (\n\t\"fmt\"\n)"));
+
+    for (const staged of [false, true]) {
+      if (staged) await git("add", "-A");
+      const size = await provider().run("change-size", await request(root, { max_changed_lines: ["10"] }, staged));
+      const integrity = await provider().run("change-integrity", await request(root, {}, staged));
+
+      expect(size).toMatchObject({ status: "passed", summary: "3 changed line(s) outside tests, within 10" });
+      expect(integrity).toMatchObject({ status: "passed", summary: "No suppression, removed test or protected configuration change" });
+    }
+    await writeFile(join(root, "internal/core/service/service.go"), `${service}${"func Extra() {}\n".repeat(12)}`);
+    const grown = await provider().run("change-size", await request(root, { max_changed_lines: ["10"] }));
+    expect(grown).toMatchObject({ status: "failed", details: ["internal/core/service/service.go: 12 (moved from src/service/service.go)", expect.any(String), expect.any(String)] });
   });
 
   it("leaves data files out of the size by default and counts them when the project opts back in", async () => {

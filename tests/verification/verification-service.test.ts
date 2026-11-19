@@ -27,11 +27,11 @@ describe("VerificationService", () => {
     const verify = await service.run({ root: "/repo", stage: "verify", changed: false });
 
     expect(check.results.map((result) => result.check)).toEqual(["format", "vet", "test"]);
-    expect(verify.results.map((result) => result.check)).toEqual(["format", "vet", "test", "race"]);
-    expect(steps.slice(-4)).toEqual([
-      "go-quality/format@.", "go-quality/vet@.", "go-quality/test@.", "go-quality/race@.",
+    expect(verify.results.map((result) => result.check)).toEqual(["format", "vet", "test", "race", "dead-code"]);
+    expect(steps.slice(-5)).toEqual([
+      "go-quality/format@.", "go-quality/vet@.", "go-quality/test@.", "go-quality/race@.", "go-quality/dead-code@.",
     ]);
-    expect(provider.fullRequests.at(-1)?.params).toEqual({ race: true });
+    expect(provider.fullRequests.map((request) => request.params)).toContainEqual({ race: true });
     expect(provider.requests).toEqual([]);
     expect(verify).toMatchObject({ mode: "full", verdict: "passed" });
   });
