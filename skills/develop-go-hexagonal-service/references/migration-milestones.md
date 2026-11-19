@@ -19,7 +19,7 @@ Build the net before moving any code, with `build-e2e-test-suite`:
 
 - **Characterization suite.** Run the real binary against official emulators or disposable real dependencies, never in-process fakes of the service's own code. Each scenario observes the effect on the wire: every outbound call or its absence, and for a message consumer the Ack or Nack the broker actually received (see that skill's broker guidance; a dead-letter design gives false passes). The suite describes the code as it is: when a scenario fails, record the observed behavior and leave production untouched.
 - **Repair the existing tests** that keep `go test ./...` from passing, without touching production code.
-- **Prove the net.** It passes three consecutive runs, and each mutant from a short list (drop the Ack, swap Ack and Nack, break one mapping, skip one call) turns it red. A surviving mutant is a gap to close before H1.
+- **Prove the net.** It passes three consecutive runs, and each mutant from a short list turns it red: one per observable outcome (skip an outbound call, swap a success outcome for a failure, break one mapping, and for a message consumer drop the Ack or turn it into a Nack). A surviving mutant is a gap to close before H1.
 
 Then ask the user and record each answer; these decisions are the user's:
 
