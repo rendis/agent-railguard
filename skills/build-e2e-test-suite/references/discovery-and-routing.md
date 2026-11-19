@@ -9,7 +9,7 @@ Search with `rg`/`rg --files` for: instructions and specs; runtimes, entry point
 | Surface | Observable driver or seam | Expected evidence |
 |---|---|---|
 | HTTP/gRPC | Protocol client or existing runner | Status/code, body, headers, public effects |
-| Event or broker | Supported publisher/consumer, emulator, or isolated broker | Accepted message, observable result, terminal policy |
+| Event or broker | Supported publisher/consumer, emulator, or isolated broker | Accepted message, observable result, and the Ack or Nack the broker received ([broker-acknowledgement.md](broker-acknowledgement.md)) |
 | Web UI | Browser driver compatible with the project | Visible state, URL, failure artifacts |
 | Mobile | Official emulator/simulator and driver | Visible state and device logs |
 | CLI | Process with stdin/stdout/stderr and exit code | Output, exit code, public effects |
