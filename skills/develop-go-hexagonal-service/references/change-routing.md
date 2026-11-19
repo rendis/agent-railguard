@@ -31,4 +31,4 @@ Start from observable behavior and its owning rule, then touch only the layers i
 
 ## Resolve ambiguity
 
-If "repository" means source code, locate and explain it — reserve Repository itself for collection-like access to aggregate roots. If "service" may mean a use case, remote client, or process, inspect consumers and vocabulary. If the established structure differs from this guide, keep the change within the requested slice and propose any larger migration separately. Ask only when two placements produce materially different public contracts, persistence, security, or behavior.
+If "repository" means source code, locate and explain it — reserve Repository itself for collection-like access to aggregate roots. If "service" may mean a use case, remote client, or process, inspect consumers and vocabulary. If the established structure differs from this guide, keep the change within the requested slice and propose any larger migration separately; a requested migration runs as the milestones of [migration-milestones.md](migration-milestones.md). Ask only when two placements produce materially different public contracts, persistence, security, or behavior.
